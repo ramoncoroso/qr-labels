@@ -126,15 +126,15 @@ defmodule QrLabelSystemWeb.Router do
     end
   end
 
-  # API routes for JSON endpoints (authenticated)
+  # API routes for JSON endpoints (authenticated + operator role required)
   scope "/api", QrLabelSystemWeb.API do
-    pipe_through :api_auth
+    pipe_through [:api_auth, :operator_only]
 
-    # Design export/import
+    # Design export/import (operators and admins only)
     get "/designs/:id/export", DesignController, :export
     post "/designs/import", DesignController, :import
 
-    # Data preview
+    # Data preview (operators and admins only)
     post "/data-sources/:id/preview", DataSourceController, :preview
     post "/data-sources/test-connection", DataSourceController, :test_connection
   end

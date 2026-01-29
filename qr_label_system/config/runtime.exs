@@ -5,6 +5,14 @@ import Config
 # temporary table. Therefore, you should not introduce any compile-time
 # configuration changes here, like defining new modules
 
+# Configure Hammer rate limiter backend (works in all environments)
+# Using ETS backend - for distributed systems, use Redis backend
+config :hammer,
+  backend: {Hammer.Backend.ETS, [
+    expiry_ms: 60_000 * 60 * 2,  # 2 hours
+    cleanup_interval_ms: 60_000 * 10  # 10 minutes
+  ]}
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -27,6 +35,22 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  # Session security salts - MUST be set in production
+  # Generate with: :crypto.strong_rand_bytes(32) |> Base.encode64()
+  signing_salt =
+    System.get_env("SESSION_SIGNING_SALT") ||
+      raise """
+      environment variable SESSION_SIGNING_SALT is missing.
+      Generate one with: :crypto.strong_rand_bytes(32) |> Base.encode64()
+      """
+
+  encryption_salt =
+    System.get_env("SESSION_ENCRYPTION_SALT") ||
+      raise """
+      environment variable SESSION_ENCRYPTION_SALT is missing.
+      Generate one with: :crypto.strong_rand_bytes(32) |> Base.encode64()
+      """
+
   host = System.get_env("PHX_HOST") || "example.com"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
@@ -39,7 +63,16 @@ if config_env() == :prod do
       port: port
     ],
     secret_key_base: secret_key_base,
-    server: true
+    server: true,
+    # Override session options with environment salts
+    session_options: [
+      store: :cookie,
+      key: "_qr_label_system_key",
+      signing_salt: signing_salt,
+      encryption_salt: encryption_salt,
+      same_site: "Strict",
+      max_age: 60 * 60 * 24 * 7  # 7 days
+    ]
 
   # Cloak encryption key from environment
   cloak_key =

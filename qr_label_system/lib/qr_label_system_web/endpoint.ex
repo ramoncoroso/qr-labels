@@ -8,8 +8,10 @@ defmodule QrLabelSystemWeb.Endpoint do
   # - same_site: "Strict" for better CSRF protection
   # - max_age: Session expiration time
   #
-  # IMPORTANT: In production, override these salts via environment variables
-  # Generate with: mix phx.gen.secret 32
+  # IMPORTANT: In production, these salts MUST be overridden via environment
+  # variables in runtime.exs. Generate with: :crypto.strong_rand_bytes(32) |> Base.encode64()
+  #
+  # The values below are ONLY for development and testing.
   @session_options [
     store: :cookie,
     key: "_qr_label_system_key",
@@ -49,13 +51,54 @@ defmodule QrLabelSystemWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # File upload limits: 10MB max per request, 10MB per field
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
-    pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    pass: ["text/*", "application/json", "multipart/form-data"],
+    json_decoder: Phoenix.json_library(),
+    length: 10_000_000,  # 10MB total request size
+    multipart: [length: 10_000_000]  # 10MB per multipart field
 
   plug Plug.MethodOverride
   plug Plug.Head
+
+  # Security headers for all responses
+  plug :put_security_headers
+
   plug Plug.Session, @session_options
   plug QrLabelSystemWeb.Router
+
+  @doc """
+  Adds security headers to all responses.
+
+  Headers added:
+  - X-Content-Type-Options: Prevents MIME type sniffing
+  - X-Frame-Options: Prevents clickjacking (SAMEORIGIN)
+  - X-XSS-Protection: Legacy XSS protection for older browsers
+  - Referrer-Policy: Controls referrer information
+  - Strict-Transport-Security: Forces HTTPS (production only)
+  - Permissions-Policy: Restricts browser features
+  """
+  def put_security_headers(conn, _opts) do
+    conn
+    |> Plug.Conn.put_resp_header("x-content-type-options", "nosniff")
+    |> Plug.Conn.put_resp_header("x-frame-options", "SAMEORIGIN")
+    |> Plug.Conn.put_resp_header("x-xss-protection", "1; mode=block")
+    |> Plug.Conn.put_resp_header("referrer-policy", "strict-origin-when-cross-origin")
+    |> Plug.Conn.put_resp_header("permissions-policy", "geolocation=(), microphone=(), camera=()")
+    |> maybe_put_hsts_header()
+  end
+
+  # Only add HSTS header in production (when using HTTPS)
+  defp maybe_put_hsts_header(conn) do
+    if Application.get_env(:qr_label_system, :env) == :prod do
+      Plug.Conn.put_resp_header(
+        conn,
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains"
+      )
+    else
+      conn
+    end
+  end
 end
