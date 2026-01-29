@@ -78,6 +78,7 @@ defmodule QrLabelSystemWeb.Endpoint do
   - Referrer-Policy: Controls referrer information
   - Strict-Transport-Security: Forces HTTPS (production only)
   - Permissions-Policy: Restricts browser features
+  - Content-Security-Policy: Controls resource loading
   """
   def put_security_headers(conn, _opts) do
     conn
@@ -86,7 +87,45 @@ defmodule QrLabelSystemWeb.Endpoint do
     |> Plug.Conn.put_resp_header("x-xss-protection", "1; mode=block")
     |> Plug.Conn.put_resp_header("referrer-policy", "strict-origin-when-cross-origin")
     |> Plug.Conn.put_resp_header("permissions-policy", "geolocation=(), microphone=(), camera=()")
+    |> put_csp_header()
     |> maybe_put_hsts_header()
+  end
+
+  # Content Security Policy header
+  # Allows inline scripts/styles for Phoenix LiveView compatibility
+  defp put_csp_header(conn) do
+    csp = build_csp_policy()
+    Plug.Conn.put_resp_header(conn, "content-security-policy", csp)
+  end
+
+  defp build_csp_policy do
+    [
+      "default-src 'self'",
+      # Scripts: self + unsafe-inline for LiveView + unsafe-eval for some JS libs
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      # Styles: self + unsafe-inline for Tailwind/dynamic styles
+      "style-src 'self' 'unsafe-inline'",
+      # Images: self + data URIs for QR codes + blob for canvas
+      "img-src 'self' data: blob:",
+      # Fonts: self + data URIs
+      "font-src 'self' data:",
+      # Connect: self for API calls + websockets
+      "connect-src 'self' ws: wss:",
+      # Frame ancestors: none (we use X-Frame-Options)
+      "frame-ancestors 'self'",
+      # Form actions: self only
+      "form-action 'self'",
+      # Base URI: self
+      "base-uri 'self'",
+      # Object/embed: none
+      "object-src 'none'",
+      # Upgrade insecure requests in production
+      if Application.get_env(:qr_label_system, :env) == :prod do
+        "upgrade-insecure-requests"
+      end
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("; ")
   end
 
   # Only add HSTS header in production (when using HTTPS)

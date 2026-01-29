@@ -1,0 +1,213 @@
+# Spanish error translations for QR Label System
+msgid ""
+msgstr ""
+"Language: es\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+## Ecto/Changeset Errors
+msgid "can't be blank"
+msgstr "no puede estar vacío"
+
+msgid "has already been taken"
+msgstr "ya está en uso"
+
+msgid "is invalid"
+msgstr "es inválido"
+
+msgid "must have the @ sign and no spaces"
+msgstr "debe tener el signo @ y sin espacios"
+
+msgid "should be at least %{count} character(s)"
+msgid_plural "should be at least %{count} character(s)"
+msgstr[0] "debe tener al menos %{count} caracter"
+msgstr[1] "debe tener al menos %{count} caracteres"
+
+msgid "should be at most %{count} character(s)"
+msgid_plural "should be at most %{count} character(s)"
+msgstr[0] "debe tener como máximo %{count} caracter"
+msgstr[1] "debe tener como máximo %{count} caracteres"
+
+msgid "at least one lower case character"
+msgstr "al menos una letra minúscula"
+
+msgid "at least one upper case character"
+msgstr "al menos una letra mayúscula"
+
+msgid "at least one digit or punctuation character"
+msgstr "al menos un dígito o signo de puntuación"
+
+msgid "does not match password"
+msgstr "no coincide con la contraseña"
+
+msgid "is not valid"
+msgstr "no es válido"
+
+msgid "did not change"
+msgstr "no cambió"
+
+msgid "must be one of: admin, operator, viewer"
+msgstr "debe ser uno de: admin, operador, visor"
+
+msgid "must be accepted"
+msgstr "debe ser aceptado"
+
+msgid "has invalid format"
+msgstr "tiene un formato inválido"
+
+msgid "has an invalid entry"
+msgstr "tiene una entrada inválida"
+
+msgid "is reserved"
+msgstr "está reservado"
+
+msgid "does not exist"
+msgstr "no existe"
+
+msgid "must be greater than %{number}"
+msgstr "debe ser mayor que %{number}"
+
+msgid "must be greater than or equal to %{number}"
+msgstr "debe ser mayor o igual a %{number}"
+
+msgid "must be less than %{number}"
+msgstr "debe ser menor que %{number}"
+
+msgid "must be less than or equal to %{number}"
+msgstr "debe ser menor o igual a %{number}"
+
+msgid "must be equal to %{number}"
+msgstr "debe ser igual a %{number}"
+
+## Authentication Errors
+msgid "Invalid email or password"
+msgstr "Email o contraseña inválidos"
+
+msgid "Missing authorization header"
+msgstr "Falta encabezado de autorización"
+
+msgid "Invalid authorization header format"
+msgstr "Formato de encabezado de autorización inválido"
+
+msgid "Empty token provided"
+msgstr "Se proporcionó un token vacío"
+
+msgid "Invalid token encoding"
+msgstr "Codificación de token inválida"
+
+msgid "Invalid or expired token"
+msgstr "Token inválido o expirado"
+
+msgid "Account not confirmed"
+msgstr "Cuenta no confirmada"
+
+msgid "Account is disabled"
+msgstr "La cuenta está deshabilitada"
+
+## Authorization Errors
+msgid "You are not authorized to perform this action"
+msgstr "No tienes autorización para realizar esta acción"
+
+msgid "Admin access required"
+msgstr "Se requiere acceso de administrador"
+
+msgid "Operator access required"
+msgstr "Se requiere acceso de operador"
+
+msgid "Access denied"
+msgstr "Acceso denegado"
+
+## Rate Limiting Errors
+msgid "Too many login attempts. Please try again in 1 minute."
+msgstr "Demasiados intentos de inicio de sesión. Intenta de nuevo en 1 minuto."
+
+msgid "Rate limit exceeded. Please try again later."
+msgstr "Límite de solicitudes excedido. Intenta de nuevo más tarde."
+
+msgid "Too many file uploads. Please try again in 1 minute."
+msgstr "Demasiadas subidas de archivos. Intenta de nuevo en 1 minuto."
+
+msgid "Too many batch generations. Please try again in 1 minute."
+msgstr "Demasiadas generaciones de lotes. Intenta de nuevo en 1 minuto."
+
+## File Upload Errors
+msgid "File is too large"
+msgstr "El archivo es demasiado grande"
+
+msgid "Invalid file type"
+msgstr "Tipo de archivo inválido"
+
+msgid "File upload failed"
+msgstr "Falló la subida del archivo"
+
+msgid "Invalid file name"
+msgstr "Nombre de archivo inválido"
+
+msgid "File not found"
+msgstr "Archivo no encontrado"
+
+## CSRF Errors
+msgid "Missing CSRF token"
+msgstr "Falta token CSRF"
+
+msgid "Invalid CSRF token"
+msgstr "Token CSRF inválido"
+
+msgid "CSRF token expired"
+msgstr "Token CSRF expirado"
+
+## General Errors
+msgid "Something went wrong. Please try again."
+msgstr "Algo salió mal. Por favor intenta de nuevo."
+
+msgid "Page not found"
+msgstr "Página no encontrada"
+
+msgid "Internal server error"
+msgstr "Error interno del servidor"
+
+msgid "Service temporarily unavailable"
+msgstr "Servicio temporalmente no disponible"
+
+msgid "Request timeout"
+msgstr "Tiempo de espera agotado"
+
+msgid "Bad request"
+msgstr "Solicitud incorrecta"
+
+## Database Errors
+msgid "Database connection error"
+msgstr "Error de conexión a base de datos"
+
+msgid "Record not found"
+msgstr "Registro no encontrado"
+
+msgid "Record could not be saved"
+msgstr "No se pudo guardar el registro"
+
+msgid "Record could not be deleted"
+msgstr "No se pudo eliminar el registro"
+
+msgid "Duplicate entry"
+msgstr "Entrada duplicada"
+
+## Business Logic Errors
+msgid "Design not found"
+msgstr "Diseño no encontrado"
+
+msgid "Batch not found"
+msgstr "Lote no encontrado"
+
+msgid "Data source not found"
+msgstr "Fuente de datos no encontrada"
+
+msgid "Invalid design configuration"
+msgstr "Configuración de diseño inválida"
+
+msgid "No data to generate labels"
+msgstr "No hay datos para generar etiquetas"
+
+msgid "Batch generation failed"
+msgstr "Falló la generación del lote"
+
+msgid "Maximum label count exceeded"
+msgstr "Se excedió el número máximo de etiquetas"

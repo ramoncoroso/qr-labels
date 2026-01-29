@@ -1,0 +1,324 @@
+# Spanish translations for QR Label System
+msgid ""
+msgstr ""
+"Language: es\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+## Navigation
+msgid "Home"
+msgstr "Inicio"
+
+msgid "Designs"
+msgstr "Diseños"
+
+msgid "Batches"
+msgstr "Lotes"
+
+msgid "Data Sources"
+msgstr "Fuentes de Datos"
+
+msgid "Settings"
+msgstr "Configuración"
+
+msgid "Users"
+msgstr "Usuarios"
+
+msgid "Audit Log"
+msgstr "Registro de Auditoría"
+
+msgid "Log out"
+msgstr "Cerrar Sesión"
+
+msgid "Log in"
+msgstr "Iniciar Sesión"
+
+msgid "Register"
+msgstr "Registrarse"
+
+## Authentication
+msgid "Email"
+msgstr "Correo Electrónico"
+
+msgid "Password"
+msgstr "Contraseña"
+
+msgid "Remember me"
+msgstr "Recordarme"
+
+msgid "Forgot your password?"
+msgstr "¿Olvidaste tu contraseña?"
+
+msgid "Create an account"
+msgstr "Crear una cuenta"
+
+msgid "Already have an account?"
+msgstr "¿Ya tienes una cuenta?"
+
+msgid "Sign in"
+msgstr "Iniciar sesión"
+
+msgid "Sign up"
+msgstr "Registrarse"
+
+msgid "Current password"
+msgstr "Contraseña actual"
+
+msgid "New password"
+msgstr "Nueva contraseña"
+
+msgid "Confirm new password"
+msgstr "Confirmar nueva contraseña"
+
+msgid "Change password"
+msgstr "Cambiar contraseña"
+
+msgid "Change email"
+msgstr "Cambiar correo"
+
+msgid "Account Settings"
+msgstr "Configuración de Cuenta"
+
+## Designs
+msgid "New Design"
+msgstr "Nuevo Diseño"
+
+msgid "Edit Design"
+msgstr "Editar Diseño"
+
+msgid "Delete Design"
+msgstr "Eliminar Diseño"
+
+msgid "Design Name"
+msgstr "Nombre del Diseño"
+
+msgid "Width (mm)"
+msgstr "Ancho (mm)"
+
+msgid "Height (mm)"
+msgstr "Alto (mm)"
+
+msgid "Elements"
+msgstr "Elementos"
+
+msgid "Add QR Code"
+msgstr "Agregar Código QR"
+
+msgid "Add Barcode"
+msgstr "Agregar Código de Barras"
+
+msgid "Add Text"
+msgstr "Agregar Texto"
+
+msgid "Add Image"
+msgstr "Agregar Imagen"
+
+msgid "Save Design"
+msgstr "Guardar Diseño"
+
+msgid "Preview"
+msgstr "Vista Previa"
+
+## Batches
+msgid "New Batch"
+msgstr "Nuevo Lote"
+
+msgid "Batch Name"
+msgstr "Nombre del Lote"
+
+msgid "Generate Batch"
+msgstr "Generar Lote"
+
+msgid "Print Batch"
+msgstr "Imprimir Lote"
+
+msgid "Export to PDF"
+msgstr "Exportar a PDF"
+
+msgid "Label Count"
+msgstr "Cantidad de Etiquetas"
+
+msgid "Status"
+msgstr "Estado"
+
+msgid "Pending"
+msgstr "Pendiente"
+
+msgid "Processing"
+msgstr "Procesando"
+
+msgid "Completed"
+msgstr "Completado"
+
+msgid "Failed"
+msgstr "Fallido"
+
+msgid "Created At"
+msgstr "Fecha de Creación"
+
+## Data Sources
+msgid "New Data Source"
+msgstr "Nueva Fuente de Datos"
+
+msgid "Upload Excel/CSV"
+msgstr "Subir Excel/CSV"
+
+msgid "Connect Database"
+msgstr "Conectar Base de Datos"
+
+msgid "Source Name"
+msgstr "Nombre de la Fuente"
+
+msgid "Source Type"
+msgstr "Tipo de Fuente"
+
+msgid "File"
+msgstr "Archivo"
+
+msgid "Database"
+msgstr "Base de Datos"
+
+msgid "Columns"
+msgstr "Columnas"
+
+msgid "Rows"
+msgstr "Filas"
+
+msgid "Map Columns"
+msgstr "Mapear Columnas"
+
+## Common Actions
+msgid "Save"
+msgstr "Guardar"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Delete"
+msgstr "Eliminar"
+
+msgid "Edit"
+msgstr "Editar"
+
+msgid "View"
+msgstr "Ver"
+
+msgid "Create"
+msgstr "Crear"
+
+msgid "Update"
+msgstr "Actualizar"
+
+msgid "Search"
+msgstr "Buscar"
+
+msgid "Filter"
+msgstr "Filtrar"
+
+msgid "Export"
+msgstr "Exportar"
+
+msgid "Import"
+msgstr "Importar"
+
+msgid "Refresh"
+msgstr "Actualizar"
+
+msgid "Back"
+msgstr "Volver"
+
+msgid "Next"
+msgstr "Siguiente"
+
+msgid "Previous"
+msgstr "Anterior"
+
+msgid "Loading..."
+msgstr "Cargando..."
+
+msgid "No results found"
+msgstr "No se encontraron resultados"
+
+msgid "Are you sure?"
+msgstr "¿Estás seguro?"
+
+msgid "This action cannot be undone."
+msgstr "Esta acción no se puede deshacer."
+
+## User Roles
+msgid "Admin"
+msgstr "Administrador"
+
+msgid "Operator"
+msgstr "Operador"
+
+msgid "Viewer"
+msgstr "Visor"
+
+msgid "Role"
+msgstr "Rol"
+
+## Flash Messages
+msgid "Welcome!"
+msgstr "¡Bienvenido!"
+
+msgid "Logged out successfully."
+msgstr "Sesión cerrada exitosamente."
+
+msgid "Account created successfully!"
+msgstr "¡Cuenta creada exitosamente!"
+
+msgid "Password updated successfully!"
+msgstr "¡Contraseña actualizada exitosamente!"
+
+msgid "Design saved successfully."
+msgstr "Diseño guardado exitosamente."
+
+msgid "Design deleted successfully."
+msgstr "Diseño eliminado exitosamente."
+
+msgid "Batch created successfully."
+msgstr "Lote creado exitosamente."
+
+msgid "Batch generated successfully."
+msgstr "Lote generado exitosamente."
+
+msgid "Data source added successfully."
+msgstr "Fuente de datos agregada exitosamente."
+
+msgid "You must log in to access this page."
+msgstr "Debes iniciar sesión para acceder a esta página."
+
+msgid "Invalid email or password"
+msgstr "Email o contraseña inválidos"
+
+## Pagination
+msgid "Page"
+msgstr "Página"
+
+msgid "of"
+msgstr "de"
+
+msgid "Showing"
+msgstr "Mostrando"
+
+msgid "entries"
+msgstr "entradas"
+
+## Audit Log
+msgid "Action"
+msgstr "Acción"
+
+msgid "Resource"
+msgstr "Recurso"
+
+msgid "User"
+msgstr "Usuario"
+
+msgid "Timestamp"
+msgstr "Fecha y Hora"
+
+msgid "Details"
+msgstr "Detalles"
+
+msgid "IP Address"
+msgstr "Dirección IP"

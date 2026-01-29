@@ -1,0 +1,324 @@
+# English translations for QR Label System
+msgid ""
+msgstr ""
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+## Navigation
+msgid "Home"
+msgstr "Home"
+
+msgid "Designs"
+msgstr "Designs"
+
+msgid "Batches"
+msgstr "Batches"
+
+msgid "Data Sources"
+msgstr "Data Sources"
+
+msgid "Settings"
+msgstr "Settings"
+
+msgid "Users"
+msgstr "Users"
+
+msgid "Audit Log"
+msgstr "Audit Log"
+
+msgid "Log out"
+msgstr "Log out"
+
+msgid "Log in"
+msgstr "Log in"
+
+msgid "Register"
+msgstr "Register"
+
+## Authentication
+msgid "Email"
+msgstr "Email"
+
+msgid "Password"
+msgstr "Password"
+
+msgid "Remember me"
+msgstr "Remember me"
+
+msgid "Forgot your password?"
+msgstr "Forgot your password?"
+
+msgid "Create an account"
+msgstr "Create an account"
+
+msgid "Already have an account?"
+msgstr "Already have an account?"
+
+msgid "Sign in"
+msgstr "Sign in"
+
+msgid "Sign up"
+msgstr "Sign up"
+
+msgid "Current password"
+msgstr "Current password"
+
+msgid "New password"
+msgstr "New password"
+
+msgid "Confirm new password"
+msgstr "Confirm new password"
+
+msgid "Change password"
+msgstr "Change password"
+
+msgid "Change email"
+msgstr "Change email"
+
+msgid "Account Settings"
+msgstr "Account Settings"
+
+## Designs
+msgid "New Design"
+msgstr "New Design"
+
+msgid "Edit Design"
+msgstr "Edit Design"
+
+msgid "Delete Design"
+msgstr "Delete Design"
+
+msgid "Design Name"
+msgstr "Design Name"
+
+msgid "Width (mm)"
+msgstr "Width (mm)"
+
+msgid "Height (mm)"
+msgstr "Height (mm)"
+
+msgid "Elements"
+msgstr "Elements"
+
+msgid "Add QR Code"
+msgstr "Add QR Code"
+
+msgid "Add Barcode"
+msgstr "Add Barcode"
+
+msgid "Add Text"
+msgstr "Add Text"
+
+msgid "Add Image"
+msgstr "Add Image"
+
+msgid "Save Design"
+msgstr "Save Design"
+
+msgid "Preview"
+msgstr "Preview"
+
+## Batches
+msgid "New Batch"
+msgstr "New Batch"
+
+msgid "Batch Name"
+msgstr "Batch Name"
+
+msgid "Generate Batch"
+msgstr "Generate Batch"
+
+msgid "Print Batch"
+msgstr "Print Batch"
+
+msgid "Export to PDF"
+msgstr "Export to PDF"
+
+msgid "Label Count"
+msgstr "Label Count"
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Pending"
+msgstr "Pending"
+
+msgid "Processing"
+msgstr "Processing"
+
+msgid "Completed"
+msgstr "Completed"
+
+msgid "Failed"
+msgstr "Failed"
+
+msgid "Created At"
+msgstr "Created At"
+
+## Data Sources
+msgid "New Data Source"
+msgstr "New Data Source"
+
+msgid "Upload Excel/CSV"
+msgstr "Upload Excel/CSV"
+
+msgid "Connect Database"
+msgstr "Connect Database"
+
+msgid "Source Name"
+msgstr "Source Name"
+
+msgid "Source Type"
+msgstr "Source Type"
+
+msgid "File"
+msgstr "File"
+
+msgid "Database"
+msgstr "Database"
+
+msgid "Columns"
+msgstr "Columns"
+
+msgid "Rows"
+msgstr "Rows"
+
+msgid "Map Columns"
+msgstr "Map Columns"
+
+## Common Actions
+msgid "Save"
+msgstr "Save"
+
+msgid "Cancel"
+msgstr "Cancel"
+
+msgid "Delete"
+msgstr "Delete"
+
+msgid "Edit"
+msgstr "Edit"
+
+msgid "View"
+msgstr "View"
+
+msgid "Create"
+msgstr "Create"
+
+msgid "Update"
+msgstr "Update"
+
+msgid "Search"
+msgstr "Search"
+
+msgid "Filter"
+msgstr "Filter"
+
+msgid "Export"
+msgstr "Export"
+
+msgid "Import"
+msgstr "Import"
+
+msgid "Refresh"
+msgstr "Refresh"
+
+msgid "Back"
+msgstr "Back"
+
+msgid "Next"
+msgstr "Next"
+
+msgid "Previous"
+msgstr "Previous"
+
+msgid "Loading..."
+msgstr "Loading..."
+
+msgid "No results found"
+msgstr "No results found"
+
+msgid "Are you sure?"
+msgstr "Are you sure?"
+
+msgid "This action cannot be undone."
+msgstr "This action cannot be undone."
+
+## User Roles
+msgid "Admin"
+msgstr "Admin"
+
+msgid "Operator"
+msgstr "Operator"
+
+msgid "Viewer"
+msgstr "Viewer"
+
+msgid "Role"
+msgstr "Role"
+
+## Flash Messages
+msgid "Welcome!"
+msgstr "Welcome!"
+
+msgid "Logged out successfully."
+msgstr "Logged out successfully."
+
+msgid "Account created successfully!"
+msgstr "Account created successfully!"
+
+msgid "Password updated successfully!"
+msgstr "Password updated successfully!"
+
+msgid "Design saved successfully."
+msgstr "Design saved successfully."
+
+msgid "Design deleted successfully."
+msgstr "Design deleted successfully."
+
+msgid "Batch created successfully."
+msgstr "Batch created successfully."
+
+msgid "Batch generated successfully."
+msgstr "Batch generated successfully."
+
+msgid "Data source added successfully."
+msgstr "Data source added successfully."
+
+msgid "You must log in to access this page."
+msgstr "You must log in to access this page."
+
+msgid "Invalid email or password"
+msgstr "Invalid email or password"
+
+## Pagination
+msgid "Page"
+msgstr "Page"
+
+msgid "of"
+msgstr "of"
+
+msgid "Showing"
+msgstr "Showing"
+
+msgid "entries"
+msgstr "entries"
+
+## Audit Log
+msgid "Action"
+msgstr "Action"
+
+msgid "Resource"
+msgstr "Resource"
+
+msgid "User"
+msgstr "User"
+
+msgid "Timestamp"
+msgstr "Timestamp"
+
+msgid "Details"
+msgstr "Details"
+
+msgid "IP Address"
+msgstr "IP Address"
