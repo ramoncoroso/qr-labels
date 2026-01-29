@@ -6,7 +6,11 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, stream(socket, :data_sources, DataSources.list_user_data_sources(socket.assigns.current_user.id))}
+    data_sources = DataSources.list_user_data_sources(socket.assigns.current_user.id)
+    {:ok,
+     socket
+     |> assign(:has_data_sources, length(data_sources) > 0)
+     |> stream(:data_sources, data_sources)}
   end
 
   @impl true
@@ -102,7 +106,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
           </div>
         </div>
 
-        <div :if={@streams.data_sources |> Enum.empty?()} class="text-center py-12">
+        <div :if={not @has_data_sources} class="text-center py-12">
           <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
           </svg>
