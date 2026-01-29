@@ -79,6 +79,9 @@ defmodule QrLabelSystem.MixProject do
       # Internationalization
       {:gettext, "~> 0.20"},
 
+      # Rate limiting
+      {:hammer, "~> 6.1"},
+
       # Dev & Test
       {:floki, ">= 0.30.0", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

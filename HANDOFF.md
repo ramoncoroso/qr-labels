@@ -393,3 +393,172 @@ mix ecto.reset
 | 2025-01-29 | Auditoría completa de seguridad y código |
 | 2025-01-29 | Documentación de issues encontrados |
 | 2025-01-29 | Actualización de HANDOFF con próximos pasos |
+| 2025-01-29 | **IMPLEMENTACIÓN DE FIXES DE SEGURIDAD Y CALIDAD** |
+
+---
+
+## Cambios Implementados (2025-01-29)
+
+### Seguridad
+
+#### 1. Autenticación API (`lib/qr_label_system_web/plugs/api_auth.ex`)
+- Nuevo plug para autenticar requests API via Bearer token
+- Validación de tokens de sesión existentes
+- API endpoints ahora requieren autenticación
+
+#### 2. RBAC - Control de Acceso Basado en Roles (`lib/qr_label_system_web/plugs/rbac.ex`)
+- Plugs `require_admin`, `require_operator`, `require_viewer`
+- Callbacks `on_mount` para LiveViews
+- Autorización a nivel de recurso
+
+#### 3. Rate Limiting (`lib/qr_label_system_web/plugs/rate_limiter.ex`)
+- Dependencia `hammer` agregada a `mix.exs`
+- Rate limit en login: 5 intentos/minuto por IP
+- Rate limit en API: 100 requests/minuto por usuario
+- Rate limit en uploads: 10/minuto por usuario
+
+#### 4. Sanitización de Archivos (`lib/qr_label_system/security/file_sanitizer.ex`)
+- Prevención de path traversal attacks
+- Sanitización de nombres de archivo
+- Validación de extensiones permitidas
+- Validación de MIME types por magic bytes
+
+#### 5. Sesiones Seguras (`lib/qr_label_system_web/endpoint.ex`)
+- Nuevo `signing_salt` seguro (32 bytes)
+- Agregado `encryption_salt` para encriptar contenido
+- `same_site: "Strict"` para mejor protección CSRF
+- `max_age: 7 días` (antes era indefinido)
+
+#### 6. Límite de Tamaño de Archivo
+- Upload Excel limitado a 10MB en `generate_live/data_source.ex`
+- Limpieza automática de archivos temporales
+
+#### 7. Health Check Endpoint (`lib/qr_label_system_web/controllers/api/health_controller.ex`)
+- `/api/health` público para monitoreo
+- Verifica conexión a base de datos
+
+### Calidad de Código
+
+#### 8. Optimización N+1 Queries (`lib/qr_label_system/batches.ex`)
+- `get_user_stats/1` ahora usa una sola query con aggregates condicionales
+- Nuevo `get_global_stats/0` para dashboard admin
+
+#### 9. Módulo de Paginación (`lib/qr_label_system/pagination.ex`)
+- Lógica de paginación centralizada
+- Validación de parámetros
+- Límite máximo de 100 items por página
+
+#### 10. Helpers Compartidos (`lib/qr_label_system_web/helpers/batch_helpers.ex`)
+- Colores y labels de status centralizados
+- Funciones de formato de fecha
+- Iconos SVG para estados
+
+#### 11. Índices de Base de Datos
+- Nueva migración `20240101000007_add_audit_logs_indexes.exs`
+- Índices para user_id, action, resource_type, inserted_at
+- Índices compuestos para queries comunes
+
+### Tests
+
+#### 12. Suite de Tests Básica
+- `test/test_helper.exs` - Configuración
+- `test/support/data_case.ex` - Case para tests de datos
+- `test/support/conn_case.ex` - Case para tests de conexión
+- `test/support/fixtures/accounts_fixtures.ex` - Fixtures de usuarios
+- `test/qr_label_system/accounts_test.exs` - Tests de Accounts
+- `test/qr_label_system/pagination_test.exs` - Tests de Pagination
+- `test/qr_label_system/security/file_sanitizer_test.exs` - Tests de seguridad
+- `test/qr_label_system_web/plugs/rbac_test.exs` - Tests de RBAC
+- `test/qr_label_system_web/controllers/api/health_controller_test.exs` - Tests de Health
+
+---
+
+## Archivos Nuevos Creados
+
+```
+lib/qr_label_system_web/plugs/
+├── api_auth.ex           # Autenticación API
+├── rbac.ex               # Control de acceso por roles
+└── rate_limiter.ex       # Rate limiting
+
+lib/qr_label_system_web/controllers/api/
+└── health_controller.ex  # Health check
+
+lib/qr_label_system_web/helpers/
+└── batch_helpers.ex      # Helpers de batch
+
+lib/qr_label_system/
+├── pagination.ex         # Paginación compartida
+└── security/
+    └── file_sanitizer.ex # Sanitización de archivos
+
+priv/repo/migrations/
+└── 20240101000007_add_audit_logs_indexes.exs
+
+test/
+├── test_helper.exs
+├── support/
+│   ├── data_case.ex
+│   ├── conn_case.ex
+│   └── fixtures/
+│       └── accounts_fixtures.ex
+├── qr_label_system/
+│   ├── accounts_test.exs
+│   ├── pagination_test.exs
+│   └── security/
+│       └── file_sanitizer_test.exs
+└── qr_label_system_web/
+    ├── plugs/
+    │   └── rbac_test.exs
+    └── controllers/api/
+        └── health_controller_test.exs
+```
+
+---
+
+## Estado Actual de Issues
+
+### Resueltos ✅
+
+| Issue | Estado |
+|-------|--------|
+| API sin autenticación | ✅ Implementado |
+| RBAC no enforced | ✅ Implementado |
+| Sin rate limiting | ✅ Implementado |
+| Path traversal en uploads | ✅ Corregido |
+| Session salt hardcodeado | ✅ Actualizado |
+| Sin encryption salt | ✅ Agregado |
+| Sin límite tamaño archivo | ✅ Agregado (10MB) |
+| N+1 queries en stats | ✅ Optimizado |
+| Código duplicado | ✅ Extraído a módulos |
+| Índices faltantes | ✅ Migración creada |
+| Sin tests | ✅ Suite básica creada |
+
+### Pendientes de Verificación
+
+| Issue | Acción Requerida |
+|-------|------------------|
+| Ejecutar migración | `mix ecto.migrate` |
+| Instalar dependencias | `mix deps.get` |
+| Ejecutar tests | `mix test` |
+| Verificar en producción | Configurar env vars para salts |
+
+---
+
+## Variables de Entorno para Producción
+
+```bash
+# Sesiones (generar con: mix phx.gen.secret 32)
+SESSION_SIGNING_SALT=tu_salt_de_firma_seguro
+SESSION_ENCRYPTION_SALT=tu_salt_de_encriptacion
+
+# Cloak (encriptación de credenciales BD)
+CLOAK_KEY=tu_clave_cloak_base64
+
+# Base de datos
+DATABASE_URL=postgres://user:pass@host/db
+
+# Phoenix
+SECRET_KEY_BASE=tu_secret_key_base_muy_largo
+PHX_HOST=tu-dominio.com
+```

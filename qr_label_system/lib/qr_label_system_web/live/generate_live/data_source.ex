@@ -3,6 +3,10 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.DataSources
+  alias QrLabelSystem.Security.FileSanitizer
+
+  # Maximum file size: 10 MB
+  @max_file_size 10 * 1024 * 1024
 
   @impl true
   def mount(%{"design_id" => design_id}, _session, socket) do
@@ -17,7 +21,11 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
      |> assign(:upload_data, nil)
      |> assign(:upload_columns, [])
      |> assign(:upload_error, nil)
-     |> allow_upload(:excel_file, accept: ~w(.xlsx .xls .csv), max_entries: 1)}
+     |> allow_upload(:excel_file,
+       accept: ~w(.xlsx .xls .csv),
+       max_entries: 1,
+       max_file_size: @max_file_size
+     )}
   end
 
   @impl true
@@ -29,25 +37,43 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
   def handle_event("upload_file", _params, socket) do
     uploaded_files =
       consume_uploaded_entries(socket, :excel_file, fn %{path: path}, entry ->
-        # Copy to a permanent location
-        dest = Path.join(System.tmp_dir!(), "#{Ecto.UUID.generate()}_#{entry.client_name}")
-        File.cp!(path, dest)
-        {:ok, dest}
+        # Sanitize filename to prevent path traversal attacks
+        case FileSanitizer.safe_upload_path(entry.client_name) do
+          {:ok, dest} ->
+            File.cp!(path, dest)
+            {:ok, dest}
+
+          {:error, :path_traversal_detected} ->
+            {:error, "Invalid filename detected"}
+        end
       end)
 
     case uploaded_files do
-      [file_path] ->
-        case QrLabelSystem.DataSources.ExcelParser.parse_file(file_path) do
-          {:ok, %{columns: columns, rows: rows}} ->
+      [{:ok, file_path}] ->
+        # Parse the file and clean up after
+        result = QrLabelSystem.DataSources.ExcelParser.parse_file(file_path)
+
+        # Schedule cleanup of temp file
+        Task.start(fn ->
+          Process.sleep(60_000)  # Keep for 1 minute
+          File.rm(file_path)
+        end)
+
+        case result do
+          {:ok, %{headers: headers, rows: rows}} ->
             {:noreply,
              socket
              |> assign(:upload_data, rows)
-             |> assign(:upload_columns, columns)
+             |> assign(:upload_columns, headers)
              |> assign(:upload_error, nil)}
 
           {:error, reason} ->
+            File.rm(file_path)
             {:noreply, assign(socket, :upload_error, reason)}
         end
+
+      [{:error, reason}] ->
+        {:noreply, assign(socket, :upload_error, reason)}
 
       [] ->
         {:noreply, socket}

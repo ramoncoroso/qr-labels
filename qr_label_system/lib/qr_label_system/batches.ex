@@ -222,15 +222,57 @@ defmodule QrLabelSystem.Batches do
 
   @doc """
   Returns batch statistics for a user.
+
+  Optimized to use a single query with conditional aggregates
+  instead of multiple queries (N+1 fix).
   """
   def get_user_stats(user_id) do
-    query = from(b in Batch, where: b.user_id == ^user_id)
+    # Single query with conditional counts
+    result =
+      from(b in Batch,
+        where: b.user_id == ^user_id,
+        select: %{
+          total_batches: count(b.id),
+          total_labels: coalesce(sum(b.total_labels), 0),
+          printed_batches: sum(fragment("CASE WHEN ? = 'printed' THEN 1 ELSE 0 END", b.status)),
+          draft_batches: sum(fragment("CASE WHEN ? = 'draft' THEN 1 ELSE 0 END", b.status)),
+          pending_batches: sum(fragment("CASE WHEN ? = 'pending' THEN 1 ELSE 0 END", b.status))
+        }
+      )
+      |> Repo.one()
+
+    # Ensure we return integers, not nil
+    %{
+      total_batches: result.total_batches || 0,
+      total_labels: result.total_labels || 0,
+      printed_batches: result.printed_batches || 0,
+      draft_batches: result.draft_batches || 0,
+      pending_batches: result.pending_batches || 0
+    }
+  end
+
+  @doc """
+  Returns global batch statistics (for admin dashboard).
+  """
+  def get_global_stats do
+    result =
+      from(b in Batch,
+        select: %{
+          total_batches: count(b.id),
+          total_labels: coalesce(sum(b.total_labels), 0),
+          printed_batches: sum(fragment("CASE WHEN ? = 'printed' THEN 1 ELSE 0 END", b.status)),
+          draft_batches: sum(fragment("CASE WHEN ? = 'draft' THEN 1 ELSE 0 END", b.status)),
+          unique_users: count(b.user_id, :distinct)
+        }
+      )
+      |> Repo.one()
 
     %{
-      total_batches: Repo.aggregate(query, :count),
-      total_labels: Repo.aggregate(query, :sum, :total_labels) || 0,
-      printed_batches: Repo.aggregate(from(b in query, where: b.status == "printed"), :count),
-      draft_batches: Repo.aggregate(from(b in query, where: b.status == "draft"), :count)
+      total_batches: result.total_batches || 0,
+      total_labels: result.total_labels || 0,
+      printed_batches: result.printed_batches || 0,
+      draft_batches: result.draft_batches || 0,
+      unique_users: result.unique_users || 0
     }
   end
 end

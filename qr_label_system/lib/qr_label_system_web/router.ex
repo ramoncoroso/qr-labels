@@ -2,6 +2,8 @@ defmodule QrLabelSystemWeb.Router do
   use QrLabelSystemWeb, :router
 
   import QrLabelSystemWeb.UserAuth
+  import QrLabelSystemWeb.Plugs.RBAC
+  import QrLabelSystemWeb.Plugs.RateLimiter
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -15,6 +17,25 @@ defmodule QrLabelSystemWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :rate_limit_api
+  end
+
+  pipeline :api_auth do
+    plug :accepts, ["json"]
+    plug :rate_limit_api
+    plug QrLabelSystemWeb.Plugs.ApiAuth, :authenticate_api
+  end
+
+  pipeline :admin_only do
+    plug :require_admin
+  end
+
+  pipeline :operator_only do
+    plug :require_operator
+  end
+
+  pipeline :rate_limited_login do
+    plug :rate_limit_login
   end
 
   # Public routes
@@ -49,6 +70,13 @@ defmodule QrLabelSystemWeb.Router do
     end
 
     post "/users/log_in", UserSessionController, :create
+  end
+
+  # Rate limited login endpoint (separate for rate limiting)
+  scope "/", QrLabelSystemWeb do
+    pipe_through [:browser, :rate_limited_login, :redirect_if_user_is_authenticated]
+
+    post "/users/log_in/limited", UserSessionController, :create
   end
 
   scope "/", QrLabelSystemWeb do
@@ -98,9 +126,9 @@ defmodule QrLabelSystemWeb.Router do
     end
   end
 
-  # API routes for JSON endpoints
+  # API routes for JSON endpoints (authenticated)
   scope "/api", QrLabelSystemWeb.API do
-    pipe_through :api
+    pipe_through :api_auth
 
     # Design export/import
     get "/designs/:id/export", DesignController, :export
@@ -109,5 +137,12 @@ defmodule QrLabelSystemWeb.Router do
     # Data preview
     post "/data-sources/:id/preview", DataSourceController, :preview
     post "/data-sources/test-connection", DataSourceController, :test_connection
+  end
+
+  # Health check endpoint (public, no auth required)
+  scope "/api", QrLabelSystemWeb.API do
+    pipe_through :api
+
+    get "/health", HealthController, :check
   end
 end

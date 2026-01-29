@@ -1,14 +1,22 @@
 defmodule QrLabelSystemWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :qr_label_system
 
-  # The session will be stored in the cookie and signed,
-  # this means its contents can be read but not tampered with.
-  # Set :encryption_salt if you would also like to encrypt it.
+  # The session will be stored in the cookie and signed and encrypted.
+  # Session security configuration:
+  # - signing_salt: Ensures session integrity (prevents tampering)
+  # - encryption_salt: Encrypts session contents (prevents reading)
+  # - same_site: "Strict" for better CSRF protection
+  # - max_age: Session expiration time
+  #
+  # IMPORTANT: In production, override these salts via environment variables
+  # Generate with: mix phx.gen.secret 32
   @session_options [
     store: :cookie,
     key: "_qr_label_system_key",
-    signing_salt: "vQ8sKL3x",
-    same_site: "Lax"
+    signing_salt: "Kx8mP2qL9nR4vT7wY1zA3bC6dE8fG0hJ",
+    encryption_salt: "Nq5rS8uV2xY4zA7bC0dE3fG6hI9jK1lM",
+    same_site: "Strict",
+    max_age: 60 * 60 * 24 * 7  # 7 days
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
