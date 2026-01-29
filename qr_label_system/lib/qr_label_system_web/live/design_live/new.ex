@@ -1,6 +1,8 @@
 defmodule QrLabelSystemWeb.DesignLive.New do
   use QrLabelSystemWeb, :live_view
 
+  import Plug.CSRFProtection, only: [get_csrf_token: 0]
+
   alias QrLabelSystem.Designs
   alias QrLabelSystem.Designs.Design
 
@@ -60,7 +62,10 @@ defmodule QrLabelSystemWeb.DesignLive.New do
           id="design-form"
           phx-change="validate"
           phx-submit="save"
+          action={~p"/designs/new"}
+          method="post"
         >
+          <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
           <.input field={@form[:name]} type="text" label="Nombre del diseño" required />
           <.input field={@form[:description]} type="textarea" label="Descripción" />
 

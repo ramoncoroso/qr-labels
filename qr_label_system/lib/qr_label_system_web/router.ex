@@ -86,6 +86,9 @@ defmodule QrLabelSystemWeb.Router do
   scope "/", QrLabelSystemWeb do
     pipe_through [:browser, :require_authenticated_user]
 
+    # POST fallback for design creation when LiveView websocket fails
+    post "/designs/new", DesignController, :create
+
     live_session :require_authenticated_user,
       on_mount: [{QrLabelSystemWeb.UserAuth, :ensure_authenticated}] do
       # User settings
