@@ -15,8 +15,17 @@ defmodule QrLabelSystem.Accounts.UserNotifier do
       |> subject(subject)
       |> text_body(body)
 
-    with {:ok, _metadata} <- Mailer.deliver(email) do
-      {:ok, email}
+    require Logger
+    Logger.info("Sending email to #{recipient}: #{subject}")
+
+    case Mailer.deliver(email) do
+      {:ok, _metadata} = result ->
+        Logger.info("Email sent successfully to #{recipient}")
+        {:ok, email}
+
+      {:error, reason} = error ->
+        Logger.error("Failed to send email to #{recipient}: #{inspect(reason)}")
+        error
     end
   end
 

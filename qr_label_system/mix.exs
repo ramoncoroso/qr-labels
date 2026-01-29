@@ -51,6 +51,7 @@ defmodule QrLabelSystem.MixProject do
 
       # Email
       {:swoosh, "~> 1.14"},
+      {:phoenix_swoosh, "~> 1.2"},
       {:gen_smtp, "~> 1.2"},
 
       # Encryption for sensitive data
