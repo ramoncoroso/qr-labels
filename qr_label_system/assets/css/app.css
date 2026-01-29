@@ -7,12 +7,16 @@
   html {
     scroll-behavior: smooth;
   }
+
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
 }
 
 @layer components {
   /* Label editor canvas */
   .canvas-container {
-    @apply bg-gray-100 rounded-lg p-4;
+    @apply bg-slate-100 rounded-lg p-4;
   }
 
   /* Print preview styles */
@@ -22,7 +26,17 @@
 
   /* Loading states */
   .loading-spinner {
-    @apply animate-spin h-5 w-5 text-indigo-600;
+    @apply animate-spin h-5 w-5 text-blue-600;
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors;
+  }
+
+  /* Secondary button */
+  .btn-secondary {
+    @apply bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg transition-colors;
   }
 }
 
@@ -67,7 +81,7 @@
 input:focus,
 select:focus,
 textarea:focus {
-  @apply ring-2 ring-indigo-500 ring-offset-2;
+  @apply ring-2 ring-blue-500 ring-offset-2;
 }
 
 /* Custom scrollbar */
@@ -77,21 +91,21 @@ textarea:focus {
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100 rounded;
+  @apply bg-slate-100 rounded;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded hover:bg-gray-400;
+  @apply bg-slate-300 rounded hover:bg-slate-400;
 }
 
 /* Drag and drop zone */
 .drop-zone {
-  @apply border-2 border-dashed border-gray-300 rounded-lg p-8 text-center transition-colors;
+  @apply border-2 border-dashed border-slate-300 rounded-lg p-8 text-center transition-colors;
 }
 
 .drop-zone.active,
 .drop-zone:hover {
-  @apply border-indigo-400 bg-indigo-50;
+  @apply border-blue-400 bg-blue-50;
 }
 
 /* Color picker input */
@@ -111,15 +125,15 @@ input[type="color"]::-webkit-color-swatch {
 
 /* Table styles */
 .data-table {
-  @apply min-w-full divide-y divide-gray-200;
+  @apply min-w-full divide-y divide-slate-200;
 }
 
 .data-table th {
-  @apply px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+  @apply px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider;
 }
 
 .data-table td {
-  @apply px-4 py-3 text-sm text-gray-900;
+  @apply px-4 py-3 text-sm text-slate-900;
 }
 
 /* Card hover effect */
@@ -150,15 +164,15 @@ input[type="color"]::-webkit-color-swatch {
 
 /* Step progress indicator */
 .step-active {
-  @apply bg-indigo-600 text-white;
+  @apply bg-blue-600 text-white;
 }
 
 .step-complete {
-  @apply bg-green-600 text-white;
+  @apply bg-emerald-600 text-white;
 }
 
 .step-pending {
-  @apply bg-gray-300 text-gray-500;
+  @apply bg-slate-300 text-slate-500;
 }
 
 /* Modal backdrop */
@@ -173,10 +187,24 @@ input[type="color"]::-webkit-color-swatch {
 
 [data-tooltip]:hover::after {
   content: attr(data-tooltip);
-  @apply absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap z-50;
+  @apply absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-slate-800 rounded whitespace-nowrap z-50;
 }
 
 /* Focus visible for accessibility */
 .focus-visible:focus-visible {
-  @apply ring-2 ring-indigo-500 ring-offset-2;
+  @apply ring-2 ring-blue-500 ring-offset-2;
+}
+
+/* Links */
+a.link {
+  @apply text-blue-600 hover:text-blue-800 transition-colors;
+}
+
+/* Cards */
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-slate-200 p-6;
+}
+
+.card-hover:hover {
+  @apply shadow-md border-slate-300;
 }

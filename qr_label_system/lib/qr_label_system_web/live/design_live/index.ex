@@ -92,21 +92,21 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       <div class="mt-8">
         <div id="designs" phx-update="stream" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
+          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
             <div class="p-4">
               <div class="flex justify-between items-start">
                 <div>
-                  <h3 class="text-lg font-semibold text-gray-900"><%= design.name %></h3>
-                  <p class="text-sm text-gray-500 mt-1"><%= design.description || "Sin descripción" %></p>
+                  <h3 class="text-lg font-semibold text-slate-900"><%= design.name %></h3>
+                  <p class="text-sm text-slate-500 mt-1"><%= design.description || "Sin descripción" %></p>
                 </div>
                 <%= if design.is_template do %>
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     Plantilla
                   </span>
                 <% end %>
               </div>
 
-              <div class="mt-4 flex items-center space-x-4 text-sm text-gray-600">
+              <div class="mt-4 flex items-center space-x-4 text-sm text-slate-600">
                 <div class="flex items-center">
                   <svg class="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -121,20 +121,20 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                 </div>
               </div>
 
-              <div class="mt-4 pt-4 border-t border-gray-100 flex justify-between">
+              <div class="mt-4 pt-4 border-t border-slate-100 flex justify-between">
                 <div class="flex space-x-2">
-                  <.link navigate={~p"/designs/#{design.id}/edit"} class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+                  <.link navigate={~p"/designs/#{design.id}/edit"} class="text-blue-600 hover:text-blue-800 text-sm font-medium">
                     Editar
                   </.link>
-                  <.link navigate={~p"/designs/#{design.id}"} class="text-gray-600 hover:text-gray-800 text-sm font-medium">
+                  <.link navigate={~p"/designs/#{design.id}"} class="text-slate-600 hover:text-slate-800 text-sm font-medium">
                     Ver
                   </.link>
                 </div>
                 <div class="flex space-x-2">
-                  <button phx-click="duplicate" phx-value-id={design.id} class="text-gray-500 hover:text-gray-700 text-sm">
+                  <button phx-click="duplicate" phx-value-id={design.id} class="text-slate-500 hover:text-slate-700 text-sm">
                     Duplicar
                   </button>
-                  <button phx-click="export" phx-value-id={design.id} class="text-gray-500 hover:text-gray-700 text-sm">
+                  <button phx-click="export" phx-value-id={design.id} class="text-slate-500 hover:text-slate-700 text-sm">
                     Exportar
                   </button>
                   <button
@@ -152,11 +152,11 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         </div>
 
         <div :if={not @has_designs} class="text-center py-12">
-          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <h3 class="mt-2 text-sm font-medium text-gray-900">No hay diseños</h3>
-          <p class="mt-1 text-sm text-gray-500">Comienza creando un nuevo diseño de etiqueta.</p>
+          <h3 class="mt-2 text-sm font-medium text-slate-900">No hay diseños</h3>
+          <p class="mt-1 text-sm text-slate-500">Comienza creando un nuevo diseño de etiqueta.</p>
           <div class="mt-6">
             <.link patch={~p"/designs/new"}>
               <.button>+ Nuevo Diseño</.button>
