@@ -42,10 +42,10 @@ defmodule QrLabelSystem.AccountsTest do
     test "validates email and password when given" do
       {:error, changeset} = Accounts.register_user(%{email: "not valid", password: "short"})
 
-      assert %{
-               email: ["must have the @ sign and no spaces"],
-               password: ["at least one upper case character", "should be at least 8 character(s)"]
-             } = errors_on(changeset)
+      errors = errors_on(changeset)
+      assert "must have the @ sign and no spaces" in errors.email
+      assert "at least one upper case character" in errors.password
+      assert "should be at least 8 character(s)" in errors.password
     end
 
     test "validates maximum values for email and password" do

@@ -113,14 +113,16 @@ defmodule QrLabelSystem.Logger.StructuredLogger do
 
   defp sanitize_sensitive_data(data) do
     Enum.map(data, fn {key, value} ->
-      atom_key = if is_binary(key), do: String.to_existing_atom(key), else: key
-      if atom_key in @sensitive_keys do
-        {key, "[REDACTED]"}
-      else
-        {key, value}
+      try do
+        atom_key = if is_binary(key), do: String.to_existing_atom(key), else: key
+        if atom_key in @sensitive_keys do
+          {key, "[REDACTED]"}
+        else
+          {key, value}
+        end
+      rescue
+        ArgumentError -> {key, value}
       end
-    rescue
-      ArgumentError -> {key, value}
     end)
     |> Map.new()
   end

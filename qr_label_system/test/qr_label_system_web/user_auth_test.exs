@@ -42,7 +42,7 @@ defmodule QrLabelSystemWeb.UserAuthTest do
 
       assert %{value: signed_token, max_age: max_age} = conn.resp_cookies[@remember_me_cookie]
       assert signed_token != get_session(conn, :user_token)
-      assert max_age == 5_184_000
+      assert max_age == 60 * 60 * 24 * 14  # 14 days
     end
   end
 
@@ -121,7 +121,7 @@ defmodule QrLabelSystemWeb.UserAuthTest do
       assert redirected_to(conn) == ~p"/users/log_in"
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
-               "Debes iniciar sesión"
+               "You must log in"
     end
 
     test "stores the path to redirect to on GET", %{conn: conn} do

@@ -2,8 +2,8 @@ import Config
 
 # Configure your database
 config :qr_label_system, QrLabelSystem.Repo,
-  username: "postgres",
-  password: "postgres",
+  username: "coroso",
+  password: "",
   hostname: "localhost",
   database: "qr_label_system_dev",
   stacktrace: true,

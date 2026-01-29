@@ -23,6 +23,7 @@ defmodule QrLabelSystemWeb.Plugs.RateLimiter do
   """
   import Plug.Conn
   import Phoenix.Controller
+  import Bitwise
 
   @retry_after_seconds 60
   @default_window_ms 60_000

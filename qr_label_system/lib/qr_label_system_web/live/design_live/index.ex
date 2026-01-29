@@ -6,7 +6,11 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, stream(socket, :designs, Designs.list_designs(socket.assigns.current_user.id))}
+    designs = Designs.list_user_designs(socket.assigns.current_user.id)
+    {:ok,
+     socket
+     |> assign(:has_designs, length(designs) > 0)
+     |> stream(:designs, designs)}
   end
 
   @impl true
@@ -147,7 +151,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </div>
 
-        <div :if={@streams.designs |> Enum.empty?()} class="text-center py-12">
+        <div :if={not @has_designs} class="text-center py-12">
           <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>

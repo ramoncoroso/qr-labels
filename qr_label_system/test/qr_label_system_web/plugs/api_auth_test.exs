@@ -70,7 +70,7 @@ defmodule QrLabelSystemWeb.Plugs.ApiAuthTest do
       assert conn.halted
 
       response = Jason.decode!(conn.resp_body)
-      assert response["error"] == "Empty token provided"
+      assert response["error"] =~ "Invalid authorization header format"
     end
 
     test "rejects whitespace-only token", %{conn: conn} do

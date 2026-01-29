@@ -2,8 +2,8 @@ import Config
 
 # Configure your database
 config :qr_label_system, QrLabelSystem.Repo,
-  username: "postgres",
-  password: "postgres",
+  username: "coroso",
+  password: "",
   hostname: "localhost",
   database: "qr_label_system_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
@@ -34,7 +34,7 @@ config :qr_label_system, QrLabelSystem.Vault,
       Cloak.Ciphers.AES.GCM,
       tag: "AES.GCM.V1",
       # This is a test-only key
-      key: Base.decode64!("T3stK3yF0rT3st1ngPurp0s3s0nly32B="),
+      key: Base.decode64!("qmirOjOMQ6BfH2RmVNiWQqKMfvLJTe+8nDWk7XH3lEI="),
       iv_length: 12
     }
   ]

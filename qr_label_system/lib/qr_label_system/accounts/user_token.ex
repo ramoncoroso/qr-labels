@@ -88,6 +88,7 @@ defmodule QrLabelSystem.Accounts.UserToken do
 
   defp days_for_context("confirm"), do: 7
   defp days_for_context("reset_password"), do: 1
+  defp days_for_context("change:" <> _), do: 7
 
   @doc """
   Returns the token struct for the given token value and context.

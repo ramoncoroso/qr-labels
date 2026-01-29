@@ -250,6 +250,53 @@ defmodule QrLabelSystem.Accounts do
     |> Ecto.Multi.delete_all(:tokens, UserToken.by_user_and_contexts_query(user, ["confirm"]))
   end
 
+  ## Email delivery (stub implementations for development)
+
+  @doc """
+  Delivers the confirmation instructions to the given user.
+
+  In production, this would send an actual email.
+  For development/testing, it just returns the token.
+  """
+  def deliver_user_confirmation_instructions(%User{} = user, confirmation_url_fun)
+      when is_function(confirmation_url_fun, 1) do
+    {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
+    Repo.insert!(user_token)
+    # In production, send email here
+    {:ok, %{to: user.email, url: confirmation_url_fun.(encoded_token)}}
+  end
+
+  @doc """
+  Delivers the reset password instructions to the given user.
+  """
+  def deliver_user_reset_password_instructions(%User{} = user, reset_password_url_fun)
+      when is_function(reset_password_url_fun, 1) do
+    {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
+    Repo.insert!(user_token)
+    {:ok, %{to: user.email, url: reset_password_url_fun.(encoded_token)}}
+  end
+
+  @doc """
+  Delivers the update email instructions to the given user.
+  """
+  def deliver_user_update_email_instructions(%User{} = user, current_email, update_email_url_fun)
+      when is_function(update_email_url_fun, 1) do
+    {encoded_token, user_token} = UserToken.build_email_token(user, "change:#{current_email}")
+    Repo.insert!(user_token)
+    {:ok, %{to: user.email, url: update_email_url_fun.(encoded_token)}}
+  end
+
+  @doc """
+  Applies the given email change to the user.
+  Returns {:ok, applied_user} if successful, {:error, changeset} otherwise.
+  """
+  def apply_user_email(user, password, attrs) do
+    user
+    |> User.email_changeset(attrs)
+    |> User.validate_current_password(password)
+    |> Ecto.Changeset.apply_action(:update)
+  end
+
   ## Reset password
 
   @doc """
