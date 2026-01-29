@@ -21,7 +21,7 @@ defmodule QrLabelSystemWeb.HomeLive do
               </svg>
             </div>
             <h1 class="text-2xl font-bold text-gray-900 mb-2">QR Label System</h1>
-            <p class="text-gray-600 text-sm">Genera etiquetas con codigos QR desde tus datos</p>
+            <p class="text-gray-600 text-sm">Genera etiquetas con códigos QR desde tus datos</p>
           </div>
 
           <!-- Login Card -->
@@ -103,8 +103,8 @@ defmodule QrLabelSystemWeb.HomeLive do
                     1
                   </div>
                   <div>
-                    <h3 class="text-sm font-medium text-gray-900">Disena tu etiqueta</h3>
-                    <p class="text-xs text-gray-500 mt-0.5">Crea plantillas con campos dinamicos, logos y codigos QR</p>
+                    <h3 class="text-sm font-medium text-gray-900">Diseña tu etiqueta</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">Crea plantillas con campos dinámicos, logos y códigos QR</p>
                   </div>
                 </div>
 
@@ -164,10 +164,10 @@ defmodule QrLabelSystemWeb.HomeLive do
     {:ok,
      assign(socket,
        page_title: "Generador de Etiquetas QR",
-       meta_description: "Crea etiquetas profesionales con codigos QR. Importa datos desde Excel o CSV, disena tus plantillas y genera lotes de etiquetas listas para imprimir.",
-       meta_keywords: "etiquetas QR, generador QR, codigos QR, etiquetas productos, impresion etiquetas, Excel a QR",
+       meta_description: "Crea etiquetas profesionales con códigos QR. Importa datos desde Excel o CSV, diseña tus plantillas y genera lotes de etiquetas listas para imprimir.",
+       meta_keywords: "etiquetas QR, generador QR, códigos QR, etiquetas productos, impresión etiquetas, Excel a QR",
        og_title: "QR Label System",
-       og_description: "Genera etiquetas con codigos QR desde tus datos. Importa Excel, disena plantillas e imprime.",
+       og_description: "Genera etiquetas con códigos QR desde tus datos. Importa Excel, diseña plantillas e imprime.",
        body_class: "bg-gray-50",
        email: sent_to_email || "",
        magic_link_sent: magic_link_sent,
