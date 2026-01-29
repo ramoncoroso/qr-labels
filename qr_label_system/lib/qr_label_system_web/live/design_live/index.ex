@@ -83,11 +83,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       <.header>
         Diseños de Etiquetas
         <:subtitle>Crea y administra tus diseños de etiquetas personalizadas</:subtitle>
-        <:actions>
-          <.link patch={~p"/designs/new"}>
-            <.button>+ Nuevo Diseño</.button>
-          </.link>
-        </:actions>
       </.header>
 
       <div class="mt-8">

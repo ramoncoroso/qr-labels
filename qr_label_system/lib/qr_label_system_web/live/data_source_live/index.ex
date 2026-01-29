@@ -60,11 +60,6 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
       <.header>
         Fuentes de Datos
         <:subtitle>Configura conexiones a Excel, CSV o bases de datos externas</:subtitle>
-        <:actions>
-          <.link patch={~p"/data-sources/new"}>
-            <.button>+ Nueva Fuente</.button>
-          </.link>
-        </:actions>
       </.header>
 
       <div class="mt-8">

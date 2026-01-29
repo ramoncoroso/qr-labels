@@ -36,11 +36,6 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
       <.header>
         Lotes Generados
         <:subtitle>Historial de lotes de etiquetas generados</:subtitle>
-        <:actions>
-          <.link navigate={~p"/generate"}>
-            <.button>+ Generar Nuevo Lote</.button>
-          </.link>
-        </:actions>
       </.header>
 
       <div class="mt-8">
