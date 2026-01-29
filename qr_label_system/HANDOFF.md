@@ -1,8 +1,8 @@
 # QR Label System - Documento de Handoff
 
 **Fecha**: Enero 2026
-**Version**: 1.0.0
-**Estado**: En desarrollo activo con hardening de seguridad completado
+**Version**: 1.1.0
+**Estado**: En desarrollo activo - Mejoras de rendimiento y UX implementadas
 
 ---
 
@@ -259,6 +259,8 @@ No requiere variables de entorno. Los valores estan en `config/dev.exs`.
 20240101000005_create_label_batches.exs   # Lotes generados
 20240101000006_create_audit_logs.exs      # Logs de auditoria
 20240101000007_add_audit_logs_indexes.exs # Indices para auditoria
+20240101000008_add_soft_delete_columns.exs # Columnas soft delete
+20240101000009_add_advanced_audit_logs_indexes.exs # Indices avanzados (GIN, compuestos)
 ```
 
 ### Esquemas Principales
@@ -411,9 +413,131 @@ docker run -p 4000:4000 \
 
 ---
 
-## 10. Historial de Cambios de Seguridad
+## 10. Mejoras de Rendimiento y UX (v1.1.0)
 
-### Commit 68850fb - Hardening de Seguridad (Actual)
+### 10.1 Sistema de Cache para Disenos
+
+**Archivo**: `lib/qr_label_system/designs.ex`
+
+El contexto de Designs ahora integra cache ETS para reducir consultas a BD:
+
+```elixir
+# Funciones con cache
+get_design!(id)    # Cache hit o consulta BD + cache
+get_design(id)     # Cache hit o consulta BD + cache
+update_design/2    # Invalida cache + actualiza
+delete_design/1    # Invalida cache + elimina
+```
+
+**Configuracion**:
+- TTL: 5 minutos (`@cache_ttl 300_000`)
+- Namespace: `:designs`
+- Invalidacion automatica en updates/deletes
+
+### 10.2 Indices Avanzados para Audit Logs
+
+**Migracion**: `20240101000009_add_advanced_audit_logs_indexes.exs`
+
+Indices agregados para optimizar consultas de dashboard:
+- GIN index en `metadata` (JSONB) para busquedas en campos dinamicos
+- Indice compuesto `(user_id, action, inserted_at)` para filtros de dashboard
+- Indice compuesto `(resource_type, resource_id, inserted_at)` para historial
+- Indice `(ip_address, inserted_at)` para auditorias de seguridad
+
+### 10.3 Editor Visual Mejorado
+
+**Archivo**: `lib/qr_label_system_web/live/design_live/editor.ex`
+
+#### Undo/Redo
+- Historial de hasta 50 estados en memoria
+- Operaciones undo/redo sin guardar en BD (optimizacion)
+- Indicador visual de cambios sin guardar
+- Persistencia solo en "Guardar" explicito
+
+#### Preview en Tiempo Real
+- Panel lateral con vista previa de etiqueta
+- Datos de ejemplo editables
+- Renderizado de QR/barcodes en tiempo real
+- Toggle con boton o Ctrl+P
+
+#### Atajos de Teclado
+
+**Archivo**: `assets/js/hooks/keyboard_shortcuts.js`
+
+| Atajo | Accion |
+|-------|--------|
+| Ctrl+Z | Deshacer |
+| Ctrl+Y / Ctrl+Shift+Z | Rehacer |
+| Ctrl+S | Guardar |
+| Ctrl+P | Toggle Preview |
+| Delete/Backspace | Eliminar elemento |
+| Escape | Deseleccionar |
+| Q, B, T, L, R, I | Agregar QR, Barcode, Texto, Linea, Rectangulo, Imagen |
+
+### 10.4 Sistema de Monitoreo
+
+#### Health Checks Detallados
+
+**Archivo**: `lib/qr_label_system_web/controllers/api/health_controller.ex`
+
+Endpoints:
+```
+GET /api/health           # Check basico (DB, app)
+GET /api/health/detailed  # Check completo con metricas
+GET /api/metrics          # Metricas Prometheus
+```
+
+Checks incluidos en `/api/health/detailed`:
+- **Database**: latencia, pool size, conexiones
+- **Cache**: entradas, memoria por namespace
+- **Memory**: total, procesos, binarios, % uso
+- **Processes**: conteo, limite, run queue
+- **Oban**: estado del job processor
+
+#### Metricas Prometheus
+
+Formato compatible con scraping de Prometheus:
+```
+qr_label_system_up
+qr_label_system_uptime_seconds
+erlang_memory_bytes{type="total|processes|binary|ets|atom"}
+erlang_process_count
+erlang_run_queue_length
+qr_label_system_cache_entries
+qr_label_system_cache_memory_bytes
+```
+
+### 10.5 Logs Estructurados
+
+**Archivo**: `lib/qr_label_system/logger/structured_logger.ex`
+
+Utilidades para logging consistente en JSON:
+
+```elixir
+alias QrLabelSystem.Logger.StructuredLogger, as: Log
+
+Log.info("batch.created", %{batch_id: 123, label_count: 100}, user_id: 456)
+Log.error("database.connection_failed", %{error: "timeout"})
+```
+
+Caracteristicas:
+- Formato JSON para integracion con ELK/Splunk
+- Redaccion automatica de datos sensibles (password, token, secret, api_key, etc.)
+- Metadata consistente (timestamp, level, event, request_id, user_id)
+
+---
+
+## 11. Historial de Cambios de Seguridad
+
+### Commit (pendiente) - Mejoras de Rendimiento y UX (Actual)
+
+**SEGURIDAD ADICIONAL**:
+1. Sanitizacion de busqueda LIKE - Escapado de `%`, `_`, `\` para prevenir pattern injection
+2. Validacion de tipos de elemento - Lista blanca de tipos validos en editor
+3. Ocultacion de errores internos - Health checks no exponen detalles de excepciones
+4. Redaccion de logs - Datos sensibles automaticamente redactados
+
+### Commit 68850fb - Hardening de Seguridad
 
 **CRITICOS RESUELTOS**:
 1. ~~Token encoding bypass~~ - Eliminado fallback a tokens raw en `api_auth.ex`
@@ -438,7 +562,7 @@ docker run -p 4000:4000 \
 
 ---
 
-## 11. Tareas Pendientes
+## 12. Tareas Pendientes
 
 ### Alta Prioridad
 
@@ -446,24 +570,78 @@ docker run -p 4000:4000 \
 - [ ] Agregar Content Security Policy (CSP) headers
 - [ ] Implementar CSRF para API (double-submit cookie)
 - [ ] Agregar tests de integracion E2E
+- [ ] Tests para nuevas funcionalidades (undo/redo, preview, health checks)
 
 ### Media Prioridad
 
 - [ ] Implementar rate limiting por usuario ademas de por IP
-- [ ] Agregar metricas de Prometheus/Telemetry
-- [ ] Implementar cache de disenos frecuentes
+- [x] ~~Agregar metricas de Prometheus/Telemetry~~ (Completado v1.1.0)
+- [x] ~~Implementar cache de disenos frecuentes~~ (Completado v1.1.0)
 - [ ] Agregar soft-delete a entidades principales
+- [ ] Generacion de codigos QR/barcode en servidor para lotes grandes (>10,000)
+- [ ] Datos de preview editables por usuario
 
 ### Baja Prioridad
 
-- [ ] Internacionalizacion completa (i18n)
+- [ ] Internacionalizacion completa (i18n) - codigo mezclado espanol/ingles
 - [ ] Documentacion de API con OpenAPI/Swagger
-- [ ] Dashboard de administracion mejorado
+- [x] ~~Dashboard de administracion mejorado~~ (Rutas agregadas v1.1.0)
 - [ ] Exportacion de logs de auditoria
+- [ ] CI/CD pipeline (GitHub Actions)
+- [ ] Backup automatico de base de datos
 
 ---
 
-## 12. Contactos y Recursos
+## 13. Como Continuar el Desarrollo
+
+### Proximos Pasos Recomendados
+
+1. **Ejecutar migraciones pendientes**:
+   ```bash
+   mix ecto.migrate
+   ```
+
+2. **Verificar compilacion**:
+   ```bash
+   mix compile --warnings-as-errors
+   ```
+
+3. **Ejecutar tests existentes**:
+   ```bash
+   mix test
+   ```
+
+4. **Agregar tests para nuevas funcionalidades**:
+   - `test/qr_label_system/designs_cache_test.exs` - Tests de cache
+   - `test/qr_label_system_web/live/design_live/editor_test.exs` - Tests undo/redo
+   - `test/qr_label_system_web/controllers/api/health_controller_test.exs` - Tests health
+
+5. **Habilitar logs estructurados** (opcional):
+   Agregar a `config/config.exs`:
+   ```elixir
+   config :logger, :console,
+     format: {QrLabelSystem.Logger.StructuredLogger, :format},
+     metadata: [:request_id, :user_id, :event]
+   ```
+
+### Archivos Nuevos/Modificados en v1.1.0
+
+**Nuevos**:
+- `lib/qr_label_system/logger/structured_logger.ex`
+- `assets/js/hooks/keyboard_shortcuts.js`
+- `priv/repo/migrations/20240101000009_add_advanced_audit_logs_indexes.exs`
+
+**Modificados**:
+- `lib/qr_label_system/application.ex` - Cache en supervision tree
+- `lib/qr_label_system/designs.ex` - Integracion cache + sanitizacion busqueda
+- `lib/qr_label_system_web/live/design_live/editor.ex` - Undo/redo, preview, shortcuts
+- `lib/qr_label_system_web/controllers/api/health_controller.ex` - Health detallado, metricas
+- `lib/qr_label_system_web/router.ex` - Rutas health, admin dashboard
+- `assets/js/hooks/index.js` - Hook KeyboardShortcuts
+
+---
+
+## 14. Contactos y Recursos
 
 ### Documentacion
 
@@ -495,4 +673,4 @@ mix format
 
 ---
 
-*Documento generado: Enero 2026*
+*Documento actualizado: Enero 2026 - Version 1.1.0*

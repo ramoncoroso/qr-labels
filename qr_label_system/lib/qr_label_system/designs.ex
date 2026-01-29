@@ -3,11 +3,15 @@ defmodule QrLabelSystem.Designs do
   The Designs context.
   Handles CRUD operations for label designs and elements.
   Includes export/import functionality for sharing designs.
+  Uses caching for frequently accessed designs.
   """
 
   import Ecto.Query, warn: false
   alias QrLabelSystem.Repo
+  alias QrLabelSystem.Cache
   alias QrLabelSystem.Designs.Design
+
+  @cache_ttl 300_000  # 5 minutes
 
   @doc """
   Returns the list of designs.
@@ -75,7 +79,13 @@ defmodule QrLabelSystem.Designs do
 
   defp maybe_search(query, ""), do: query
   defp maybe_search(query, search) do
-    search_term = "%#{search}%"
+    # Sanitize LIKE special characters to prevent pattern injection
+    sanitized = search
+    |> String.replace("\\", "\\\\")
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
+
+    search_term = "%#{sanitized}%"
     from d in query, where: ilike(d.name, ^search_term) or ilike(d.description, ^search_term)
   end
 
@@ -90,13 +100,37 @@ defmodule QrLabelSystem.Designs do
 
   @doc """
   Gets a single design.
+  Uses cache for frequently accessed designs.
+  Raises Ecto.NoResultsError if not found.
   """
-  def get_design!(id), do: Repo.get!(Design, id)
+  def get_design!(id) do
+    case Cache.get(:designs, {:design, id}) do
+      {:ok, design} ->
+        design
+
+      :miss ->
+        design = Repo.get!(Design, id)
+        Cache.put(:designs, {:design, id}, design, ttl: @cache_ttl)
+        design
+    end
+  end
 
   @doc """
   Gets a single design, returns nil if not found.
+  Uses cache for frequently accessed designs.
   """
-  def get_design(id), do: Repo.get(Design, id)
+  def get_design(id) do
+    case Cache.get(:designs, {:design, id}) do
+      {:ok, design} -> design
+      :miss ->
+        case Repo.get(Design, id) do
+          nil -> nil
+          design ->
+            Cache.put(:designs, {:design, id}, design, ttl: @cache_ttl)
+            design
+        end
+    end
+  end
 
   @doc """
   Creates a design.
@@ -109,18 +143,39 @@ defmodule QrLabelSystem.Designs do
 
   @doc """
   Updates a design.
+  Invalidates cache on update.
   """
   def update_design(%Design{} = design, attrs) do
-    design
+    result = design
     |> Design.changeset(attrs)
     |> Repo.update()
+
+    case result do
+      {:ok, updated_design} ->
+        Cache.delete(:designs, {:design, design.id})
+        Cache.put(:designs, {:design, updated_design.id}, updated_design, ttl: @cache_ttl)
+        {:ok, updated_design}
+
+      error ->
+        error
+    end
   end
 
   @doc """
   Deletes a design.
+  Invalidates cache on delete.
   """
   def delete_design(%Design{} = design) do
-    Repo.delete(design)
+    result = Repo.delete(design)
+
+    case result do
+      {:ok, _} ->
+        Cache.delete(:designs, {:design, design.id})
+        result
+
+      error ->
+        error
+    end
   end
 
   @doc """

@@ -144,5 +144,19 @@ defmodule QrLabelSystemWeb.Router do
     pipe_through :api
 
     get "/health", HealthController, :check
+    get "/health/detailed", HealthController, :detailed
+    get "/metrics", HealthController, :metrics
+  end
+
+  # Admin dashboard for health and monitoring
+  scope "/admin", QrLabelSystemWeb do
+    pipe_through [:browser, :require_authenticated_user, :admin_only]
+
+    live_session :admin_dashboard,
+      on_mount: [{QrLabelSystemWeb.UserAuth, :ensure_authenticated}] do
+      live "/dashboard", Admin.DashboardLive, :index
+      live "/users", Admin.UsersLive, :index
+      live "/audit", Admin.AuditLive, :index
+    end
   end
 end

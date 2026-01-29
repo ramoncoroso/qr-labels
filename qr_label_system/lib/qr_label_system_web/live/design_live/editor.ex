@@ -20,7 +20,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:design, design)
        |> assign(:selected_element, nil)
        |> assign(:available_columns, [])
-       |> assign(:show_properties, true)}
+       |> assign(:show_properties, true)
+       |> assign(:show_preview, false)
+       |> assign(:preview_data, %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"})
+       |> assign(:history, [])
+       |> assign(:history_index, -1)
+       |> assign(:has_unsaved_changes, false)}
     end
   end
 
@@ -30,10 +35,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, push_event(socket, "load_design", %{design: Design.to_json(socket.assigns.design)})}
   end
 
+  @valid_element_types ~w(qr barcode text line rectangle image)
+
   @impl true
-  def handle_event("add_element", %{"type" => type}, socket) do
+  def handle_event("add_element", %{"type" => type}, socket) when type in @valid_element_types do
     element = create_default_element(type)
     {:noreply, push_event(socket, "add_element", %{element: element})}
+  end
+
+  def handle_event("add_element", %{"type" => _invalid_type}, socket) do
+    {:noreply, put_flash(socket, :error, "Tipo de elemento no válido")}
   end
 
   @impl true
@@ -54,7 +65,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
-        {:noreply, assign(socket, :design, updated_design)}
+        {:noreply,
+         socket
+         |> push_to_history(design)
+         |> assign(:design, updated_design)}
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Error al guardar cambios")}
@@ -109,11 +123,41 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("toggle_preview", _params, socket) do
+    {:noreply, assign(socket, :show_preview, !socket.assigns.show_preview)}
+  end
+
+  @impl true
+  def handle_event("undo", _params, socket) do
+    case undo(socket) do
+      {:ok, new_socket} -> {:noreply, new_socket}
+      :no_history -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("redo", _params, socket) do
+    case redo(socket) do
+      {:ok, new_socket} -> {:noreply, new_socket}
+      :no_future -> {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("save_design", _params, socket) do
-    {:noreply,
-     socket
-     |> put_flash(:info, "Diseño guardado")
-     |> push_event("save_to_server", %{})}
+    # Persist current design state to database
+    case Designs.update_design(socket.assigns.design, %{elements: socket.assigns.design.elements}) do
+      {:ok, saved_design} ->
+        {:noreply,
+         socket
+         |> assign(:design, saved_design)
+         |> assign(:has_unsaved_changes, false)
+         |> put_flash(:info, "Diseño guardado")
+         |> push_event("save_to_server", %{})}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Error al guardar el diseño")}
+    end
   end
 
   defp create_default_element(type) do
@@ -184,10 +228,105 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
+  # History management for undo/redo
+  @max_history_size 50
+
+  defp push_to_history(socket, design) do
+    history = socket.assigns.history
+    index = socket.assigns.history_index
+
+    # Truncate future history if we're not at the end
+    history = Enum.take(history, index + 1)
+
+    # Add current state to history
+    new_history = history ++ [design.elements]
+
+    # Limit history size
+    new_history = if length(new_history) > @max_history_size do
+      Enum.drop(new_history, 1)
+    else
+      new_history
+    end
+
+    socket
+    |> assign(:history, new_history)
+    |> assign(:history_index, length(new_history) - 1)
+  end
+
+  defp undo(socket) do
+    index = socket.assigns.history_index
+
+    if index > 0 do
+      new_index = index - 1
+      previous_elements = Enum.at(socket.assigns.history, new_index)
+
+      # Update design in memory without saving to DB (save happens on explicit save)
+      design = socket.assigns.design
+      updated_design = %{design | elements: previous_elements}
+
+      {:ok,
+       socket
+       |> assign(:design, updated_design)
+       |> assign(:history_index, new_index)
+       |> assign(:has_unsaved_changes, true)
+       |> push_event("load_design", %{design: Design.to_json(updated_design)})}
+    else
+      :no_history
+    end
+  end
+
+  defp redo(socket) do
+    history = socket.assigns.history
+    index = socket.assigns.history_index
+
+    if index < length(history) - 1 do
+      new_index = index + 1
+      next_elements = Enum.at(history, new_index)
+
+      # Update design in memory without saving to DB
+      design = socket.assigns.design
+      updated_design = %{design | elements: next_elements}
+
+      {:ok,
+       socket
+       |> assign(:design, updated_design)
+       |> assign(:history_index, new_index)
+       |> assign(:has_unsaved_changes, true)
+       |> push_event("load_design", %{design: Design.to_json(updated_design)})}
+    else
+      :no_future
+    end
+  end
+
+  defp can_undo?(socket), do: socket.assigns.history_index > 0
+  defp can_redo?(socket), do: socket.assigns.history_index < length(socket.assigns.history) - 1
+
+  defp build_auto_mapping(elements, preview_data) do
+    columns = Map.keys(preview_data)
+
+    elements
+    |> Enum.filter(&(&1.binding))
+    |> Enum.reduce(%{}, fn element, acc ->
+      # Try to find matching column
+      binding = element.binding
+      matching_column = Enum.find(columns, fn col ->
+        String.downcase(col) == String.downcase(binding)
+      end)
+
+      if matching_column do
+        Map.put(acc, element.id, matching_column)
+      else
+        acc
+      end
+    end)
+  end
+
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :can_undo, can_undo?(assigns))
+    assigns = assign(assigns, :can_redo, can_redo?(assigns))
     ~H"""
-    <div class="h-[calc(100vh-12rem)] flex flex-col">
+    <div class="h-[calc(100vh-12rem)] flex flex-col" id="editor-container" phx-hook="KeyboardShortcuts">
       <!-- Toolbar -->
       <div class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
         <div class="flex items-center space-x-2">
@@ -200,6 +339,30 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
 
         <div class="flex items-center space-x-4">
+          <!-- Undo/Redo buttons -->
+          <div class="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
+            <button
+              phx-click="undo"
+              disabled={!@can_undo}
+              class={"p-2 rounded hover:bg-white hover:shadow #{if @can_undo, do: "text-gray-600 hover:text-indigo-600", else: "text-gray-300 cursor-not-allowed"}"}
+              title="Deshacer (Ctrl+Z)"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            </button>
+            <button
+              phx-click="redo"
+              disabled={!@can_redo}
+              class={"p-2 rounded hover:bg-white hover:shadow #{if @can_redo, do: "text-gray-600 hover:text-indigo-600", else: "text-gray-300 cursor-not-allowed"}"}
+              title="Rehacer (Ctrl+Y)"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+              </svg>
+            </button>
+          </div>
+
           <!-- Element buttons -->
           <div class="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
             <button
@@ -265,6 +428,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
 
           <button
+            phx-click="toggle_preview"
+            class={"p-2 rounded hover:bg-gray-100 #{if @show_preview, do: "text-indigo-600 bg-indigo-50", else: "text-gray-600"}"}
+            title="Vista Previa (Ctrl+P)"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </button>
+
+          <button
             phx-click="toggle_properties"
             class="p-2 rounded hover:bg-gray-100 text-gray-600"
             title="Mostrar/Ocultar Propiedades"
@@ -278,6 +452,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <button
             phx-click="save_design"
             class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
+            title="Guardar (Ctrl+S)"
           >
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -290,7 +465,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <!-- Main Content -->
       <div class="flex-1 flex overflow-hidden">
         <!-- Canvas Area -->
-        <div class="flex-1 bg-gray-100 overflow-auto p-8 flex items-center justify-center">
+        <div class={"flex-1 bg-gray-100 overflow-auto p-8 flex items-center justify-center #{if @show_preview, do: "w-1/2", else: ""}"}>
           <div
             id="canvas-container"
             phx-hook="CanvasDesigner"
@@ -303,6 +478,38 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             class="shadow-xl"
           >
             <canvas id="label-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Live Preview Panel -->
+        <div :if={@show_preview} class="w-1/2 bg-gray-50 border-l border-gray-200 overflow-auto p-4">
+          <div class="mb-4">
+            <h3 class="font-semibold text-gray-900 mb-2">Vista Previa en Tiempo Real</h3>
+            <p class="text-sm text-gray-500">Muestra cómo se verá la etiqueta con datos de ejemplo</p>
+          </div>
+
+          <div class="bg-white rounded-lg shadow p-4 mb-4">
+            <h4 class="text-sm font-medium text-gray-700 mb-2">Datos de Prueba</h4>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+              <%= for {key, value} <- @preview_data do %>
+                <div class="flex items-center space-x-2">
+                  <span class="text-gray-500"><%= key %>:</span>
+                  <span class="font-mono text-gray-900"><%= value %></span>
+                </div>
+              <% end %>
+            </div>
+          </div>
+
+          <div class="flex justify-center">
+            <div
+              id="live-preview"
+              phx-hook="LabelPreview"
+              data-design={Jason.encode!(Design.to_json(@design))}
+              data-row={Jason.encode!(@preview_data)}
+              data-mapping={Jason.encode!(build_auto_mapping(@design.elements || [], @preview_data))}
+              class="inline-block"
+            >
+            </div>
           </div>
         </div>
 

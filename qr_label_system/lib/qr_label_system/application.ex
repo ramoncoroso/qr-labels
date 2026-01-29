@@ -11,6 +11,7 @@ defmodule QrLabelSystem.Application do
       {DNSCluster, query: Application.get_env(:qr_label_system, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: QrLabelSystem.PubSub},
       {Finch, name: QrLabelSystem.Finch},
+      QrLabelSystem.Cache,
       {Oban, Application.fetch_env!(:qr_label_system, Oban)},
       QrLabelSystemWeb.Endpoint
     ]
