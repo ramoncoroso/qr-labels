@@ -39,6 +39,21 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
       </.header>
 
       <div class="mt-8">
+        <!-- Add New Batch Card -->
+        <.link navigate={~p"/generate"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
+          <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center">
+              <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-medium text-slate-600">Generar Nuevo Lote</h3>
+              <p class="text-sm text-slate-500">Crea etiquetas desde tus diseños</p>
+            </div>
+          </div>
+        </.link>
+
         <div id="batches" phx-update="stream" class="space-y-4">
           <div :for={{dom_id, batch} <- @streams.batches} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 p-4">
             <div class="flex items-center justify-between">
@@ -92,18 +107,6 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
           </div>
         </div>
 
-        <div :if={not @has_batches} class="text-center py-12">
-          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-          </svg>
-          <h3 class="mt-2 text-sm font-medium text-gray-900">No hay lotes generados</h3>
-          <p class="mt-1 text-sm text-gray-500">Comienza generando un nuevo lote de etiquetas.</p>
-          <div class="mt-6">
-            <.link navigate={~p"/generate"}>
-              <.button>+ Generar Nuevo Lote</.button>
-            </.link>
-          </div>
-        </div>
       </div>
     </div>
     """

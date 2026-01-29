@@ -87,6 +87,15 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       <div class="mt-8">
         <div id="designs" phx-update="stream" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <!-- Add New Design Card -->
+          <.link patch={~p"/designs/new"} class="bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-6 flex flex-col items-center justify-center min-h-[200px] transition-colors">
+            <div class="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center mb-3">
+              <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <span class="text-sm font-medium text-slate-600">Nuevo Diseño</span>
+          </.link>
           <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
             <div class="p-4">
               <div class="flex justify-between items-start">
@@ -146,18 +155,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </div>
 
-        <div :if={not @has_designs} class="text-center py-12">
-          <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <h3 class="mt-2 text-sm font-medium text-slate-900">No hay diseños</h3>
-          <p class="mt-1 text-sm text-slate-500">Comienza creando un nuevo diseño de etiqueta.</p>
-          <div class="mt-6">
-            <.link patch={~p"/designs/new"}>
-              <.button>+ Nuevo Diseño</.button>
-            </.link>
-          </div>
-        </div>
       </div>
 
       <.modal :if={@live_action == :new} id="design-modal" show on_cancel={JS.patch(~p"/designs")}>

@@ -63,6 +63,21 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
       </.header>
 
       <div class="mt-8">
+        <!-- Add New Data Source Card -->
+        <.link patch={~p"/data-sources/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
+          <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center">
+              <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-medium text-slate-600">Nueva Fuente de Datos</h3>
+              <p class="text-sm text-slate-500">Excel, CSV o base de datos</p>
+            </div>
+          </div>
+        </.link>
+
         <div id="data_sources" phx-update="stream" class="space-y-4">
           <div :for={{dom_id, data_source} <- @streams.data_sources} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 p-4">
             <div class="flex items-center justify-between">
@@ -101,18 +116,6 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
           </div>
         </div>
 
-        <div :if={not @has_data_sources} class="text-center py-12">
-          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-          </svg>
-          <h3 class="mt-2 text-sm font-medium text-gray-900">No hay fuentes de datos</h3>
-          <p class="mt-1 text-sm text-gray-500">Configura una fuente de datos para importar registros.</p>
-          <div class="mt-6">
-            <.link patch={~p"/data-sources/new"}>
-              <.button>+ Nueva Fuente</.button>
-            </.link>
-          </div>
-        </div>
       </div>
 
       <.modal :if={@live_action in [:new, :edit]} id="data-source-modal" show on_cancel={JS.patch(~p"/data-sources")}>
