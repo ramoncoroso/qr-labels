@@ -33,28 +33,58 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   end
 
   @doc """
-  Validates a SQL query (basic syntax check).
+  Validates a SQL query with comprehensive security checks.
+  Only allows safe SELECT queries.
   """
-  def validate_query(query) do
+  def validate_query(query) when is_binary(query) do
     query = String.trim(query)
+
+    # Define dangerous patterns that should never appear in queries
+    dangerous_patterns = [
+      # DDL statements
+      ~r/\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE|GRANT|REVOKE)\b/i,
+      # Command execution
+      ~r/\b(EXEC|EXECUTE|xp_|sp_)\b/i,
+      # Comments (can be used to bypass filters)
+      ~r/(--|\/\*|\*\/|#)/,
+      # UNION-based injection attempts
+      ~r/\bUNION\s+(ALL\s+)?SELECT\b/i,
+      # Stacked queries
+      ~r/;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC)/i,
+      # Sleep/benchmark attacks
+      ~r/\b(SLEEP|BENCHMARK|WAITFOR|PG_SLEEP)\s*\(/i,
+      # File operations
+      ~r/\b(LOAD_FILE|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b/i,
+      # Information schema exploitation
+      ~r/\bINFORMATION_SCHEMA\b/i,
+      # Hex encoding (bypass attempts)
+      ~r/0x[0-9a-fA-F]+/,
+      # Char/chr functions (bypass attempts)
+      ~r/\b(CHAR|CHR|CONCAT)\s*\(/i
+    ]
 
     cond do
       String.length(query) == 0 ->
         {:error, "Query cannot be empty"}
 
-      not String.match?(query, ~r/^\s*SELECT/i) ->
+      String.length(query) > 10_000 ->
+        {:error, "Query is too long (max 10,000 characters)"}
+
+      not String.match?(query, ~r/^\s*SELECT\b/i) ->
         {:error, "Only SELECT queries are allowed"}
 
       String.match?(query, ~r/;\s*\w/i) ->
         {:error, "Multiple statements are not allowed"}
 
-      String.match?(query, ~r/(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)/i) ->
-        {:error, "Only SELECT queries are allowed"}
+      Enum.any?(dangerous_patterns, &String.match?(query, &1)) ->
+        {:error, "Query contains potentially dangerous patterns"}
 
       true ->
         :ok
     end
   end
+
+  def validate_query(_), do: {:error, "Query must be a string"}
 
   # Connection functions
 

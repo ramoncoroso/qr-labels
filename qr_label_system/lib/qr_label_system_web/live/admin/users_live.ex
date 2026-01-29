@@ -6,6 +6,7 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
 
   alias QrLabelSystem.Accounts
   alias QrLabelSystem.Accounts.User
+  alias QrLabelSystem.Audit
 
   @impl true
   def mount(_params, _session, socket) do
@@ -71,8 +72,22 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
 
   @impl true
   def handle_event("update_role", %{"user" => user_params}, socket) do
-    case Accounts.update_user_role(socket.assigns.selected_user, user_params) do
-      {:ok, _user} ->
+    selected_user = socket.assigns.selected_user
+    old_role = selected_user.role
+
+    case Accounts.update_user_role(selected_user, user_params) do
+      {:ok, updated_user} ->
+        # Log the admin action
+        Audit.log_async(:update_role, :user, updated_user.id,
+          user_id: socket.assigns.current_user.id,
+          metadata: %{
+            target_user_email: updated_user.email,
+            old_role: old_role,
+            new_role: updated_user.role,
+            admin_email: socket.assigns.current_user.email
+          }
+        )
+
         {:noreply,
           socket
           |> put_flash(:info, gettext("User role updated successfully"))
@@ -95,6 +110,16 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
     else
       case Accounts.delete_user(user) do
         {:ok, _} ->
+          # Log the admin action
+          Audit.log_async(:delete_user, :user, user.id,
+            user_id: socket.assigns.current_user.id,
+            metadata: %{
+              deleted_user_email: user.email,
+              deleted_user_role: user.role,
+              admin_email: socket.assigns.current_user.email
+            }
+          )
+
           {:noreply,
             socket
             |> put_flash(:info, gettext("User deleted successfully"))

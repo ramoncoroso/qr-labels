@@ -52,16 +52,14 @@ config :qr_label_system, Oban,
   plugins: [Oban.Plugins.Pruner],
   queues: [default: 10, cleanup: 5]
 
-# Cloak encryption vault
-config :qr_label_system, QrLabelSystem.Vault,
-  ciphers: [
-    default: {
-      Cloak.Ciphers.AES.GCM,
-      tag: "AES.GCM.V1",
-      key: Base.decode64!("your-32-byte-key-base64-encoded-here=="),
-      iv_length: 12
-    }
-  ]
+# Cloak encryption vault is configured per-environment:
+# - dev.exs: Uses a static development key
+# - test.exs: Uses a static test key
+# - runtime.exs: Uses CLOAK_KEY environment variable (production)
+#
+# IMPORTANT for production: Generate a secure key with:
+#   :crypto.strong_rand_bytes(32) |> Base.encode64()
+# Then set the CLOAK_KEY environment variable
 
 # Import environment specific config
 import_config "#{config_env()}.exs"

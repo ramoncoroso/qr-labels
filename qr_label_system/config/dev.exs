@@ -46,3 +46,15 @@ config :phoenix, :plug_init_mode, :runtime
 
 # Disable Oban in dev for simplicity
 config :qr_label_system, Oban, testing: :inline
+
+# Development encryption key (DO NOT use in production)
+config :qr_label_system, QrLabelSystem.Vault,
+  ciphers: [
+    default: {
+      Cloak.Ciphers.AES.GCM,
+      tag: "AES.GCM.V1",
+      # This is a development-only key, generated with :crypto.strong_rand_bytes(32) |> Base.encode64()
+      key: Base.decode64!("L7vYmJbxq3h5QZF9nK2wR8tP4uA6sDfG1jK3lO5pN0M="),
+      iv_length: 12
+    }
+  ]

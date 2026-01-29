@@ -100,14 +100,23 @@ defmodule QrLabelSystemWeb.Admin.AuditLive do
   defp load_logs(socket) do
     %{filters: filters, page: page, per_page: per_page} = socket.assigns
 
-    opts = filters_to_opts(filters)
-    |> Keyword.merge([offset: (page - 1) * per_page, limit: per_page])
+    # Convert filters to params map expected by Audit.list_logs
+    params =
+      filters
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Enum.map(fn
+        {:from, date} -> {"from_date", Date.to_iso8601(date)}
+        {:to, date} -> {"to_date", Date.to_iso8601(date)}
+        {k, v} -> {to_string(k), v}
+      end)
+      |> Enum.into(%{})
+      |> Map.merge(%{"page" => to_string(page), "per_page" => to_string(per_page)})
 
-    {logs, total} = Audit.list_logs(opts)
+    result = Audit.list_logs(params)
 
     socket
-    |> assign(:logs, logs)
-    |> assign(:total, total)
+    |> assign(:logs, result.logs)
+    |> assign(:total, result.total)
   end
 
   defp load_stats(socket) do
@@ -118,6 +127,7 @@ defmodule QrLabelSystemWeb.Admin.AuditLive do
   defp filters_to_opts(filters) do
     filters
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> Enum.map(fn {k, v} -> {k, v} end)
     |> Keyword.new()
   end
 

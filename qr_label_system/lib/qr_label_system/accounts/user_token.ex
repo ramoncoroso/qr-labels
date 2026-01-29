@@ -9,8 +9,8 @@ defmodule QrLabelSystem.Accounts.UserToken do
   @hash_algorithm :sha256
   @rand_size 32
 
-  # Session tokens are valid for 60 days
-  @session_validity_in_days 60
+  # Session tokens are valid for 7 days (reduced from 60 for security)
+  @session_validity_in_days 7
 
   schema "users_tokens" do
     field :token, :binary

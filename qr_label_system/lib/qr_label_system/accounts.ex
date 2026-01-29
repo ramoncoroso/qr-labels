@@ -39,25 +39,75 @@ defmodule QrLabelSystem.Accounts do
   end
 
   @doc """
-  Lists users with pagination.
+  Lists users with pagination, search, and role filtering.
+  Optimized to avoid N+1 queries.
   """
   def list_users(params) do
-    page = Map.get(params, "page", "1") |> String.to_integer()
-    per_page = Map.get(params, "per_page", "20") |> String.to_integer()
+    page = params |> Map.get("page", "1") |> parse_integer(1)
+    per_page = params |> Map.get("per_page", "20") |> parse_integer(20)
+    search = Map.get(params, "search", "")
+    role = Map.get(params, "role")
     offset = (page - 1) * per_page
 
-    query = from u in User, order_by: [asc: u.email]
+    base_query = from u in User
 
-    users = query |> limit(^per_page) |> offset(^offset) |> Repo.all()
-    total = Repo.aggregate(User, :count)
+    # Apply search filter (sanitized)
+    base_query = if search != "" do
+      search_term = sanitize_search_term(search)
+      from u in base_query, where: ilike(u.email, ^"%#{search_term}%")
+    else
+      base_query
+    end
+
+    # Apply role filter
+    base_query = if role && role != "" do
+      from u in base_query, where: u.role == ^role
+    else
+      base_query
+    end
+
+    # Get total count (single query)
+    total = Repo.aggregate(base_query, :count)
+
+    # Get paginated users (single query)
+    users =
+      base_query
+      |> order_by([u], asc: u.email)
+      |> limit(^per_page)
+      |> offset(^offset)
+      |> Repo.all()
 
     %{
       users: users,
       page: page,
       per_page: per_page,
       total: total,
-      total_pages: ceil(total / per_page)
+      total_pages: max(ceil(total / per_page), 1)
     }
+  end
+
+  defp parse_integer(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} when int > 0 -> int
+      _ -> default
+    end
+  end
+  defp parse_integer(value, _default) when is_integer(value) and value > 0, do: value
+  defp parse_integer(_, default), do: default
+
+  # Sanitize search input to prevent SQL injection via LIKE patterns
+  defp sanitize_search_term(term) do
+    term
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
+    |> String.slice(0, 100)  # Limit search term length
+  end
+
+  @doc """
+  Returns a changeset for changing the user role.
+  """
+  def change_user_role(%User{} = user, attrs \\ %{}) do
+    User.role_changeset(user, attrs)
   end
 
   ## User registration

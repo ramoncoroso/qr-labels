@@ -26,3 +26,15 @@ config :qr_label_system, Oban, testing: :manual
 
 # Reduce bcrypt rounds for faster tests
 config :bcrypt_elixir, log_rounds: 1
+
+# Test encryption key (DO NOT use in production)
+config :qr_label_system, QrLabelSystem.Vault,
+  ciphers: [
+    default: {
+      Cloak.Ciphers.AES.GCM,
+      tag: "AES.GCM.V1",
+      # This is a test-only key
+      key: Base.decode64!("T3stK3yF0rT3st1ngPurp0s3s0nly32B="),
+      iv_length: 12
+    }
+  ]

@@ -9,10 +9,10 @@ defmodule QrLabelSystemWeb.UserAuth do
 
   alias QrLabelSystem.Accounts
 
-  # Make the remember me cookie valid for 60 days.
-  @max_age 60 * 60 * 24 * 60
+  # Make the remember me cookie valid for 14 days (reduced from 60 for security).
+  @max_age 60 * 60 * 24 * 14
   @remember_me_cookie "_qr_label_system_web_user_remember_me"
-  @remember_me_options [sign: true, max_age: @max_age, same_site: "Lax"]
+  @remember_me_options [sign: true, max_age: @max_age, same_site: "Lax", http_only: true, secure: true]
 
   @doc """
   Logs the user in.
@@ -142,7 +142,7 @@ defmodule QrLabelSystemWeb.UserAuth do
     else
       socket =
         socket
-        |> Phoenix.LiveView.put_flash(:error, "Debes iniciar sesión para acceder a esta página.")
+        |> Phoenix.LiveView.put_flash(:error, QrLabelSystemWeb.Gettext.gettext("You must log in to access this page."))
         |> Phoenix.LiveView.redirect(to: ~p"/users/log_in")
 
       {:halt, socket}
@@ -191,7 +191,7 @@ defmodule QrLabelSystemWeb.UserAuth do
       conn
     else
       conn
-      |> put_flash(:error, "Debes iniciar sesión para acceder a esta página.")
+      |> put_flash(:error, QrLabelSystemWeb.Gettext.gettext("You must log in to access this page."))
       |> maybe_store_return_to()
       |> redirect(to: ~p"/users/log_in")
       |> halt()
