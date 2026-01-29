@@ -7,44 +7,87 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
 
   import Phoenix.LiveViewTest
   import QrLabelSystem.AccountsFixtures
+  import Ecto.Query
 
   alias QrLabelSystem.Accounts
 
-  describe "complete authentication flow" do
-    test "user can register, log out, and log in again", %{conn: conn} do
+  describe "magic link authentication flow" do
+    test "user can register and magic link token is created", %{conn: conn} do
       email = unique_user_email()
-      password = "ValidPassword123!"
 
       # Step 1: Register a new user
       {:ok, lv, _html} = live(conn, ~p"/users/register")
 
-      form = form(lv, "#registration_form", user: %{email: email, password: password})
-      render_submit(form)
-      conn = follow_trigger_action(form, conn)
-
-      # Should be redirected to designs page after registration
-      assert redirected_to(conn) == ~p"/designs"
+      lv
+      |> form("#registration_form", user: %{"email" => email})
+      |> render_submit()
 
       # Verify user was created with correct default role
       user = Accounts.get_user_by_email(email)
       assert user
       assert user.role == "operator"
+      # User should be confirmed since magic link verifies email
+      assert user.confirmed_at
 
-      # Step 2: Log out
-      conn = recycle(conn) |> get(~p"/designs")
-      conn = delete(conn, ~p"/users/log_out")
-      assert redirected_to(conn) == ~p"/"
+      # Verify magic link token was created
+      token_record =
+        QrLabelSystem.Repo.one(
+          from t in QrLabelSystem.Accounts.UserToken,
+            where: t.user_id == ^user.id and t.context == "magic_link"
+        )
 
-      # Step 3: Log in again
-      conn = recycle(conn)
-      {:ok, lv, _html} = live(conn, ~p"/users/log_in")
+      assert token_record
+    end
 
-      form = form(lv, "#login_form", user: %{email: email, password: password})
-      conn = submit_form(form, conn)
+    test "user can log in via magic link token", %{conn: conn} do
+      user = user_fixture()
 
+      # Build token directly for testing
+      {encoded_token, user_token} = QrLabelSystem.Accounts.UserToken.build_magic_link_token(user)
+      QrLabelSystem.Repo.insert!(user_token)
+
+      # Use the magic link
+      conn = get(conn, ~p"/users/magic_link/#{encoded_token}")
       assert redirected_to(conn) == ~p"/designs"
     end
 
+    test "magic link token is single use", %{conn: conn} do
+      user = user_fixture()
+
+      # Build token directly for testing
+      {encoded_token, user_token} = QrLabelSystem.Accounts.UserToken.build_magic_link_token(user)
+      QrLabelSystem.Repo.insert!(user_token)
+
+      # First use - should succeed
+      conn1 = get(conn, ~p"/users/magic_link/#{encoded_token}")
+      assert redirected_to(conn1) == ~p"/designs"
+
+      # Second use - should fail (token deleted)
+      # Use a fresh conn for the second request
+      conn2 = build_conn() |> get(~p"/users/magic_link/#{encoded_token}")
+      assert redirected_to(conn2) == ~p"/users/log_in"
+      assert Phoenix.Flash.get(conn2.assigns.flash, :error) =~ "inválido o ha expirado"
+    end
+
+    test "expired magic link token is rejected", %{conn: conn} do
+      user = user_fixture()
+
+      # Build token directly
+      {encoded_token, user_token} = QrLabelSystem.Accounts.UserToken.build_magic_link_token(user)
+
+      # Insert with old timestamp (more than 15 minutes ago)
+      old_time = DateTime.utc_now() |> DateTime.add(-20, :minute) |> DateTime.truncate(:second)
+      user_token = %{user_token | inserted_at: old_time}
+      QrLabelSystem.Repo.insert!(user_token)
+
+      # Should fail - token expired
+      conn = get(conn, ~p"/users/magic_link/#{encoded_token}")
+      assert redirected_to(conn) == ~p"/users/log_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "inválido o ha expirado"
+    end
+  end
+
+  describe "complete authentication flow" do
     test "user cannot access protected pages without authentication", %{conn: conn} do
       # Try to access protected pages
       protected_paths = [
@@ -68,26 +111,12 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
       assert html_response(conn, 200)
     end
 
-    test "remember me keeps user logged in", %{conn: conn} do
+    test "logging out redirects to home", %{conn: conn} do
       user = user_fixture()
+      conn = log_in_user(conn, user)
 
-      # Log in with remember me
-      conn =
-        post(conn, ~p"/users/log_in", %{
-          "user" => %{
-            "email" => user.email,
-            "password" => valid_user_password(),
-            "remember_me" => "true"
-          }
-        })
-
-      # Check that remember me cookie is set
-      assert conn.resp_cookies["_qr_label_system_web_user_remember_me"]
-
-      # After redirect, user should still be logged in
-      conn = recycle(conn)
-      conn = get(conn, ~p"/designs")
-      assert html_response(conn, 200)
+      conn = delete(conn, ~p"/users/log_out")
+      assert redirected_to(conn) == ~p"/"
     end
   end
 
@@ -140,7 +169,7 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
       refute Accounts.get_user_by_session_token(token)
     end
 
-    test "changing password invalidates all sessions", %{conn: conn} do
+    test "changing password invalidates all sessions", %{conn: _conn} do
       password = valid_user_password()
       user = user_fixture(%{password: password})
 
@@ -160,44 +189,6 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
     end
   end
 
-  describe "password validation" do
-    test "rejects weak passwords during registration", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/register")
-
-      # Test password too short
-      result =
-        lv
-        |> element("#registration_form")
-        |> render_change(user: %{"email" => "test@example.com", "password" => "Short1!"})
-
-      assert result =~ "should be at least 8 character"
-
-      # Test password without uppercase
-      result =
-        lv
-        |> element("#registration_form")
-        |> render_change(user: %{"email" => "test@example.com", "password" => "lowercase123!"})
-
-      assert result =~ "at least one upper case character"
-
-      # Test password without lowercase
-      result =
-        lv
-        |> element("#registration_form")
-        |> render_change(user: %{"email" => "test@example.com", "password" => "UPPERCASE123!"})
-
-      assert result =~ "at least one lower case character"
-
-      # Test password without digit/special char
-      result =
-        lv
-        |> element("#registration_form")
-        |> render_change(user: %{"email" => "test@example.com", "password" => "NoDigitsHere"})
-
-      assert result =~ "at least one digit or punctuation character"
-    end
-  end
-
   describe "email validation" do
     test "rejects invalid email formats during registration", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
@@ -206,7 +197,7 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
       result =
         lv
         |> element("#registration_form")
-        |> render_change(user: %{"email" => "has spaces@example.com", "password" => "ValidPass123!"})
+        |> render_change(user: %{"email" => "has spaces@example.com"})
 
       assert result =~ "must have the @ sign and no spaces"
 
@@ -214,7 +205,7 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
       result =
         lv
         |> element("#registration_form")
-        |> render_change(user: %{"email" => "noemailsign.com", "password" => "ValidPass123!"})
+        |> render_change(user: %{"email" => "noemailsign.com"})
 
       assert result =~ "must have the @ sign"
     end

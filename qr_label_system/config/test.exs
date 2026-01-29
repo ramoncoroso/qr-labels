@@ -27,6 +27,9 @@ config :qr_label_system, Oban, testing: :manual
 # Reduce bcrypt rounds for faster tests
 config :bcrypt_elixir, log_rounds: 1
 
+# Swoosh test adapter
+config :qr_label_system, QrLabelSystem.Mailer, adapter: Swoosh.Adapters.Test
+
 # Test encryption key (DO NOT use in production)
 config :qr_label_system, QrLabelSystem.Vault,
   ciphers: [

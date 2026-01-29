@@ -6,7 +6,7 @@ defmodule QrLabelSystem.Accounts do
 
   import Ecto.Query, warn: false
   alias QrLabelSystem.Repo
-  alias QrLabelSystem.Accounts.{User, UserToken}
+  alias QrLabelSystem.Accounts.{User, UserToken, UserNotifier}
 
   ## User queries
 
@@ -119,6 +119,24 @@ defmodule QrLabelSystem.Accounts do
     %User{}
     |> User.registration_changeset(attrs)
     |> Repo.insert()
+  end
+
+  @doc """
+  Registers a user without password (for magic link auth).
+  Marks user as confirmed since we verified their email via magic link.
+  """
+  def register_user_passwordless(attrs) do
+    %User{}
+    |> User.passwordless_registration_changeset(attrs)
+    |> User.confirm_changeset()
+    |> Repo.insert()
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking passwordless user changes.
+  """
+  def change_user_passwordless_registration(%User{} = user, attrs \\ %{}) do
+    User.passwordless_registration_changeset(user, attrs, validate_email: false)
   end
 
   @doc """
@@ -250,20 +268,59 @@ defmodule QrLabelSystem.Accounts do
     |> Ecto.Multi.delete_all(:tokens, UserToken.by_user_and_contexts_query(user, ["confirm"]))
   end
 
-  ## Email delivery (stub implementations for development)
+  ## Magic Link Authentication
+
+  @doc """
+  Delivers magic link instructions to the given user.
+  If the user doesn't exist, it returns :ok anyway to prevent email enumeration.
+  """
+  def deliver_magic_link_instructions(email, magic_link_url_fun)
+      when is_function(magic_link_url_fun, 1) do
+    case get_user_by_email(email) do
+      %User{} = user ->
+        {encoded_token, user_token} = UserToken.build_magic_link_token(user)
+        Repo.insert!(user_token)
+        UserNotifier.deliver_magic_link_instructions(user, magic_link_url_fun.(encoded_token))
+
+      nil ->
+        # Return :ok anyway to prevent email enumeration
+        {:ok, :not_found}
+    end
+  end
+
+  @doc """
+  Gets the user by magic link token and validates it.
+  Returns the user if the token is valid, nil otherwise.
+  """
+  def get_user_by_magic_link_token(token) do
+    with {:ok, query} <- UserToken.verify_magic_link_token_query(token),
+         %User{} = user <- Repo.one(query) do
+      user
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Deletes the magic link token (single use).
+  """
+  def delete_magic_link_token(token) do
+    case UserToken.magic_link_token_query(token) do
+      {:ok, query} -> Repo.delete_all(query)
+      :error -> :error
+    end
+  end
+
+  ## Email delivery
 
   @doc """
   Delivers the confirmation instructions to the given user.
-
-  In production, this would send an actual email.
-  For development/testing, it just returns the token.
   """
   def deliver_user_confirmation_instructions(%User{} = user, confirmation_url_fun)
       when is_function(confirmation_url_fun, 1) do
     {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
     Repo.insert!(user_token)
-    # In production, send email here
-    {:ok, %{to: user.email, url: confirmation_url_fun.(encoded_token)}}
+    UserNotifier.deliver_confirmation_instructions(user, confirmation_url_fun.(encoded_token))
   end
 
   @doc """
@@ -273,7 +330,7 @@ defmodule QrLabelSystem.Accounts do
       when is_function(reset_password_url_fun, 1) do
     {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
     Repo.insert!(user_token)
-    {:ok, %{to: user.email, url: reset_password_url_fun.(encoded_token)}}
+    UserNotifier.deliver_reset_password_instructions(user, reset_password_url_fun.(encoded_token))
   end
 
   @doc """
@@ -283,7 +340,7 @@ defmodule QrLabelSystem.Accounts do
       when is_function(update_email_url_fun, 1) do
     {encoded_token, user_token} = UserToken.build_email_token(user, "change:#{current_email}")
     Repo.insert!(user_token)
-    {:ok, %{to: user.email, url: update_email_url_fun.(encoded_token)}}
+    UserNotifier.deliver_update_email_instructions(user, update_email_url_fun.(encoded_token))
   end
 
   @doc """

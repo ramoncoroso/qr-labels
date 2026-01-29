@@ -36,6 +36,24 @@ defmodule QrLabelSystem.Accounts.User do
     |> validate_role()
   end
 
+  @doc """
+  A user changeset for passwordless registration (magic link).
+  Generates a random secure password since the DB requires hashed_password.
+  Users authenticate via magic links, not passwords.
+  """
+  def passwordless_registration_changeset(user, attrs, opts \\ []) do
+    # Generate a random 32-byte password (produces ~44 char base64 string)
+    # Users won't use this, they authenticate via magic links
+    random_password = :crypto.strong_rand_bytes(32) |> Base.encode64()
+
+    user
+    |> cast(attrs, [:email, :role])
+    |> put_change(:password, random_password)
+    |> validate_email(opts)
+    |> validate_role()
+    |> maybe_hash_password(opts)
+  end
+
   defp validate_email(changeset, opts) do
     changeset
     |> validate_required([:email])

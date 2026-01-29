@@ -27,8 +27,8 @@
         </nav>
       <% end %>
 
-      <div class="flex items-center space-x-4">
-        <%= if @current_user do %>
+      <%= if @current_user do %>
+        <div class="flex items-center space-x-4">
           <span class="text-sm text-slate-500">
             <%= @current_user.email %>
           </span>
@@ -45,21 +45,8 @@
           >
             Cerrar Sesion
           </.link>
-        <% else %>
-          <.link
-            href={~p"/users/log_in"}
-            class="text-slate-600 hover:text-slate-900 text-sm font-medium transition"
-          >
-            Iniciar Sesion
-          </.link>
-          <.link
-            href={~p"/users/register"}
-            class="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md text-sm font-medium transition"
-          >
-            Registrarse
-          </.link>
-        <% end %>
-      </div>
+        </div>
+      <% end %>
     </div>
   </div>
 </header>

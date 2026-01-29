@@ -49,6 +49,10 @@ defmodule QrLabelSystem.MixProject do
       # Auth
       {:bcrypt_elixir, "~> 3.0"},
 
+      # Email
+      {:swoosh, "~> 1.14"},
+      {:gen_smtp, "~> 1.2"},
+
       # Encryption for sensitive data
       {:cloak_ecto, "~> 1.2"},
 

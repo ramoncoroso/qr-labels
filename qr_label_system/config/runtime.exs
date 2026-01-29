@@ -91,4 +91,18 @@ if config_env() == :prod do
         iv_length: 12
       }
     ]
+
+  # Swoosh SMTP configuration for production
+  # Configure these environment variables for your email provider
+  if System.get_env("SMTP_HOST") do
+    config :qr_label_system, QrLabelSystem.Mailer,
+      adapter: Swoosh.Adapters.SMTP,
+      relay: System.get_env("SMTP_HOST"),
+      port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
+      username: System.get_env("SMTP_USERNAME"),
+      password: System.get_env("SMTP_PASSWORD"),
+      ssl: System.get_env("SMTP_SSL") == "true",
+      tls: :if_available,
+      auth: :always
+  end
 end

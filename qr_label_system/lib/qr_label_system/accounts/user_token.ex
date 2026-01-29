@@ -12,6 +12,9 @@ defmodule QrLabelSystem.Accounts.UserToken do
   # Session tokens are valid for 7 days (reduced from 60 for security)
   @session_validity_in_days 7
 
+  # Magic link tokens expire in 15 minutes
+  @magic_link_validity_in_minutes 15
+
   schema "users_tokens" do
     field :token, :binary
     field :context, :string
@@ -89,6 +92,49 @@ defmodule QrLabelSystem.Accounts.UserToken do
   defp days_for_context("confirm"), do: 7
   defp days_for_context("reset_password"), do: 1
   defp days_for_context("change:" <> _), do: 7
+
+  @doc """
+  Builds a magic link token for passwordless authentication.
+  """
+  def build_magic_link_token(user) do
+    build_hashed_token(user, "magic_link", user.email)
+  end
+
+  @doc """
+  Checks if the magic link token is valid and returns its underlying lookup query.
+  Magic link tokens expire in 15 minutes.
+  """
+  def verify_magic_link_token_query(token) do
+    case Base.url_decode64(token, padding: false) do
+      {:ok, decoded_token} ->
+        hashed_token = :crypto.hash(@hash_algorithm, decoded_token)
+
+        query =
+          from token in by_token_and_context_query(hashed_token, "magic_link"),
+            join: user in assoc(token, :user),
+            where: token.inserted_at > ago(@magic_link_validity_in_minutes, "minute") and token.sent_to == user.email,
+            select: user
+
+        {:ok, query}
+
+      :error ->
+        :error
+    end
+  end
+
+  @doc """
+  Returns the token struct for a magic link token (used for deletion).
+  """
+  def magic_link_token_query(token) do
+    case Base.url_decode64(token, padding: false) do
+      {:ok, decoded_token} ->
+        hashed_token = :crypto.hash(@hash_algorithm, decoded_token)
+        {:ok, by_token_and_context_query(hashed_token, "magic_link")}
+
+      :error ->
+        :error
+    end
+  end
 
   @doc """
   Returns the token struct for the given token value and context.

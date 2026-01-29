@@ -33,6 +33,27 @@ defmodule QrLabelSystemWeb.UserSessionController do
     end
   end
 
+  @doc """
+  Handles magic link authentication.
+  Verifies the token, logs in the user, and deletes the token (single use).
+  """
+  def magic_link(conn, %{"token" => token}) do
+    case Accounts.get_user_by_magic_link_token(token) do
+      %Accounts.User{} = user ->
+        # Delete the token (single use)
+        Accounts.delete_magic_link_token(token)
+
+        conn
+        |> put_flash(:info, "Bienvenido!")
+        |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
+
+      nil ->
+        conn
+        |> put_flash(:error, "El enlace es inválido o ha expirado.")
+        |> redirect(to: ~p"/users/log_in")
+    end
+  end
+
   def delete(conn, _params) do
     conn
     |> put_flash(:info, "Sesión cerrada exitosamente.")

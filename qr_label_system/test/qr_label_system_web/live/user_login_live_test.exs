@@ -8,9 +8,9 @@ defmodule QrLabelSystemWeb.UserLoginLiveTest do
     test "renders log in page", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/users/log_in")
 
-      assert html =~ "Iniciar Sesión"
+      assert html =~ "Bienvenido"
       assert html =~ "Regístrate"
-      assert html =~ "¿Olvidaste tu contraseña?"
+      assert html =~ "Enviar enlace de acceso"
     end
 
     test "redirects if already logged in", %{conn: conn} do
@@ -24,35 +24,50 @@ defmodule QrLabelSystemWeb.UserLoginLiveTest do
     end
   end
 
-  describe "user login" do
-    test "redirects if user login with valid credentials", %{conn: conn} do
-      password = "Hello123!"
-      user = user_fixture(%{password: password})
+  describe "magic link login" do
+    test "shows success message after sending magic link", %{conn: conn} do
+      user = user_fixture()
 
       {:ok, lv, _html} = live(conn, ~p"/users/log_in")
 
-      form =
-        form(lv, "#login_form", user: %{email: user.email, password: password, remember_me: true})
+      result =
+        lv
+        |> form("#login_form", user: %{email: user.email})
+        |> render_submit()
 
-      conn = submit_form(form, conn)
-
-      assert redirected_to(conn) == ~p"/designs"
+      assert result =~ "Revisa tu correo"
+      assert result =~ user.email
     end
 
-    test "redirects to login page with a flash error if there are no valid credentials", %{
-      conn: conn
-    } do
+    test "shows success message even for non-existent email (prevents enumeration)", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/log_in")
 
-      form =
-        form(lv, "#login_form",
-          user: %{email: "test@email.com", password: "123456", remember_me: true}
-        )
+      result =
+        lv
+        |> form("#login_form", user: %{email: "nonexistent@email.com"})
+        |> render_submit()
 
-      conn = submit_form(form, conn)
+      # Should still show success message to prevent email enumeration
+      assert result =~ "Revisa tu correo"
+    end
 
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "inválidos"
-      assert redirected_to(conn) == ~p"/users/log_in"
+    test "can reset and use different email", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/log_in")
+
+      # Send magic link
+      lv
+      |> form("#login_form", user: %{email: "first@email.com"})
+      |> render_submit()
+
+      # Click reset button
+      result =
+        lv
+        |> element("button", "Usar otro email")
+        |> render_click()
+
+      # Should show login form again
+      assert result =~ "Enviar enlace de acceso"
+      refute result =~ "Revisa tu correo"
     end
   end
 
@@ -66,21 +81,7 @@ defmodule QrLabelSystemWeb.UserLoginLiveTest do
         |> render_click()
         |> follow_redirect(conn, ~p"/users/register")
 
-      assert login_html =~ "Crear una cuenta"
-    end
-
-    test "redirects to forgot password page when the Forgot Password button is clicked", %{
-      conn: conn
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/users/log_in")
-
-      {:ok, conn} =
-        lv
-        |> element(~s|main a:fl-contains("¿Olvidaste tu contraseña?")|)
-        |> render_click()
-        |> follow_redirect(conn, ~p"/users/reset_password")
-
-      assert conn.resp_body =~ "Olvidaste tu contraseña"
+      assert login_html =~ "Crear cuenta"
     end
   end
 end

@@ -47,6 +47,9 @@ config :phoenix, :plug_init_mode, :runtime
 # Disable Oban in dev for simplicity
 config :qr_label_system, Oban, testing: :inline
 
+# Swoosh local adapter for development (view emails at /dev/mailbox)
+config :qr_label_system, QrLabelSystem.Mailer, adapter: Swoosh.Adapters.Local
+
 # Development encryption key (DO NOT use in production)
 config :qr_label_system, QrLabelSystem.Vault,
   ciphers: [

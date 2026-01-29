@@ -38,11 +38,11 @@ defmodule QrLabelSystemWeb.Router do
     plug :rate_limit_login
   end
 
-  # Public routes
+  # Public routes - Home with integrated login
   scope "/", QrLabelSystemWeb do
-    pipe_through :browser
+    pipe_through [:browser, :redirect_if_user_is_authenticated]
 
-    get "/", PageController, :home
+    live "/", HomeLive, :index
   end
 
   # Development routes
@@ -70,6 +70,9 @@ defmodule QrLabelSystemWeb.Router do
     end
 
     post "/users/log_in", UserSessionController, :create
+
+    # Magic link authentication route
+    get "/users/magic_link/:token", UserSessionController, :magic_link
   end
 
   # Rate limited login endpoint (separate for rate limiting)

@@ -61,5 +61,11 @@ config :qr_label_system, Oban,
 #   :crypto.strong_rand_bytes(32) |> Base.encode64()
 # Then set the CLOAK_KEY environment variable
 
+# Swoosh mailer configuration
+config :qr_label_system, QrLabelSystem.Mailer, adapter: Swoosh.Adapters.Local
+
+# Disable swoosh api client as it is only required for production adapters.
+config :swoosh, :api_client, false
+
 # Import environment specific config
 import_config "#{config_env()}.exs"
