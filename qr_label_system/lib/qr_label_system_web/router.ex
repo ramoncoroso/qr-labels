@@ -70,6 +70,7 @@ defmodule QrLabelSystemWeb.Router do
     end
 
     post "/users/log_in", UserSessionController, :create
+    post "/users/send_magic_link", UserSessionController, :send_magic_link
 
     # Magic link authentication route
     get "/users/magic_link/:token", UserSessionController, :magic_link

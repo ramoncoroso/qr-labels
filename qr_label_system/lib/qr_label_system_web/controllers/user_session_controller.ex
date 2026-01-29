@@ -34,6 +34,34 @@ defmodule QrLabelSystemWeb.UserSessionController do
   end
 
   @doc """
+  Sends a magic link to the given email.
+  Creates user if not exists (passwordless registration).
+  """
+  def send_magic_link(conn, %{"email" => email}) do
+    email = String.trim(email)
+
+    if email != "" do
+      # Create user if not exists
+      case Accounts.get_user_by_email(email) do
+        nil ->
+          case Accounts.register_user_passwordless(%{"email" => email}) do
+            {:ok, _user} ->
+              Accounts.deliver_magic_link_instructions(email, &url(conn, ~p"/users/magic_link/#{&1}"))
+            {:error, _} ->
+              :ok
+          end
+
+        _user ->
+          Accounts.deliver_magic_link_instructions(email, &url(conn, ~p"/users/magic_link/#{&1}"))
+      end
+    end
+
+    conn
+    |> put_flash(:info, "Si el email es válido, recibirás un enlace de acceso.")
+    |> redirect(to: ~p"/?sent=true&email=#{email}")
+  end
+
+  @doc """
   Handles magic link authentication.
   Verifies the token, logs in the user, and deletes the token (single use).
   """

@@ -1,6 +1,8 @@
 defmodule QrLabelSystemWeb.HomeLive do
   use QrLabelSystemWeb, :live_view
 
+  import Plug.CSRFProtection, only: [get_csrf_token: 0]
+
   alias QrLabelSystem.Accounts
 
   @impl true
@@ -54,7 +56,9 @@ defmodule QrLabelSystemWeb.HomeLive do
               </div>
             <% else %>
               <!-- Estado: Formulario de login -->
-              <form phx-submit="send_magic_link" class="space-y-4">
+              <!-- Uses action as fallback when LiveView websocket fails -->
+              <form phx-submit="send_magic_link" action={~p"/users/send_magic_link"} method="post" class="space-y-4">
+                <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
                 <div>
                   <label for="email" class="block text-sm font-medium text-gray-700 mb-1.5">
                     Email
@@ -149,9 +153,14 @@ defmodule QrLabelSystemWeb.HomeLive do
   end
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     require Logger
     Logger.info("=== HomeLive MOUNT === connected?=#{connected?(socket)}")
+
+    # Check if redirected from fallback POST
+    magic_link_sent = params["sent"] == "true"
+    sent_to_email = params["email"]
+
     {:ok,
      assign(socket,
        page_title: "Generador de Etiquetas QR",
@@ -160,9 +169,9 @@ defmodule QrLabelSystemWeb.HomeLive do
        og_title: "QR Label System",
        og_description: "Genera etiquetas con codigos QR desde tus datos. Importa Excel, disena plantillas e imprime.",
        body_class: "bg-gray-50",
-       email: "",
-       magic_link_sent: false,
-       sent_to_email: nil
+       email: sent_to_email || "",
+       magic_link_sent: magic_link_sent,
+       sent_to_email: sent_to_email
      ), layout: {QrLabelSystemWeb.Layouts, :home}}
   end
 
