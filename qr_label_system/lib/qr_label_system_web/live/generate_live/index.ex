@@ -5,7 +5,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    designs = Designs.list_designs(socket.assigns.current_user.id)
+    designs = Designs.list_user_designs(socket.assigns.current_user.id)
 
     {:ok,
      socket
