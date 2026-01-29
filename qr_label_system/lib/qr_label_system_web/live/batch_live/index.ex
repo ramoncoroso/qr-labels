@@ -5,7 +5,11 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, stream(socket, :batches, Batches.list_user_batches(socket.assigns.current_user.id))}
+    batches = Batches.list_user_batches(socket.assigns.current_user.id)
+    {:ok,
+     socket
+     |> assign(:has_batches, length(batches) > 0)
+     |> stream(:batches, batches)}
   end
 
   @impl true
@@ -93,7 +97,7 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
           </div>
         </div>
 
-        <div :if={@streams.batches |> Enum.empty?()} class="text-center py-12">
+        <div :if={not @has_batches} class="text-center py-12">
           <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
           </svg>
