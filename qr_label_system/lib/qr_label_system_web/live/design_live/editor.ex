@@ -298,8 +298,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
-  defp can_undo?(socket), do: socket.assigns.history_index > 0
-  defp can_redo?(socket), do: socket.assigns.history_index < length(socket.assigns.history) - 1
+  defp can_undo?(assigns), do: assigns.history_index > 0
+  defp can_redo?(assigns), do: assigns.history_index < length(assigns.history) - 1
 
   defp build_auto_mapping(elements, preview_data) do
     columns = Map.keys(preview_data)
