@@ -1,0 +1,55 @@
+# The directory Mix will write compiled artifacts to.
+qr_label_system/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+qr_label_system/cover/
+
+# The directory Mix downloads your dependencies sources to.
+qr_label_system/deps/
+
+# Where 3rd-party dependencies like ExDoc output generated docs.
+qr_label_system/doc/
+
+# Ignore .fetch files in case you like to edit your project deps locally.
+qr_label_system/.fetch
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Temporary files, for example, from tests.
+qr_label_system/tmp/
+
+# Ignore package tarball (built via "mix hex.build").
+qr_label_system-*.tar
+
+# Ignore assets that are produced by build tools.
+qr_label_system/priv/static/assets/
+
+# Ignore digested assets cache.
+qr_label_system/priv/static/cache_manifest.json
+
+# In case you use Node.js/CLI tools for assets
+qr_label_system/assets/node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude local settings (may contain sensitive data)
+.claude/settings.local.json

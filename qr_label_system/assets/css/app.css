@@ -1,0 +1,182 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/* Custom styles */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  /* Label editor canvas */
+  .canvas-container {
+    @apply bg-gray-100 rounded-lg p-4;
+  }
+
+  /* Print preview styles */
+  .print-preview {
+    @apply bg-white shadow-lg;
+  }
+
+  /* Loading states */
+  .loading-spinner {
+    @apply animate-spin h-5 w-5 text-indigo-600;
+  }
+}
+
+/* Fabric.js canvas adjustments */
+.canvas-container canvas {
+  @apply rounded-lg;
+}
+
+/* Print styles */
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Form input focus styles */
+input:focus,
+select:focus,
+textarea:focus {
+  @apply ring-2 ring-indigo-500 ring-offset-2;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded hover:bg-gray-400;
+}
+
+/* Drag and drop zone */
+.drop-zone {
+  @apply border-2 border-dashed border-gray-300 rounded-lg p-8 text-center transition-colors;
+}
+
+.drop-zone.active,
+.drop-zone:hover {
+  @apply border-indigo-400 bg-indigo-50;
+}
+
+/* Color picker input */
+input[type="color"] {
+  @apply cursor-pointer;
+  -webkit-appearance: none;
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  @apply rounded border-0;
+}
+
+/* Table styles */
+.data-table {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+.data-table th {
+  @apply px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+}
+
+.data-table td {
+  @apply px-4 py-3 text-sm text-gray-900;
+}
+
+/* Card hover effect */
+.card-hover {
+  @apply transition-shadow hover:shadow-lg;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-success {
+  @apply bg-green-100 text-green-800;
+}
+
+.badge-warning {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.badge-error {
+  @apply bg-red-100 text-red-800;
+}
+
+.badge-info {
+  @apply bg-blue-100 text-blue-800;
+}
+
+/* Step progress indicator */
+.step-active {
+  @apply bg-indigo-600 text-white;
+}
+
+.step-complete {
+  @apply bg-green-600 text-white;
+}
+
+.step-pending {
+  @apply bg-gray-300 text-gray-500;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black bg-opacity-50 z-40;
+}
+
+/* Tooltip */
+[data-tooltip] {
+  @apply relative;
+}
+
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  @apply absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap z-50;
+}
+
+/* Focus visible for accessibility */
+.focus-visible:focus-visible {
+  @apply ring-2 ring-indigo-500 ring-offset-2;
+}
