@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <%= if assigns[:meta_description] do %>
+      <meta name="description" content={@meta_description} />
+    <% end %>
+    <%= if assigns[:meta_keywords] do %>
+      <meta name="keywords" content={@meta_keywords} />
+    <% end %>
+    <%= if assigns[:og_title] do %>
+      <meta property="og:title" content={@og_title} />
+      <meta property="og:description" content={assigns[:og_description] || @meta_description} />
+      <meta property="og:type" content="website" />
+    <% end %>
     <.live_title suffix=" · QR Label System">
       <%= assigns[:page_title] || "Inicio" %>
     </.live_title>
@@ -11,7 +22,7 @@
     <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
     </script>
   </head>
-  <body class="h-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50 antialiased">
+  <body class={"h-full antialiased #{assigns[:body_class] || "bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50"}"}>
     <%= @inner_content %>
   </body>
 </html>

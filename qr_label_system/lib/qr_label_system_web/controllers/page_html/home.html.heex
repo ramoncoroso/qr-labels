@@ -7,22 +7,22 @@
     <title>QR Label System - Generador de Etiquetas</title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
   </head>
-  <body class="h-full bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900">
+  <body class="h-full bg-gradient-to-br from-blue-950 via-blue-900 to-indigo-900">
     <div class="min-h-full flex flex-col">
       <!-- Header -->
       <header class="py-6">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex justify-between items-center">
           <.link href={~p"/"} class="flex items-center space-x-3 hover:opacity-80 transition">
-            <svg class="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="h-10 w-10 text-cyan-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
             </svg>
-            <span class="text-2xl font-bold text-white">QR Label System</span>
+            <span class="text-2xl font-bold text-cyan-50">QR Label System</span>
           </.link>
           <div class="flex items-center space-x-4">
-            <.link href={~p"/users/log_in"} class="text-slate-200 hover:text-white font-medium transition">
+            <.link href={~p"/users/log_in"} class="text-cyan-100 hover:text-cyan-50 font-medium transition">
               Iniciar Sesion
             </.link>
-            <.link href={~p"/users/register"} class="bg-blue-600 text-white hover:bg-blue-500 px-4 py-2 rounded-lg font-medium transition shadow-lg">
+            <.link href={~p"/users/register"} class="bg-blue-600 text-cyan-50 hover:bg-blue-500 px-4 py-2 rounded-lg font-medium transition shadow-lg">
               Registrarse
             </.link>
           </div>
@@ -33,17 +33,17 @@
       <main class="flex-1 flex items-center">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
           <div class="text-center">
-            <h1 class="text-4xl md:text-6xl font-extrabold text-white tracking-tight drop-shadow-lg">
+            <h1 class="text-4xl md:text-6xl font-extrabold text-cyan-50 tracking-tight drop-shadow-lg">
               Sistema de Generacion de
-              <span class="text-blue-300">Etiquetas QR</span>
+              <span class="text-cyan-300">Etiquetas QR</span>
             </h1>
-            <p class="mt-6 text-xl text-blue-100 max-w-3xl mx-auto leading-relaxed">
+            <p class="mt-6 text-xl text-cyan-100 max-w-3xl mx-auto leading-relaxed">
               Disena etiquetas personalizadas con codigos QR y de barras.
               Importa datos desde Excel o conecta a bases de datos externas.
               Genera etiquetas unicas para cada registro.
             </p>
             <div class="mt-10">
-              <.link href={~p"/users/register"} class="bg-blue-600 text-white hover:bg-blue-500 px-8 py-3 rounded-lg font-semibold text-lg transition shadow-lg">
+              <.link href={~p"/users/register"} class="bg-blue-600 text-cyan-50 hover:bg-blue-500 px-8 py-3 rounded-lg font-semibold text-lg transition shadow-lg">
                 Comenzar Ahora
               </.link>
             </div>
@@ -53,36 +53,36 @@
           <div class="mt-24 grid grid-cols-1 md:grid-cols-3 gap-8">
             <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:bg-white/15 transition">
               <div class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 text-cyan-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                 </svg>
               </div>
-              <h3 class="text-xl font-semibold text-white mb-2">Diseno Visual</h3>
-              <p class="text-slate-300">
+              <h3 class="text-xl font-semibold text-cyan-50 mb-2">Diseno Visual</h3>
+              <p class="text-cyan-100">
                 Editor drag & drop para crear etiquetas de cualquier tamano. Posiciona QR, texto, codigos de barras y lineas libremente.
               </p>
             </div>
 
             <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:bg-white/15 transition">
               <div class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 text-cyan-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h3 class="text-xl font-semibold text-white mb-2">Importacion de Datos</h3>
-              <p class="text-slate-300">
+              <h3 class="text-xl font-semibold text-cyan-50 mb-2">Importacion de Datos</h3>
+              <p class="text-cyan-100">
                 Carga archivos Excel/CSV o conecta a PostgreSQL, MySQL y SQL Server. Cada fila genera una etiqueta unica.
               </p>
             </div>
 
             <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:bg-white/15 transition">
               <div class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 text-cyan-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                 </svg>
               </div>
-              <h3 class="text-xl font-semibold text-white mb-2">Impresion Flexible</h3>
-              <p class="text-slate-300">
+              <h3 class="text-xl font-semibold text-cyan-50 mb-2">Impresion Flexible</h3>
+              <p class="text-cyan-100">
                 Compatible con impresoras normales (hojas A4) e impresoras de etiquetas (Zebra, Brother, Dymo). Exporta a PDF.
               </p>
             </div>
@@ -90,36 +90,36 @@
 
           <!-- Workflow -->
           <div class="mt-24">
-            <h2 class="text-3xl font-bold text-white text-center mb-12">Flujo de Trabajo Simple</h2>
+            <h2 class="text-3xl font-bold text-cyan-50 text-center mb-12">Flujo de Trabajo Simple</h2>
             <div class="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-12">
               <div class="text-center">
-                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold shadow-lg">1</div>
-                <h4 class="text-white font-semibold">Disena</h4>
-                <p class="text-slate-400 text-sm">Crea tu etiqueta</p>
+                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-cyan-50 text-2xl font-bold shadow-lg">1</div>
+                <h4 class="text-cyan-50 font-semibold">Disena</h4>
+                <p class="text-cyan-200 text-sm">Crea tu etiqueta</p>
               </div>
-              <svg class="hidden md:block w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg class="hidden md:block w-8 h-8 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
               </svg>
               <div class="text-center">
-                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold shadow-lg">2</div>
-                <h4 class="text-white font-semibold">Importa</h4>
-                <p class="text-slate-400 text-sm">Carga tus datos</p>
+                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-cyan-50 text-2xl font-bold shadow-lg">2</div>
+                <h4 class="text-cyan-50 font-semibold">Importa</h4>
+                <p class="text-cyan-200 text-sm">Carga tus datos</p>
               </div>
-              <svg class="hidden md:block w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg class="hidden md:block w-8 h-8 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
               </svg>
               <div class="text-center">
-                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold shadow-lg">3</div>
-                <h4 class="text-white font-semibold">Vincula</h4>
-                <p class="text-slate-400 text-sm">Mapea columnas</p>
+                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-cyan-50 text-2xl font-bold shadow-lg">3</div>
+                <h4 class="text-cyan-50 font-semibold">Vincula</h4>
+                <p class="text-cyan-200 text-sm">Mapea columnas</p>
               </div>
-              <svg class="hidden md:block w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg class="hidden md:block w-8 h-8 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
               </svg>
               <div class="text-center">
-                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold shadow-lg">4</div>
-                <h4 class="text-white font-semibold">Imprime</h4>
-                <p class="text-slate-400 text-sm">Genera etiquetas</p>
+                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-cyan-50 text-2xl font-bold shadow-lg">4</div>
+                <h4 class="text-cyan-50 font-semibold">Imprime</h4>
+                <p class="text-cyan-200 text-sm">Genera etiquetas</p>
               </div>
             </div>
           </div>
@@ -129,7 +129,7 @@
       <!-- Footer -->
       <footer class="py-8">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-          <p class="text-slate-400 text-sm">
+          <p class="text-cyan-200 text-sm">
             QR Label System - Sistema de Generacion de Etiquetas Personalizadas
           </p>
         </div>
