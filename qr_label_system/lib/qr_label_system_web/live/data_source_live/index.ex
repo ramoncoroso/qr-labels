@@ -6,7 +6,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, stream(socket, :data_sources, DataSources.list_data_sources(socket.assigns.current_user.id))}
+    {:ok, stream(socket, :data_sources, DataSources.list_user_data_sources(socket.assigns.current_user.id))}
   end
 
   @impl true

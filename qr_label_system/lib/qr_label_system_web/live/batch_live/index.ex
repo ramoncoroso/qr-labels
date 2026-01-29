@@ -5,7 +5,7 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, stream(socket, :batches, Batches.list_batches(socket.assigns.current_user.id))}
+    {:ok, stream(socket, :batches, Batches.list_user_batches(socket.assigns.current_user.id))}
   end
 
   @impl true

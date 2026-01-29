@@ -11,7 +11,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
   @impl true
   def mount(%{"design_id" => design_id}, _session, socket) do
     design = Designs.get_design!(design_id)
-    data_sources = DataSources.list_data_sources(socket.assigns.current_user.id)
+    data_sources = DataSources.list_user_data_sources(socket.assigns.current_user.id)
 
     {:ok,
      socket
