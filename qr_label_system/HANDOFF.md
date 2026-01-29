@@ -1,8 +1,107 @@
 # QR Label System - Documento de Handoff
 
-**Fecha**: Enero 2026
-**Version**: 1.1.0
-**Estado**: En desarrollo activo - Mejoras de rendimiento y UX implementadas
+**Fecha**: 29 Enero 2026
+**Version**: 1.2.0
+**Estado**: En desarrollo activo - Editor visual mejorado
+
+---
+
+## CHANGELOG v1.2.0 (Sesión Actual)
+
+### Editor Visual de Etiquetas (Canvas Designer)
+
+**Archivo:** `assets/js/hooks/canvas_designer.js`
+
+#### Nuevas Funcionalidades:
+- Canvas interactivo con Fabric.js completamente reescrito
+- Reglas con marcas en milímetros (cada 5mm, etiquetas cada 10mm)
+- Zoom via CSS transform (50% - 200%)
+- Soporte para elementos: QR, Código de barras, Texto, Línea, Rectángulo, Imagen
+- Arrastrar, redimensionar y rotar elementos
+- Controles visuales estilizados (círculos azules)
+
+#### Mejoras de Seguridad y Rendimiento:
+- **Debouncing** en guardado (300ms) para evitar llamadas excesivas al servidor
+- **Validación de dimensiones** con límites (10-500mm)
+- **Sanitización de colores** (regex para validar hex)
+- **Cleanup en `destroyed()`** para prevenir memory leaks
+- **Flag `_isDestroyed`** para evitar operaciones en componentes desmontados
+- **Redondeo de valores** a 2 decimales para precisión
+
+```javascript
+// Constantes clave
+const PX_PER_MM = 3.78           // Conversión mm a px (96 DPI)
+const MAX_CANVAS_SIZE_MM = 500   // Límite máximo
+const MIN_CANVAS_SIZE_MM = 10    // Límite mínimo
+const SAVE_DEBOUNCE_MS = 300     // Debounce para save
+```
+
+### LiveView del Editor
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+#### Seguridad Implementada:
+- **Whitelist de tipos de elemento:** `@valid_element_types`
+- **Whitelist de campos actualizables:** `@allowed_element_fields` (NUEVO)
+- **Verificación de propiedad** del diseño en `mount/3`
+
+```elixir
+@valid_element_types ~w(qr barcode text line rectangle image)
+@allowed_element_fields ~w(x y width height rotation binding qr_error_level
+  barcode_format barcode_show_text font_size font_family font_weight
+  text_align text_content color background_color border_width border_color)
+```
+
+### Archivos Modificados en v1.2.0:
+
+| Archivo | Cambios |
+|---------|---------|
+| `assets/js/hooks/canvas_designer.js` | Reescrito completamente con mejoras de seguridad |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | Zoom, whitelist de campos, UI mejorada |
+| `lib/qr_label_system_web/live/design_live/new.ex` | Página dedicada para crear diseños |
+| `lib/qr_label_system_web/controllers/design_controller.ex` | Fallback POST para WebSocket fail |
+| `lib/qr_label_system_web/router.ex` | Ruta POST /designs/new |
+
+---
+
+## Plan para Continuar
+
+### Prioridad Alta (Próximas sesiones)
+
+1. **Renderizado Real de QR y Códigos de Barras**
+   - Integrar `eqrcode` para generación QR
+   - Integrar `barlix` para códigos de barras
+   - Mostrar códigos reales en lugar de placeholders en el canvas
+
+2. **Importación de Datos Completa**
+   - Completar parser de Excel (base existe con `xlsxir`)
+   - Agregar soporte CSV
+   - UI de mapeo de columnas a bindings de elementos
+
+3. **Generación de PDF para Impresión**
+   - Evaluar `chromic_pdf` vs `pdf_generator`
+   - Layout de múltiples etiquetas por página
+   - Configuración de márgenes y espaciado
+
+### Prioridad Media
+
+4. **Mejoras del Editor**
+   - Snap to grid
+   - Guías de alineación
+   - Copiar/pegar elementos
+   - Capas (z-index)
+   - Bloquear elementos
+
+5. **Vista Previa en Tiempo Real**
+   - Renderizar etiqueta con datos reales del data source
+   - Navegación entre registros de datos
+
+### Prioridad Baja
+
+6. **Optimizaciones**
+   - Caching de diseños renderizados
+   - Lazy loading de lotes grandes
+   - Compresión de imágenes subidas
 
 ---
 

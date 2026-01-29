@@ -23,6 +23,13 @@ defmodule QrLabelSystem.DataSources.DataSource do
     # Connection config stored as encrypted binary
     field :connection_config, QrLabelSystem.Encrypted.Map
 
+    # Virtual fields for form handling
+    field :host, :string, virtual: true
+    field :port, :integer, virtual: true
+    field :database, :string, virtual: true
+    field :username, :string, virtual: true
+    field :password, :string, virtual: true
+
     # Test connection results
     field :last_tested_at, :utc_datetime
     field :test_status, :string
@@ -39,7 +46,7 @@ defmodule QrLabelSystem.DataSources.DataSource do
   """
   def changeset(data_source, attrs) do
     data_source
-    |> cast(attrs, [:name, :type, :query, :connection_config, :user_id])
+    |> cast(attrs, [:name, :type, :query, :connection_config, :user_id, :host, :port, :database, :username, :password])
     |> validate_required([:name, :type])
     |> validate_inclusion(:type, @source_types)
     |> validate_connection_config()

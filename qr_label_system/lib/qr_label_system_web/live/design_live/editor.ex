@@ -25,7 +25,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:preview_data, %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"})
        |> assign(:history, [])
        |> assign(:history_index, -1)
-       |> assign(:has_unsaved_changes, false)}
+       |> assign(:has_unsaved_changes, false)
+       |> assign(:zoom, 100)}
     end
   end
 
@@ -75,13 +76,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
+  # Whitelist of allowed fields for element updates (security)
+  @allowed_element_fields ~w(x y width height rotation binding qr_error_level
+    barcode_format barcode_show_text font_size font_family font_weight
+    text_align text_content color background_color border_width border_color)
+
   @impl true
-  def handle_event("update_element", %{"field" => field, "value" => value}, socket) do
+  def handle_event("update_element", %{"field" => field, "value" => value}, socket)
+      when field in @allowed_element_fields do
     if socket.assigns.selected_element do
       {:noreply, push_event(socket, "update_element_property", %{field: field, value: value})}
     else
       {:noreply, socket}
     end
+  end
+
+  def handle_event("update_element", %{"field" => _invalid_field}, socket) do
+    # Silently ignore invalid fields - potential security probe
+    {:noreply, socket}
   end
 
   @impl true
@@ -141,6 +153,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       {:ok, new_socket} -> {:noreply, new_socket}
       :no_future -> {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("zoom_in", _params, socket) do
+    new_zoom = min(socket.assigns.zoom + 25, 200)
+    {:noreply, assign(socket, :zoom, new_zoom)}
+  end
+
+  @impl true
+  def handle_event("zoom_out", _params, socket) do
+    new_zoom = max(socket.assigns.zoom - 25, 50)
+    {:noreply, assign(socket, :zoom, new_zoom)}
+  end
+
+  @impl true
+  def handle_event("zoom_reset", _params, socket) do
+    {:noreply, assign(socket, :zoom, 100)}
   end
 
   @impl true
@@ -325,137 +354,32 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   def render(assigns) do
     assigns = assign(assigns, :can_undo, can_undo?(assigns))
     assigns = assign(assigns, :can_redo, can_redo?(assigns))
+    assigns = assign(assigns, :element_count, length(assigns.design.elements || []))
     ~H"""
-    <div class="h-[calc(100vh-12rem)] flex flex-col" id="editor-container" phx-hook="KeyboardShortcuts">
-      <!-- Toolbar -->
-      <div class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
-        <div class="flex items-center space-x-2">
-          <.link navigate={~p"/designs"} class="text-gray-500 hover:text-gray-700">
+    <div class="h-screen flex flex-col bg-gray-100" id="editor-container" phx-hook="KeyboardShortcuts">
+      <!-- Header -->
+      <div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
+        <div class="flex items-center space-x-4">
+          <.link navigate={~p"/designs"} class="flex items-center space-x-2 text-gray-500 hover:text-gray-700">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
+            <span class="text-sm">Volver</span>
           </.link>
-          <span class="text-lg font-semibold text-gray-900"><%= @design.name %></span>
+          <div class="h-6 w-px bg-gray-300"></div>
+          <div>
+            <h1 class="text-lg font-semibold text-gray-900"><%= @design.name %></h1>
+            <p class="text-xs text-gray-500"><%= @design.width_mm %> × <%= @design.height_mm %> mm</p>
+          </div>
         </div>
 
-        <div class="flex items-center space-x-4">
-          <!-- Undo/Redo buttons -->
-          <div class="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
-            <button
-              phx-click="undo"
-              disabled={!@can_undo}
-              class={"p-2 rounded hover:bg-white hover:shadow #{if @can_undo, do: "text-gray-600 hover:text-indigo-600", else: "text-gray-300 cursor-not-allowed"}"}
-              title="Deshacer (Ctrl+Z)"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-            </button>
-            <button
-              phx-click="redo"
-              disabled={!@can_redo}
-              class={"p-2 rounded hover:bg-white hover:shadow #{if @can_redo, do: "text-gray-600 hover:text-indigo-600", else: "text-gray-300 cursor-not-allowed"}"}
-              title="Rehacer (Ctrl+Y)"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Element buttons -->
-          <div class="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
-            <button
-              phx-click="add_element"
-              phx-value-type="qr"
-              class="p-2 rounded hover:bg-white hover:shadow text-gray-600 hover:text-indigo-600"
-              title="Agregar QR"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-              </svg>
-            </button>
-            <button
-              phx-click="add_element"
-              phx-value-type="barcode"
-              class="p-2 rounded hover:bg-white hover:shadow text-gray-600 hover:text-indigo-600"
-              title="Agregar Código de Barras"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 17h.01M17 7h.01M17 17h.01M12 7v10M7 7v10m10-10v10" />
-              </svg>
-            </button>
-            <button
-              phx-click="add_element"
-              phx-value-type="text"
-              class="p-2 rounded hover:bg-white hover:shadow text-gray-600 hover:text-indigo-600"
-              title="Agregar Texto"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-              </svg>
-            </button>
-            <button
-              phx-click="add_element"
-              phx-value-type="line"
-              class="p-2 rounded hover:bg-white hover:shadow text-gray-600 hover:text-indigo-600"
-              title="Agregar Línea"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16" />
-              </svg>
-            </button>
-            <button
-              phx-click="add_element"
-              phx-value-type="rectangle"
-              class="p-2 rounded hover:bg-white hover:shadow text-gray-600 hover:text-indigo-600"
-              title="Agregar Rectángulo"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
-              </svg>
-            </button>
-            <button
-              phx-click="add_element"
-              phx-value-type="image"
-              class="p-2 rounded hover:bg-white hover:shadow text-gray-600 hover:text-indigo-600"
-              title="Agregar Imagen"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </button>
-          </div>
-
-          <button
-            phx-click="toggle_preview"
-            class={"p-2 rounded hover:bg-gray-100 #{if @show_preview, do: "text-indigo-600 bg-indigo-50", else: "text-gray-600"}"}
-            title="Vista Previa (Ctrl+P)"
-          >
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          </button>
-
-          <button
-            phx-click="toggle_properties"
-            class="p-2 rounded hover:bg-gray-100 text-gray-600"
-            title="Mostrar/Ocultar Propiedades"
-          >
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-
+        <div class="flex items-center space-x-2">
           <button
             phx-click="save_design"
-            class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
-            title="Guardar (Ctrl+S)"
+            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 font-medium"
           >
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
             </svg>
             <span>Guardar</span>
           </button>
@@ -464,43 +388,236 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       <!-- Main Content -->
       <div class="flex-1 flex overflow-hidden">
-        <!-- Canvas Area -->
-        <div class={"flex-1 bg-gray-100 overflow-auto p-8 flex items-center justify-center #{if @show_preview, do: "w-1/2", else: ""}"}>
-          <div
-            id="canvas-container"
-            phx-hook="CanvasDesigner"
-            data-width={@design.width_mm}
-            data-height={@design.height_mm}
-            data-background-color={@design.background_color}
-            data-border-width={@design.border_width}
-            data-border-color={@design.border_color}
-            data-border-radius={@design.border_radius}
-            class="shadow-xl"
-          >
-            <canvas id="label-canvas"></canvas>
+        <!-- Left Sidebar - Element Tools -->
+        <div class="w-20 bg-white border-r border-gray-200 flex flex-col py-4">
+          <div class="px-2 mb-4">
+            <p class="text-xs font-medium text-gray-400 text-center mb-3">ELEMENTOS</p>
+            <div class="space-y-2">
+              <button
+                phx-click="add_element"
+                phx-value-type="text"
+                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition group"
+              >
+                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+                <span class="text-xs">Texto</span>
+              </button>
+
+              <button
+                phx-click="add_element"
+                phx-value-type="qr"
+                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+              >
+                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span class="text-xs">QR</span>
+              </button>
+
+              <button
+                phx-click="add_element"
+                phx-value-type="barcode"
+                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+              >
+                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 17h.01M17 7h.01M17 17h.01M12 7v10M7 7v10m10-10v10" />
+                </svg>
+                <span class="text-xs">Barcode</span>
+              </button>
+
+              <button
+                phx-click="add_element"
+                phx-value-type="rectangle"
+                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+              >
+                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
+                </svg>
+                <span class="text-xs">Cuadro</span>
+              </button>
+
+              <button
+                phx-click="add_element"
+                phx-value-type="line"
+                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+              >
+                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16" />
+                </svg>
+                <span class="text-xs">Línea</span>
+              </button>
+
+              <button
+                phx-click="add_element"
+                phx-value-type="image"
+                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+              >
+                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span class="text-xs">Imagen</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-auto px-2">
+            <div class="border-t border-gray-200 pt-4 space-y-2">
+              <button
+                phx-click="undo"
+                disabled={!@can_undo}
+                class={"w-full flex flex-col items-center p-2 rounded-lg transition #{if @can_undo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
+                title="Deshacer"
+              >
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              </button>
+              <button
+                phx-click="redo"
+                disabled={!@can_redo}
+                class={"w-full flex flex-col items-center p-2 rounded-lg transition #{if @can_redo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
+                title="Rehacer"
+              >
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Live Preview Panel -->
-        <div :if={@show_preview} class="w-1/2 bg-gray-50 border-l border-gray-200 overflow-auto p-4">
-          <div class="mb-4">
-            <h3 class="font-semibold text-gray-900 mb-2">Vista Previa en Tiempo Real</h3>
-            <p class="text-sm text-gray-500">Muestra cómo se verá la etiqueta con datos de ejemplo</p>
+        <!-- Canvas Area -->
+        <div class="flex-1 overflow-auto p-8 flex flex-col items-center justify-center">
+          <!-- Zoom Controls -->
+          <div class="mb-4 flex items-center space-x-3 bg-white rounded-lg shadow-md px-4 py-2">
+            <span class="text-xs text-gray-500 font-medium">ZOOM</span>
+            <button
+              phx-click="zoom_out"
+              class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
+              title="Alejar (25%)"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+              </svg>
+            </button>
+            <button
+              phx-click="zoom_reset"
+              class="px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-md min-w-[70px] transition"
+              title="Restablecer al 100%"
+            >
+              <%= @zoom %>%
+            </button>
+            <button
+              phx-click="zoom_in"
+              class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
+              title="Acercar (+25%)"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+              </svg>
+            </button>
+            <div class="h-4 w-px bg-gray-300 mx-1"></div>
+            <span class="text-xs text-gray-400"><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
           </div>
 
-          <div class="bg-white rounded-lg shadow p-4 mb-4">
-            <h4 class="text-sm font-medium text-gray-700 mb-2">Datos de Prueba</h4>
-            <div class="grid grid-cols-2 gap-2 text-sm">
+          <div class="relative">
+            <!-- Empty State Hint -->
+            <div :if={@element_count == 0} class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <div class="bg-white/90 backdrop-blur rounded-xl p-6 shadow-lg text-center max-w-xs">
+                <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <h3 class="font-medium text-gray-900 mb-1">Etiqueta vacía</h3>
+                <p class="text-sm text-gray-500">Haz clic en los elementos de la izquierda para agregarlos a tu diseño</p>
+              </div>
+            </div>
+
+            <div
+              id="canvas-container"
+              phx-hook="CanvasDesigner"
+              data-width={@design.width_mm}
+              data-height={@design.height_mm}
+              data-background-color={@design.background_color}
+              data-border-width={@design.border_width || 0}
+              data-border-color={@design.border_color || "#000000"}
+              data-border-radius={@design.border_radius || 0}
+              class="rounded-lg overflow-visible"
+              style={"transform: scale(#{@zoom / 100}); transform-origin: center center; transition: transform 0.2s ease;"}
+            >
+              <canvas id="label-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Sidebar - Properties -->
+        <div class="w-72 bg-white border-l border-gray-200 overflow-y-auto">
+          <div class="p-4">
+            <%= if @selected_element do %>
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-gray-900">Propiedades</h3>
+                <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                  <%= String.capitalize(@selected_element.type) %>
+                </span>
+              </div>
+              <.element_properties element={@selected_element} />
+
+              <div class="mt-6 pt-4 border-t">
+                <button
+                  phx-click="delete_element"
+                  class="w-full bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center justify-center space-x-2"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span>Eliminar</span>
+                </button>
+              </div>
+            <% else %>
+              <h3 class="font-semibold text-gray-900 mb-4">Propiedades de Etiqueta</h3>
+              <.label_properties design={@design} />
+
+              <div class="mt-6 pt-4 border-t">
+                <h4 class="text-sm font-medium text-gray-700 mb-3">Vista previa</h4>
+                <button
+                  phx-click="toggle_preview"
+                  class={"w-full px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition #{if @show_preview, do: "bg-blue-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <span><%= if @show_preview, do: "Ocultar", else: "Mostrar" %> vista previa</span>
+                </button>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
+        <!-- Preview Panel (overlay) -->
+        <div :if={@show_preview} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 overflow-auto p-4 shadow-lg z-20">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-gray-900">Vista Previa</h3>
+            <button phx-click="toggle_preview" class="text-gray-400 hover:text-gray-600">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="bg-white rounded-lg shadow p-3 mb-4">
+            <h4 class="text-xs font-medium text-gray-500 mb-2">DATOS DE EJEMPLO</h4>
+            <div class="space-y-1 text-sm">
               <%= for {key, value} <- @preview_data do %>
-                <div class="flex items-center space-x-2">
-                  <span class="text-gray-500"><%= key %>:</span>
+                <div class="flex justify-between">
+                  <span class="text-gray-500"><%= key %></span>
                   <span class="font-mono text-gray-900"><%= value %></span>
                 </div>
               <% end %>
             </div>
           </div>
 
-          <div class="flex justify-center">
+          <div class="flex justify-center bg-white rounded-lg p-4 shadow">
             <div
               id="live-preview"
               phx-hook="LabelPreview"
@@ -510,28 +627,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               class="inline-block"
             >
             </div>
-          </div>
-        </div>
-
-        <!-- Properties Panel -->
-        <div :if={@show_properties} class="w-80 bg-white border-l border-gray-200 overflow-y-auto">
-          <div class="p-4">
-            <%= if @selected_element do %>
-              <h3 class="font-semibold text-gray-900 mb-4">Propiedades del Elemento</h3>
-              <.element_properties element={@selected_element} />
-
-              <div class="mt-6 pt-4 border-t">
-                <button
-                  phx-click="delete_element"
-                  class="w-full bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100"
-                >
-                  Eliminar Elemento
-                </button>
-              </div>
-            <% else %>
-              <h3 class="font-semibold text-gray-900 mb-4">Propiedades de la Etiqueta</h3>
-              <.label_properties design={@design} />
-            <% end %>
           </div>
         </div>
       </div>

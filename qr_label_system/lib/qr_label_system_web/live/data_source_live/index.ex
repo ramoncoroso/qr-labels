@@ -18,12 +18,6 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
     {:noreply, apply_action(socket, socket.assigns.live_action, params)}
   end
 
-  defp apply_action(socket, :new, _params) do
-    socket
-    |> assign(:page_title, "Nueva Fuente de Datos")
-    |> assign(:data_source, %DataSource{})
-  end
-
   defp apply_action(socket, :edit, %{"id" => id}) do
     socket
     |> assign(:page_title, "Editar Fuente de Datos")
@@ -64,7 +58,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
 
       <div class="mt-8">
         <!-- Add New Data Source Card -->
-        <.link patch={~p"/data-sources/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
+        <.link navigate={~p"/data-sources/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
           <div class="flex items-center space-x-4">
             <div class="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center">
               <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -118,7 +112,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
 
       </div>
 
-      <.modal :if={@live_action in [:new, :edit]} id="data-source-modal" show on_cancel={JS.patch(~p"/data-sources")}>
+      <.modal :if={@live_action == :edit} id="data-source-modal" show on_cancel={JS.patch(~p"/data-sources")}>
         <.live_component
           module={QrLabelSystemWeb.DataSourceLive.FormComponent}
           id={@data_source.id || :new}

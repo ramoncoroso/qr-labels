@@ -103,7 +103,7 @@ defmodule QrLabelSystemWeb.Router do
 
       # Data Sources
       live "/data-sources", DataSourceLive.Index, :index
-      live "/data-sources/new", DataSourceLive.Index, :new
+      live "/data-sources/new", DataSourceLive.New, :new
       live "/data-sources/:id", DataSourceLive.Show, :show
       live "/data-sources/:id/edit", DataSourceLive.Index, :edit
 
