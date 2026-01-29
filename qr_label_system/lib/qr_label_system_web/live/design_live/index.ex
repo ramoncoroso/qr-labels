@@ -2,7 +2,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Designs
-  alias QrLabelSystem.Designs.Design
 
   @impl true
   def mount(_params, _session, socket) do
@@ -10,29 +9,13 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     {:ok,
      socket
      |> assign(:has_designs, length(designs) > 0)
+     |> assign(:page_title, "Diseños de Etiquetas")
      |> stream(:designs, designs)}
   end
 
   @impl true
-  def handle_params(params, _url, socket) do
-    {:noreply, apply_action(socket, socket.assigns.live_action, params)}
-  end
-
-  defp apply_action(socket, :new, _params) do
-    socket
-    |> assign(:page_title, "Nuevo Diseño")
-    |> assign(:design, %Design{})
-  end
-
-  defp apply_action(socket, :index, _params) do
-    socket
-    |> assign(:page_title, "Diseños de Etiquetas")
-    |> assign(:design, nil)
-  end
-
-  @impl true
-  def handle_info({QrLabelSystemWeb.DesignLive.FormComponent, {:saved, design}}, socket) do
-    {:noreply, stream_insert(socket, :designs, design)}
+  def handle_params(_params, _url, socket) do
+    {:noreply, socket}
   end
 
   @impl true
@@ -87,7 +70,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       <div class="mt-8">
         <!-- Add New Design Card -->
-        <.link patch={~p"/designs/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
+        <.link navigate={~p"/designs/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
           <div class="flex items-center space-x-4">
             <div class="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center">
               <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -155,18 +138,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         </div>
 
       </div>
-
-      <.modal :if={@live_action == :new} id="design-modal" show on_cancel={JS.patch(~p"/designs")}>
-        <.live_component
-          module={QrLabelSystemWeb.DesignLive.FormComponent}
-          id={:new}
-          title="Nuevo Diseño"
-          action={@live_action}
-          design={@design}
-          user_id={@current_user.id}
-          patch={~p"/designs"}
-        />
-      </.modal>
     </div>
     """
   end
