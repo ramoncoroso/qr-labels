@@ -116,16 +116,33 @@ defmodule QrLabelSystemWeb.Plugs.ApiAuthTest do
       assert response["error"] == "Invalid or expired token"
     end
 
-    test "rejects multiple authorization headers", %{conn: conn} do
+    test "rejects malformed Base64 token", %{conn: conn} do
+      # Token with invalid Base64 characters
       conn =
         conn
-        |> put_req_header("authorization", "Bearer token1")
-        |> Plug.Conn.put_req_header("authorization", "Bearer token2")
+        |> put_req_header("authorization", "Bearer !!!not-valid-base64!!!")
         |> ApiAuth.authenticate_api([])
 
-      # Note: put_req_header replaces, so this test verifies single header behavior
-      # In reality, HTTP allows multiple headers, but our code handles the list
-      assert conn.status == 401 or conn.assigns[:current_user] == nil
+      assert conn.status == 401
+      assert conn.halted
+
+      response = Jason.decode!(conn.resp_body)
+      assert response["error"] =~ "Invalid token encoding"
+    end
+
+    test "accepts token with padding", %{conn: conn} do
+      user = user_fixture()
+      token = Accounts.generate_user_session_token(user)
+      # Encode with padding (standard Base64)
+      encoded_token = Base.url_encode64(token, padding: true)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer #{encoded_token}")
+        |> ApiAuth.authenticate_api([])
+
+      assert conn.assigns[:current_user].id == user.id
+      refute conn.halted
     end
   end
 
