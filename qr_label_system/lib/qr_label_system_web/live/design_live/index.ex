@@ -86,60 +86,59 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       </.header>
 
       <div class="mt-8">
-        <div id="designs" phx-update="stream" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <!-- Add New Design Card -->
-          <.link patch={~p"/designs/new"} class="bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-6 flex flex-col items-center justify-center min-h-[200px] transition-colors">
-            <div class="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center mb-3">
+        <!-- Add New Design Card -->
+        <.link patch={~p"/designs/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
+          <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center">
               <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
               </svg>
             </div>
-            <span class="text-sm font-medium text-slate-600">Nuevo Diseño</span>
-          </.link>
-          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
-            <div class="p-4">
-              <div class="flex justify-between items-start">
+            <div>
+              <h3 class="text-lg font-medium text-slate-600">Nuevo Diseño</h3>
+              <p class="text-sm text-slate-500">Crea una nueva plantilla de etiqueta</p>
+            </div>
+          </div>
+        </.link>
+
+        <div id="designs" phx-update="stream" class="space-y-4">
+          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 p-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <svg class="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                  </svg>
+                </div>
                 <div>
-                  <h3 class="text-lg font-semibold text-slate-900"><%= design.name %></h3>
-                  <p class="text-sm text-slate-500 mt-1"><%= design.description || "Sin descripción" %></p>
-                </div>
-                <%= if design.is_template do %>
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    Plantilla
-                  </span>
-                <% end %>
-              </div>
-
-              <div class="mt-4 flex items-center space-x-4 text-sm text-slate-600">
-                <div class="flex items-center">
-                  <svg class="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                  </svg>
-                  <%= design.width_mm %> × <%= design.height_mm %> mm
-                </div>
-                <div class="flex items-center">
-                  <svg class="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <%= length(design.elements || []) %> elementos
+                  <h3 class="text-lg font-semibold text-gray-900">
+                    <%= design.name %>
+                  </h3>
+                  <p class="text-sm text-gray-500">
+                    <%= design.width_mm %> × <%= design.height_mm %> mm
+                    · <%= length(design.elements || []) %> elementos
+                  </p>
                 </div>
               </div>
 
-              <div class="mt-4 pt-4 border-t border-slate-100 flex justify-between">
+              <div class="flex items-center space-x-4">
+                <div class="text-right">
+                  <%= if design.is_template do %>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Plantilla
+                    </span>
+                  <% end %>
+                </div>
+
                 <div class="flex space-x-2">
                   <.link navigate={~p"/designs/#{design.id}/edit"} class="text-blue-600 hover:text-blue-800 text-sm font-medium">
                     Editar
                   </.link>
-                  <.link navigate={~p"/designs/#{design.id}"} class="text-slate-600 hover:text-slate-800 text-sm font-medium">
+                  <.link navigate={~p"/designs/#{design.id}"} class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
                     Ver
                   </.link>
-                </div>
-                <div class="flex space-x-2">
                   <button phx-click="duplicate" phx-value-id={design.id} class="text-slate-500 hover:text-slate-700 text-sm">
                     Duplicar
-                  </button>
-                  <button phx-click="export" phx-value-id={design.id} class="text-slate-500 hover:text-slate-700 text-sm">
-                    Exportar
                   </button>
                   <button
                     phx-click="delete"
