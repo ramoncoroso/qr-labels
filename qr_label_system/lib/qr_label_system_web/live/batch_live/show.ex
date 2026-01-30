@@ -11,7 +11,7 @@ defmodule QrLabelSystemWeb.BatchLive.Show do
 
     {:ok,
      socket
-     |> assign(:page_title, "Lote ##{batch.id}")
+     |> assign(:page_title, "Combinación ##{batch.id}")
      |> assign(:batch, batch)
      |> assign(:design, design)}
   end
@@ -21,8 +21,8 @@ defmodule QrLabelSystemWeb.BatchLive.Show do
     ~H"""
     <div>
       <.header>
-        Lote #<%= @batch.id %>
-        <:subtitle>Detalles del lote de etiquetas</:subtitle>
+        Combinación #<%= @batch.id %>
+        <:subtitle>Detalles de la combinación de diseño y datos</:subtitle>
         <:actions>
           <.link navigate={~p"/batches/#{@batch.id}/print"}>
             <.button>Imprimir</.button>
@@ -33,7 +33,7 @@ defmodule QrLabelSystemWeb.BatchLive.Show do
       <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Batch Info -->
         <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Información del Lote</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Información de la combinación</h3>
 
           <.list>
             <:item title="Estado">
@@ -101,7 +101,7 @@ defmodule QrLabelSystemWeb.BatchLive.Show do
         <% end %>
       </div>
 
-      <.back navigate={~p"/batches"}>Volver a lotes</.back>
+      <.back navigate={~p"/batches"}>Volver a combinaciones</.back>
     </div>
     """
   end

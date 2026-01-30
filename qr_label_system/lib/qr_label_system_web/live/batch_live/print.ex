@@ -11,7 +11,7 @@ defmodule QrLabelSystemWeb.BatchLive.Print do
 
     {:ok,
      socket
-     |> assign(:page_title, "Imprimir Lote ##{batch.id}")
+     |> assign(:page_title, "Imprimir ##{batch.id}")
      |> assign(:batch, batch)
      |> assign(:design, design)
      |> assign(:print_config, default_print_config())
@@ -53,7 +53,7 @@ defmodule QrLabelSystemWeb.BatchLive.Print do
 
   @impl true
   def handle_event("export_pdf", _params, socket) do
-    {:noreply, push_event(socket, "export_pdf", %{filename: "lote_#{socket.assigns.batch.id}.pdf"})}
+    {:noreply, push_event(socket, "export_pdf", %{filename: "impresion_#{socket.assigns.batch.id}.pdf"})}
   end
 
   @impl true
@@ -108,8 +108,8 @@ defmodule QrLabelSystemWeb.BatchLive.Print do
     ~H"""
     <div>
       <.header>
-        Imprimir Lote #<%= @batch.id %>
-        <:subtitle><%= @batch.total_labels %> etiquetas</:subtitle>
+        Imprimir Etiquetas #<%= @batch.id %>
+        <:subtitle><%= @batch.total_labels %> etiquetas configuradas</:subtitle>
       </.header>
 
       <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -348,7 +348,7 @@ defmodule QrLabelSystemWeb.BatchLive.Print do
         </div>
       </div>
 
-      <.back navigate={~p"/batches"}>Volver a lotes</.back>
+      <.back navigate={~p"/batches"}>Volver a combinaciones</.back>
     </div>
     """
   end

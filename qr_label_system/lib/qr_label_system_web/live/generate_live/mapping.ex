@@ -38,7 +38,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
 
     {:ok,
      socket
-     |> assign(:page_title, "Mapear Columnas")
+     |> assign(:page_title, "Conectar campos")
      |> assign(:design, design)
      |> assign(:data_source, data_source)
      |> assign(:data, data)
@@ -72,14 +72,14 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
       {:ok, batch} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Lote creado exitosamente")
+         |> put_flash(:info, "Configuración de impresión creada exitosamente")
          |> push_navigate(to: ~p"/generate/preview/#{batch.id}")}
 
       {:error, _changeset} ->
         {:noreply,
          socket
          |> assign(:creating, false)
-         |> put_flash(:error, "Error al crear el lote")}
+         |> put_flash(:error, "Error al crear la configuración")}
     end
   end
 
@@ -88,8 +88,8 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
     ~H"""
     <div>
       <.header>
-        Mapear Columnas a Elementos
-        <:subtitle>Paso 3: Vincula los datos a los elementos de tu diseño</:subtitle>
+        Conectar campos
+        <:subtitle>Paso 3: Asocia las columnas de tu archivo con los elementos del diseño</:subtitle>
       </.header>
 
       <div class="mt-8">
@@ -102,7 +102,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Diseño</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Elegir diseño</span>
             </div>
             <div class="w-16 h-0.5 bg-green-600"></div>
             <div class="flex items-center">
@@ -111,17 +111,17 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Datos</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Cargar datos</span>
             </div>
             <div class="w-16 h-0.5 bg-indigo-600"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">3</div>
-              <span class="ml-2 text-sm font-medium text-indigo-600">Mapeo</span>
+              <span class="ml-2 text-sm font-medium text-indigo-600">Conectar campos</span>
             </div>
             <div class="w-16 h-0.5 bg-gray-300"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">4</div>
-              <span class="ml-2 text-sm text-gray-500">Generar</span>
+              <span class="ml-2 text-sm text-gray-500">Imprimir</span>
             </div>
           </div>
         </div>
@@ -191,7 +191,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
                 disabled={@creating || length(@data) == 0}
                 class="w-full bg-indigo-600 text-white px-4 py-3 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
               >
-                <%= if @creating, do: "Creando lote...", else: "Crear Lote (#{length(@data)} etiquetas)" %>
+                <%= if @creating, do: "Creando...", else: "Configurar Impresión (#{length(@data)} etiquetas)" %>
               </button>
             </div>
           </div>

@@ -104,8 +104,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
     ~H"""
     <div>
       <.header>
-        Seleccionar Fuente de Datos
-        <:subtitle>Paso 2: Elige de dónde cargar los datos para las etiquetas</:subtitle>
+        Cargar datos
+        <:subtitle>Paso 2: Sube tu archivo Excel o CSV con la información para las etiquetas</:subtitle>
       </.header>
 
       <div class="mt-8">
@@ -118,22 +118,22 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Diseño</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Elegir diseño</span>
             </div>
             <div class="w-16 h-0.5 bg-indigo-600"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">2</div>
-              <span class="ml-2 text-sm font-medium text-indigo-600">Datos</span>
+              <span class="ml-2 text-sm font-medium text-indigo-600">Cargar datos</span>
             </div>
             <div class="w-16 h-0.5 bg-gray-300"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">3</div>
-              <span class="ml-2 text-sm text-gray-500">Mapeo</span>
+              <span class="ml-2 text-sm text-gray-500">Conectar campos</span>
             </div>
             <div class="w-16 h-0.5 bg-gray-300"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">4</div>
-              <span class="ml-2 text-sm text-gray-500">Generar</span>
+              <span class="ml-2 text-sm text-gray-500">Imprimir</span>
             </div>
           </div>
         </div>
@@ -260,9 +260,9 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
-                <p class="mt-2">No hay fuentes de datos guardadas</p>
+                <p class="mt-2">No hay datos guardados</p>
                 <.link navigate={~p"/data-sources/new"} class="text-indigo-600 hover:underline text-sm">
-                  Crear una fuente de datos
+                  Agregar datos para etiquetas
                 </.link>
               </div>
             <% end %>

@@ -9,7 +9,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     {:ok,
      socket
      |> assign(:has_designs, length(designs) > 0)
-     |> assign(:page_title, "Diseños de Etiquetas")
+     |> assign(:page_title, "Diseños de etiquetas")
      |> stream(:designs, designs)}
   end
 
@@ -64,7 +64,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     ~H"""
     <div>
       <.header>
-        Diseños de Etiquetas
+        Diseños de etiquetas
         <:subtitle>Crea y administra tus diseños de etiquetas personalizadas</:subtitle>
       </.header>
 
@@ -120,17 +120,17 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                   <.link navigate={~p"/designs/#{design.id}"} class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
                     Ver
                   </.link>
-                  <button phx-click="duplicate" phx-value-id={design.id} class="text-slate-500 hover:text-slate-700 text-sm">
-                    Duplicar
-                  </button>
-                  <button
-                    phx-click="delete"
-                    phx-value-id={design.id}
-                    data-confirm="¿Estás seguro de que quieres eliminar este diseño?"
-                    class="text-red-500 hover:text-red-700 text-sm"
-                  >
-                    Eliminar
-                  </button>
+                  <form action={~p"/designs/#{design.id}"} method="post" class="inline">
+                    <input type="hidden" name="_method" value="delete" />
+                    <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+                    <button
+                      type="submit"
+                      onclick="return confirm('¿Estás seguro de que quieres eliminar este diseño?')"
+                      class="text-red-500 hover:text-red-700 text-sm"
+                    >
+                      Eliminar
+                    </button>
+                  </form>
                 </div>
               </div>
             </div>

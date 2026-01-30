@@ -19,7 +19,7 @@
       <%= assigns[:page_title] || "Inicio" %>
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js?v=#{System.system_time(:second)}"}>
     </script>
   </head>
   <body class={"h-full antialiased #{assigns[:body_class] || "bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50"}"}>

@@ -11,7 +11,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
 
     {:ok,
      socket
-     |> assign(:page_title, "Vista Previa del Lote")
+     |> assign(:page_title, "Listo para imprimir")
      |> assign(:batch, batch)
      |> assign(:design, design)
      |> assign(:current_preview, 0)
@@ -41,8 +41,8 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
     ~H"""
     <div>
       <.header>
-        Lote Creado Exitosamente
-        <:subtitle>Paso 4: Revisa y procede a imprimir</:subtitle>
+        Listo para imprimir
+        <:subtitle>Paso 4: Revisa la vista previa de tus etiquetas y genera el PDF</:subtitle>
       </.header>
 
       <div class="mt-8">
@@ -55,7 +55,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Diseño</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Elegir diseño</span>
             </div>
             <div class="w-16 h-0.5 bg-green-600"></div>
             <div class="flex items-center">
@@ -64,7 +64,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Datos</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Cargar datos</span>
             </div>
             <div class="w-16 h-0.5 bg-green-600"></div>
             <div class="flex items-center">
@@ -73,7 +73,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Mapeo</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Conectar campos</span>
             </div>
             <div class="w-16 h-0.5 bg-green-600"></div>
             <div class="flex items-center">
@@ -82,7 +82,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Listo</span>
+              <span class="ml-2 text-sm font-medium text-green-600">Imprimir</span>
             </div>
           </div>
         </div>
@@ -94,7 +94,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h3 class="text-xl font-semibold text-green-800">Lote #<%= @batch.id %> creado</h3>
+          <h3 class="text-xl font-semibold text-green-800">Impresión #<%= @batch.id %> creada</h3>
           <p class="text-green-600 mt-2">
             <%= @batch.total_labels %> etiquetas listas para imprimir
           </p>
@@ -144,10 +144,10 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
 
           <!-- Batch Details -->
           <div class="bg-white rounded-lg shadow p-6">
-            <h3 class="text-lg font-medium text-gray-900 mb-4">Detalles del Lote</h3>
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Detalles de la Impresión</h3>
 
             <.list>
-              <:item title="ID del lote">#<%= @batch.id %></:item>
+              <:item title="ID">#<%= @batch.id %></:item>
               <:item title="Diseño"><%= @design.name %></:item>
               <:item title="Dimensiones"><%= @design.width_mm %> × <%= @design.height_mm %> mm</:item>
               <:item title="Total de etiquetas"><%= @batch.total_labels %></:item>
@@ -170,7 +170,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
                 navigate={~p"/batches"}
                 class="block w-full text-center text-gray-600 hover:text-gray-800 px-4 py-2"
               >
-                Ver todos los lotes
+                Ver todas las combinaciones
               </.link>
             </div>
           </div>
@@ -178,7 +178,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Preview do
 
         <!-- Data Table -->
         <div class="mt-8 bg-white rounded-lg shadow p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Datos del Lote</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Datos de la combinación</h3>
 
           <%= if @batch.data_snapshot && length(@batch.data_snapshot) > 0 do %>
             <div class="overflow-x-auto">

@@ -2,7 +2,6 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.DataSources
-  alias QrLabelSystem.DataSources.DataSource
 
   @impl true
   def mount(_params, _session, socket) do
@@ -14,25 +13,8 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
   end
 
   @impl true
-  def handle_params(params, _url, socket) do
-    {:noreply, apply_action(socket, socket.assigns.live_action, params)}
-  end
-
-  defp apply_action(socket, :edit, %{"id" => id}) do
-    socket
-    |> assign(:page_title, "Editar Fuente de Datos")
-    |> assign(:data_source, DataSources.get_data_source!(id))
-  end
-
-  defp apply_action(socket, :index, _params) do
-    socket
-    |> assign(:page_title, "Fuentes de Datos")
-    |> assign(:data_source, nil)
-  end
-
-  @impl true
-  def handle_info({QrLabelSystemWeb.DataSourceLive.FormComponent, {:saved, data_source}}, socket) do
-    {:noreply, stream_insert(socket, :data_sources, data_source)}
+  def handle_params(_params, _url, socket) do
+    {:noreply, assign(socket, :page_title, "Datos para etiquetas")}
   end
 
   @impl true
@@ -43,7 +25,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
       {:ok, _} = DataSources.delete_data_source(data_source)
       {:noreply, stream_delete(socket, :data_sources, data_source)}
     else
-      {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar esta fuente de datos")}
+      {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar estos datos")}
     end
   end
 
@@ -52,8 +34,8 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
     ~H"""
     <div>
       <.header>
-        Fuentes de Datos
-        <:subtitle>Configura conexiones a Excel, CSV o bases de datos externas</:subtitle>
+        Datos para etiquetas
+        <:subtitle>Configura tus archivos Excel, CSV o conexiones a bases de datos</:subtitle>
       </.header>
 
       <div class="mt-8">
@@ -66,16 +48,16 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
               </svg>
             </div>
             <div>
-              <h3 class="text-lg font-medium text-slate-600">Nueva Fuente de Datos</h3>
+              <h3 class="text-lg font-medium text-slate-600">Agregar datos</h3>
               <p class="text-sm text-slate-500">Excel, CSV o base de datos</p>
             </div>
           </div>
         </.link>
 
         <div id="data_sources" phx-update="stream" class="space-y-4">
-          <div :for={{dom_id, data_source} <- @streams.data_sources} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 p-4">
+          <div :for={{dom_id, data_source} <- @streams.data_sources} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 p-4 hover:shadow-md transition-shadow">
             <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-4">
+              <.link navigate={~p"/data-sources/#{data_source.id}"} class="flex items-center space-x-4 flex-1 cursor-pointer">
                 <div class={"w-12 h-12 rounded-lg flex items-center justify-center #{type_bg_color(data_source.type)}"}>
                   <%= type_icon(data_source.type) %>
                 </div>
@@ -83,46 +65,31 @@ defmodule QrLabelSystemWeb.DataSourceLive.Index do
                   <h3 class="text-lg font-semibold text-gray-900"><%= data_source.name %></h3>
                   <p class="text-sm text-gray-500">
                     <%= type_label(data_source.type) %>
-                    <%= if data_source.type == "excel" && data_source.file_path do %>
-                      - <%= Path.basename(data_source.file_path) %>
-                    <% end %>
                   </p>
                 </div>
-              </div>
+              </.link>
 
               <div class="flex items-center space-x-4">
-                <.link navigate={~p"/data-sources/#{data_source.id}"} class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
-                  Ver datos
-                </.link>
-                <.link patch={~p"/data-sources/#{data_source.id}/edit"} class="text-gray-600 hover:text-gray-800 text-sm font-medium">
+                <.link navigate={~p"/data-sources/#{data_source.id}/edit"} class="text-gray-600 hover:text-gray-800 text-sm font-medium">
                   Editar
                 </.link>
-                <button
-                  phx-click="delete"
-                  phx-value-id={data_source.id}
-                  data-confirm="¿Estás seguro de que quieres eliminar esta fuente de datos?"
-                  class="text-red-500 hover:text-red-700 text-sm"
-                >
-                  Eliminar
-                </button>
+                <form action={~p"/data-sources/#{data_source.id}"} method="post" class="inline">
+                  <input type="hidden" name="_method" value="delete" />
+                  <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+                  <button
+                    type="submit"
+                    onclick="return confirm('¿Estás seguro de que quieres eliminar estos datos?')"
+                    class="text-red-500 hover:text-red-700 text-sm"
+                  >
+                    Eliminar
+                  </button>
+                </form>
               </div>
             </div>
           </div>
         </div>
 
       </div>
-
-      <.modal :if={@live_action == :edit} id="data-source-modal" show on_cancel={JS.patch(~p"/data-sources")}>
-        <.live_component
-          module={QrLabelSystemWeb.DataSourceLive.FormComponent}
-          id={@data_source.id || :new}
-          title={@page_title}
-          action={@live_action}
-          data_source={@data_source}
-          user_id={@current_user.id}
-          patch={~p"/data-sources"}
-        />
-      </.modal>
     </div>
     """
   end

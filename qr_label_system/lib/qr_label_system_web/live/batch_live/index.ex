@@ -14,7 +14,7 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
 
   @impl true
   def handle_params(_params, _url, socket) do
-    {:noreply, assign(socket, :page_title, "Lotes Generados")}
+    {:noreply, assign(socket, :page_title, "Combinar e imprimir")}
   end
 
   @impl true
@@ -25,7 +25,7 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
       {:ok, _} = Batches.delete_batch(batch)
       {:noreply, stream_delete(socket, :batches, batch)}
     else
-      {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar este lote")}
+      {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar esta combinación")}
     end
   end
 
@@ -34,8 +34,8 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
     ~H"""
     <div>
       <.header>
-        Lotes Generados
-        <:subtitle>Historial de lotes de etiquetas generados</:subtitle>
+        Combinar e imprimir
+        <:subtitle>Asocia diseños de etiquetas con tus datos e imprime</:subtitle>
       </.header>
 
       <div class="mt-8">
@@ -48,8 +48,8 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
               </svg>
             </div>
             <div>
-              <h3 class="text-lg font-medium text-slate-600">Generar Nuevo Lote</h3>
-              <p class="text-sm text-slate-500">Crea etiquetas desde tus diseños</p>
+              <h3 class="text-lg font-medium text-slate-600">Nueva combinación</h3>
+              <p class="text-sm text-slate-500">Combina un diseño con tus datos para imprimir</p>
             </div>
           </div>
         </.link>
@@ -60,12 +60,12 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
               <div class="flex items-center space-x-4">
                 <div class="w-12 h-12 rounded-lg bg-indigo-100 flex items-center justify-center">
                   <svg class="w-6 h-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
                 </div>
                 <div>
                   <h3 class="text-lg font-semibold text-gray-900">
-                    Lote #<%= batch.id %>
+                    Combinación #<%= batch.id %>
                   </h3>
                   <p class="text-sm text-gray-500">
                     <%= batch.total_labels %> etiquetas
@@ -93,14 +93,17 @@ defmodule QrLabelSystemWeb.BatchLive.Index do
                   <.link navigate={~p"/batches/#{batch.id}/print"} class="text-green-600 hover:text-green-800 text-sm font-medium">
                     Imprimir
                   </.link>
-                  <button
-                    phx-click="delete"
-                    phx-value-id={batch.id}
-                    data-confirm="¿Estás seguro de que quieres eliminar este lote?"
-                    class="text-red-500 hover:text-red-700 text-sm"
-                  >
-                    Eliminar
-                  </button>
+                  <form action={~p"/batches/#{batch.id}"} method="post" class="inline">
+                    <input type="hidden" name="_method" value="delete" />
+                    <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+                    <button
+                      type="submit"
+                      onclick="return confirm('¿Estás seguro de que quieres eliminar esta combinación?')"
+                      class="text-red-500 hover:text-red-700 text-sm"
+                    >
+                      Eliminar
+                    </button>
+                  </form>
                 </div>
               </div>
             </div>

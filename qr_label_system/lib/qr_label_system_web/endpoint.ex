@@ -1,6 +1,14 @@
 defmodule QrLabelSystemWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :qr_label_system
 
+  # Cache headers for static files based on environment
+  # In development, we disable caching to ensure fresh assets are loaded
+  @env Application.compile_env(:qr_label_system, :env)
+  @static_cache_headers (case @env do
+    :dev -> %{"cache-control" => "no-cache, no-store, must-revalidate"}
+    _ -> %{}
+  end)
+
   # The session will be stored in the cookie and signed and encrypted.
   # Session security configuration:
   # - signing_salt: Ensures session integrity (prevents tampering)
@@ -29,11 +37,14 @@ defmodule QrLabelSystemWeb.Endpoint do
   #
   # You should set gzip to true if you are running phx.digest
   # when deploying your static files in production.
+  #
+  # In development, we disable caching to ensure fresh assets are loaded.
   plug Plug.Static,
     at: "/",
     from: :qr_label_system,
     gzip: false,
-    only: QrLabelSystemWeb.static_paths()
+    only: QrLabelSystemWeb.static_paths(),
+    headers: @static_cache_headers
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

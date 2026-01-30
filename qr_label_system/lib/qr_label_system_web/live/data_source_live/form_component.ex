@@ -9,7 +9,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.FormComponent do
     <div>
       <.header>
         <%= @title %>
-        <:subtitle>Configura la fuente de datos para importar registros</:subtitle>
+        <:subtitle>Configura los datos para importar registros</:subtitle>
       </.header>
 
       <.simple_form
@@ -165,7 +165,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.FormComponent do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Fuente de datos creada exitosamente")
+         |> put_flash(:info, "Datos agregados exitosamente")
          |> push_patch(to: socket.assigns.patch)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -180,7 +180,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.FormComponent do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Fuente de datos actualizada exitosamente")
+         |> put_flash(:info, "Datos actualizados exitosamente")
          |> push_patch(to: socket.assigns.patch)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
