@@ -52,7 +52,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("add_element", %{"type" => type}, socket) when type in @valid_element_types do
     element = create_default_element(type)
-    {:noreply, push_event(socket, "add_element", %{element: element})}
+
+    # Add element to design immediately so it can be selected
+    current_elements = socket.assigns.design.elements || []
+    new_elements = current_elements ++ [element]
+
+    case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
+      {:ok, updated_design} ->
+        {:noreply,
+         socket
+         |> assign(:design, updated_design)
+         |> assign(:selected_element, element)
+         |> push_event("add_element", %{element: element})}
+
+      {:error, _changeset} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Error al crear elemento")
+         |> push_event("add_element", %{element: element})}
+    end
   end
 
   def handle_event("add_element", %{"type" => _invalid_type}, socket) do
@@ -61,7 +79,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("element_selected", %{"id" => id}, socket) do
-    element = Enum.find(socket.assigns.design.elements || [], &(&1.id == id))
+    elements = socket.assigns.design.elements || []
+    # Handle both atom and string keys for id
+    element = Enum.find(elements, fn el ->
+      el_id = Map.get(el, :id) || Map.get(el, "id")
+      el_id == id
+    end)
+    IO.inspect({id, element != nil, length(elements)}, label: "element_selected")
     {:noreply, assign(socket, :selected_element, element)}
   end
 
@@ -1270,6 +1294,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   class="mt-1 block w-full h-9 rounded-md border-gray-300"
                 />
               </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Fuente</label>
+              <select
+                name="value"
+                phx-change="update_element"
+                phx-value-field="font_family"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              >
+                <!-- Fuentes compatibles con impresoras Zebra y sistemas comunes -->
+                <option value="Arial" selected={@element.font_family == "Arial"}>Arial</option>
+                <option value="Helvetica" selected={@element.font_family == "Helvetica"}>Helvetica</option>
+                <option value="Verdana" selected={@element.font_family == "Verdana"}>Verdana</option>
+                <option value="Courier New" selected={@element.font_family == "Courier New"}>Courier New (monospace)</option>
+                <option value="Times New Roman" selected={@element.font_family == "Times New Roman"}>Times New Roman</option>
+                <option value="Georgia" selected={@element.font_family == "Georgia"}>Georgia</option>
+                <!-- Fuentes genéricas como fallback -->
+                <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif (genérica)</option>
+                <option value="serif" selected={@element.font_family == "serif"}>Serif (genérica)</option>
+                <option value="monospace" selected={@element.font_family == "monospace"}>Monospace (genérica)</option>
+              </select>
+              <p class="mt-1 text-xs text-gray-400">Compatible con impresoras Zebra</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Alineación</label>
