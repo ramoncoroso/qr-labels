@@ -54,7 +54,17 @@ defmodule QrLabelSystem.Designs.Element do
 
     # Image specific
     field :image_url, :string
+    field :image_data, :string      # Base64 encoded image data
+    field :image_filename, :string  # Original filename
+
+    # Layer management
+    field :z_index, :integer, default: 0
+    field :visible, :boolean, default: true
+    field :locked, :boolean, default: false
+    field :name, :string  # Friendly name for layer panel
   end
+
+  @max_image_size 2_000_000  # 2MB limit for image data
 
   def changeset(element, attrs) do
     element
@@ -65,13 +75,16 @@ defmodule QrLabelSystem.Designs.Element do
       :barcode_format, :barcode_show_text,
       :font_size, :font_family, :font_weight, :text_align, :text_content,
       :color, :background_color, :border_width, :border_color,
-      :image_url
+      :image_url, :image_data, :image_filename,
+      :z_index, :visible, :locked, :name
     ])
     |> validate_required([:id, :type, :x, :y])
     |> validate_inclusion(:type, @element_types)
     |> validate_barcode_format()
     |> validate_qr_error_level()
+    |> validate_image_data_size()
     |> generate_id_if_missing()
+    |> generate_name_if_missing()
   end
 
   defp validate_barcode_format(changeset) do
@@ -101,6 +114,34 @@ defmodule QrLabelSystem.Designs.Element do
       changeset
     else
       put_change(changeset, :id, "el_#{:erlang.unique_integer([:positive])}")
+    end
+  end
+
+  defp generate_name_if_missing(changeset) do
+    if get_field(changeset, :name) do
+      changeset
+    else
+      type = get_field(changeset, :type)
+      type_name = case type do
+        "qr" -> "Código QR"
+        "barcode" -> "Código de Barras"
+        "text" -> "Texto"
+        "line" -> "Línea"
+        "rectangle" -> "Rectángulo"
+        "image" -> "Imagen"
+        _ -> "Elemento"
+      end
+      put_change(changeset, :name, type_name)
+    end
+  end
+
+  defp validate_image_data_size(changeset) do
+    image_data = get_field(changeset, :image_data)
+
+    if image_data && byte_size(image_data) > @max_image_size do
+      add_error(changeset, :image_data, "image too large, maximum size is 2MB")
+    else
+      changeset
     end
   end
 

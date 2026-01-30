@@ -7,6 +7,10 @@
  * - Ctrl+Y / Ctrl+Shift+Z: Redo
  * - Ctrl+S: Save
  * - Ctrl+P: Toggle Preview
+ * - Ctrl+C: Copy selected elements
+ * - Ctrl+V: Paste elements
+ * - Ctrl+A: Select all elements
+ * - Ctrl+D: Duplicate selected elements
  * - Delete/Backspace: Delete selected element
  * - Escape: Deselect element
  * - Q: Add QR code
@@ -60,6 +64,34 @@ const KeyboardShortcuts = {
     if (isCtrl && e.key === 'p') {
       e.preventDefault()
       this.pushEvent('toggle_preview', {})
+      return
+    }
+
+    // Ctrl+C: Copy selected elements
+    if (isCtrl && e.key === 'c') {
+      e.preventDefault()
+      this.pushEvent('copy_elements', {})
+      return
+    }
+
+    // Ctrl+V: Paste elements
+    if (isCtrl && e.key === 'v') {
+      e.preventDefault()
+      this.pushEvent('paste_elements', {})
+      return
+    }
+
+    // Ctrl+A: Select all elements
+    if (isCtrl && e.key === 'a') {
+      e.preventDefault()
+      this.pushEvent('select_all_elements', {})
+      return
+    }
+
+    // Ctrl+D: Duplicate selected elements
+    if (isCtrl && e.key === 'd') {
+      e.preventDefault()
+      this.pushEvent('duplicate_elements', {})
       return
     }
 

@@ -43,8 +43,12 @@ const LabelPreview = {
     labelDiv.style.borderRadius = `${(design.border_radius || 0) * MM_TO_PX * 2}px`
     labelDiv.style.overflow = 'hidden'
 
-    // Render elements
-    for (const element of design.elements || []) {
+    // Render elements (sorted by z_index, skip invisible)
+    const sortedElements = [...(design.elements || [])].sort((a, b) => (a.z_index || 0) - (b.z_index || 0))
+    for (const element of sortedElements) {
+      // Skip invisible elements
+      if (element.visible === false) continue
+
       const elementDiv = this.renderElement(element, row, mapping, codes, 2)
       if (elementDiv) {
         labelDiv.appendChild(elementDiv)
@@ -179,13 +183,25 @@ const LabelPreview = {
       case 'image':
         div.style.width = `${element.width * scale * MM_TO_PX}px`
         div.style.height = `${element.height * scale * MM_TO_PX}px`
-        div.style.backgroundColor = '#e5e7eb'
-        div.style.display = 'flex'
-        div.style.alignItems = 'center'
-        div.style.justifyContent = 'center'
-        div.style.fontSize = '12px'
-        div.style.color = '#6b7280'
-        div.textContent = 'IMG'
+
+        if (element.image_data) {
+          // Show actual image
+          const img = document.createElement('img')
+          img.src = element.image_data
+          img.style.width = '100%'
+          img.style.height = '100%'
+          img.style.objectFit = 'contain'
+          div.appendChild(img)
+        } else {
+          // Show placeholder
+          div.style.backgroundColor = '#e5e7eb'
+          div.style.display = 'flex'
+          div.style.alignItems = 'center'
+          div.style.justifyContent = 'center'
+          div.style.fontSize = '12px'
+          div.style.color = '#6b7280'
+          div.textContent = 'IMG'
+        }
         break
 
       default:

@@ -19,14 +19,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:page_title, "Editor: #{design.name}")
        |> assign(:design, design)
        |> assign(:selected_element, nil)
+       |> assign(:selected_elements, [])
+       |> assign(:clipboard, [])
        |> assign(:available_columns, [])
        |> assign(:show_properties, true)
        |> assign(:show_preview, false)
+       |> assign(:show_layers, true)
        |> assign(:preview_data, %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"})
        |> assign(:history, [])
        |> assign(:history_index, -1)
        |> assign(:has_unsaved_changes, false)
-       |> assign(:zoom, 100)}
+       |> assign(:zoom, 100)
+       |> assign(:snap_enabled, true)
+       |> assign(:grid_snap_enabled, false)
+       |> assign(:grid_size, 5)
+       |> assign(:snap_threshold, 5)
+       |> allow_upload(:element_image,
+         accept: ~w(.png .jpg .jpeg .gif .svg),
+         max_entries: 1,
+         max_file_size: 2_000_000)}
     end
   end
 
@@ -79,7 +90,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # Whitelist of allowed fields for element updates (security)
   @allowed_element_fields ~w(x y width height rotation binding qr_error_level
     barcode_format barcode_show_text font_size font_family font_weight
-    text_align text_content color background_color border_width border_color)
+    text_align text_content color background_color border_width border_color
+    z_index visible locked name image_data image_filename)
 
   @impl true
   def handle_event("update_element", %{"field" => field, "value" => value}, socket)
@@ -189,13 +201,252 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
+  # ============================================================================
+  # Image Upload Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("validate_image_upload", _params, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel-upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :element_image, ref)}
+  end
+
+  @impl true
+  def handle_event("upload_element_image", %{"element_id" => element_id}, socket) do
+    uploaded_files =
+      consume_uploaded_entries(socket, :element_image, fn %{path: path}, entry ->
+        # Read file and convert to base64
+        {:ok, binary} = File.read(path)
+        base64 = Base.encode64(binary)
+        mime_type = entry.client_type || "image/png"
+        {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
+      end)
+
+    case uploaded_files do
+      [%{data: image_data, filename: filename}] ->
+        {:noreply,
+         socket
+         |> push_event("update_element_image", %{
+           element_id: element_id,
+           image_data: image_data,
+           image_filename: filename
+         })}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Error al subir la imagen")}
+    end
+  end
+
+  # ============================================================================
+  # Multi-selection Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("elements_selected", %{"ids" => ids}, socket) when is_list(ids) do
+    elements = Enum.filter(socket.assigns.design.elements || [], &(&1.id in ids))
+    {:noreply,
+     socket
+     |> assign(:selected_elements, elements)
+     |> assign(:selected_element, List.first(elements))}
+  end
+
+  @impl true
+  def handle_event("copy_elements", _params, socket) do
+    selected = socket.assigns.selected_elements
+    if length(selected) > 0 do
+      {:noreply, assign(socket, :clipboard, selected)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("paste_elements", _params, socket) do
+    clipboard = socket.assigns.clipboard
+    if length(clipboard) > 0 do
+      # Paste with offset
+      {:noreply, push_event(socket, "paste_elements", %{elements: Enum.map(clipboard, &element_to_map/1), offset: 5})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("duplicate_elements", _params, socket) do
+    selected = socket.assigns.selected_elements
+    if length(selected) > 0 do
+      {:noreply, push_event(socket, "paste_elements", %{elements: Enum.map(selected, &element_to_map/1), offset: 5})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("select_all_elements", _params, socket) do
+    {:noreply, push_event(socket, "select_all", %{})}
+  end
+
+  @valid_align_directions ~w(left center right top middle bottom)
+  @impl true
+  def handle_event("align_elements", %{"direction" => direction}, socket)
+      when direction in @valid_align_directions do
+    {:noreply, push_event(socket, "align_elements", %{direction: direction})}
+  end
+
+  def handle_event("align_elements", _params, socket), do: {:noreply, socket}
+
+  @valid_distribute_directions ~w(horizontal vertical)
+  @impl true
+  def handle_event("distribute_elements", %{"direction" => direction}, socket)
+      when direction in @valid_distribute_directions do
+    {:noreply, push_event(socket, "distribute_elements", %{direction: direction})}
+  end
+
+  def handle_event("distribute_elements", _params, socket), do: {:noreply, socket}
+
+  # ============================================================================
+  # Layer Management Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("toggle_layers", _params, socket) do
+    {:noreply, assign(socket, :show_layers, !socket.assigns.show_layers)}
+  end
+
+  @impl true
+  def handle_event("reorder_layers", %{"ordered_ids" => ordered_ids}, socket) when is_list(ordered_ids) do
+    # Update z_index based on new order
+    {:noreply, push_event(socket, "reorder_layers", %{ordered_ids: ordered_ids})}
+  end
+
+  def handle_event("reorder_layers", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("toggle_element_visibility", %{"id" => id}, socket) do
+    {:noreply, push_event(socket, "toggle_visibility", %{id: id})}
+  end
+
+  @impl true
+  def handle_event("toggle_element_lock", %{"id" => id}, socket) do
+    {:noreply, push_event(socket, "toggle_lock", %{id: id})}
+  end
+
+  @impl true
+  def handle_event("bring_to_front", _params, socket) do
+    if socket.assigns.selected_element do
+      {:noreply, push_event(socket, "bring_to_front", %{id: socket.assigns.selected_element.id})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("send_to_back", _params, socket) do
+    if socket.assigns.selected_element do
+      {:noreply, push_event(socket, "send_to_back", %{id: socket.assigns.selected_element.id})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("move_layer_up", _params, socket) do
+    if socket.assigns.selected_element do
+      {:noreply, push_event(socket, "move_layer_up", %{id: socket.assigns.selected_element.id})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("move_layer_down", _params, socket) do
+    if socket.assigns.selected_element do
+      {:noreply, push_event(socket, "move_layer_down", %{id: socket.assigns.selected_element.id})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("select_layer", %{"id" => id}, socket) do
+    element = Enum.find(socket.assigns.design.elements || [], &(&1.id == id))
+    {:noreply,
+     socket
+     |> assign(:selected_element, element)
+     |> assign(:selected_elements, if(element, do: [element], else: []))
+     |> push_event("select_element", %{id: id})}
+  end
+
+  @impl true
+  def handle_event("rename_layer", %{"id" => id, "name" => name}, socket) do
+    {:noreply, push_event(socket, "rename_element", %{id: id, name: name})}
+  end
+
+  # ============================================================================
+  # Snap and Grid Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("toggle_snap", _params, socket) do
+    new_value = !socket.assigns.snap_enabled
+    {:noreply,
+     socket
+     |> assign(:snap_enabled, new_value)
+     |> push_event("update_snap_settings", %{snap_enabled: new_value, grid_snap_enabled: socket.assigns.grid_snap_enabled, grid_size: socket.assigns.grid_size})}
+  end
+
+  @impl true
+  def handle_event("toggle_grid_snap", _params, socket) do
+    new_value = !socket.assigns.grid_snap_enabled
+    {:noreply,
+     socket
+     |> assign(:grid_snap_enabled, new_value)
+     |> push_event("update_snap_settings", %{snap_enabled: socket.assigns.snap_enabled, grid_snap_enabled: new_value, grid_size: socket.assigns.grid_size})}
+  end
+
+  @valid_grid_sizes [2, 5, 10]
+  @impl true
+  def handle_event("update_grid_size", %{"size" => size}, socket) do
+    size_int = String.to_integer(size)
+    if size_int in @valid_grid_sizes do
+      {:noreply,
+       socket
+       |> assign(:grid_size, size_int)
+       |> push_event("update_snap_settings", %{snap_enabled: socket.assigns.snap_enabled, grid_snap_enabled: socket.assigns.grid_snap_enabled, grid_size: size_int})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("update_grid_size", _params, socket), do: {:noreply, socket}
+
+  # ============================================================================
+  # Helper Functions
+  # ============================================================================
+
+  defp element_to_map(element) when is_struct(element) do
+    Map.from_struct(element)
+    |> Map.drop([:__meta__])
+    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> Map.new()
+  end
+
+  defp element_to_map(element) when is_map(element), do: element
+
   defp create_default_element(type) do
     base = %{
       id: Ecto.UUID.generate(),
       type: type,
       x: 10.0,
       y: 10.0,
-      rotation: 0
+      rotation: 0,
+      z_index: 0,
+      visible: true,
+      locked: false
     }
 
     case type do
@@ -204,7 +455,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           width: 20.0,
           height: 20.0,
           qr_error_level: "M",
-          binding: nil
+          binding: nil,
+          name: "Código QR"
         })
 
       "barcode" ->
@@ -213,7 +465,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           height: 15.0,
           barcode_format: "CODE128",
           barcode_show_text: true,
-          binding: nil
+          binding: nil,
+          name: "Código de Barras"
         })
 
       "text" ->
@@ -226,14 +479,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           text_align: "left",
           text_content: "Texto",
           color: "#000000",
-          binding: nil
+          binding: nil,
+          name: "Texto"
         })
 
       "line" ->
         Map.merge(base, %{
           width: 50.0,
           height: 0.5,
-          color: "#000000"
+          color: "#000000",
+          name: "Línea"
         })
 
       "rectangle" ->
@@ -242,14 +497,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           height: 20.0,
           background_color: "transparent",
           border_width: 0.5,
-          border_color: "#000000"
+          border_color: "#000000",
+          name: "Rectángulo"
         })
 
       "image" ->
         Map.merge(base, %{
           width: 20.0,
           height: 20.0,
-          image_url: nil
+          image_url: nil,
+          image_data: nil,
+          image_filename: nil,
+          name: "Imagen"
         })
 
       _ ->
@@ -489,36 +748,106 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
         <!-- Canvas Area -->
         <div class="flex-1 overflow-auto p-8 flex flex-col items-center justify-center">
-          <!-- Zoom Controls -->
-          <div class="mb-4 flex items-center space-x-3 bg-white rounded-lg shadow-md px-4 py-2">
-            <span class="text-xs text-gray-500 font-medium">ZOOM</span>
-            <button
-              phx-click="zoom_out"
-              class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
-              title="Alejar (25%)"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-              </svg>
-            </button>
-            <button
-              phx-click="zoom_reset"
-              class="px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-md min-w-[70px] transition"
-              title="Restablecer al 100%"
-            >
-              <%= @zoom %>%
-            </button>
-            <button
-              phx-click="zoom_in"
-              class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
-              title="Acercar (+25%)"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-              </svg>
-            </button>
-            <div class="h-4 w-px bg-gray-300 mx-1"></div>
-            <span class="text-xs text-gray-400"><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
+          <!-- Toolbar -->
+          <div class="mb-4 flex items-center space-x-2 flex-wrap gap-y-2">
+            <!-- Zoom Controls -->
+            <div class="flex items-center space-x-2 bg-white rounded-lg shadow-md px-3 py-2">
+              <span class="text-xs text-gray-500 font-medium">ZOOM</span>
+              <button
+                phx-click="zoom_out"
+                class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
+                title="Alejar (25%)"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                </svg>
+              </button>
+              <button
+                phx-click="zoom_reset"
+                class="px-2 py-1 text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-md min-w-[50px] transition"
+                title="Restablecer al 100%"
+              >
+                <%= @zoom %>%
+              </button>
+              <button
+                phx-click="zoom_in"
+                class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
+                title="Acercar (+25%)"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Snap Controls -->
+            <div class="flex items-center space-x-2 bg-white rounded-lg shadow-md px-3 py-2">
+              <span class="text-xs text-gray-500 font-medium">AJUSTAR</span>
+              <button
+                phx-click="toggle_snap"
+                class={"p-1.5 rounded-md transition #{if @snap_enabled, do: "bg-blue-100 text-blue-600", else: "hover:bg-gray-100 text-gray-600"}"}
+                title="Snap a elementos"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                </svg>
+              </button>
+              <button
+                phx-click="toggle_grid_snap"
+                class={"p-1.5 rounded-md transition #{if @grid_snap_enabled, do: "bg-blue-100 text-blue-600", else: "hover:bg-gray-100 text-gray-600"}"}
+                title="Snap a grid"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16M8 4v16M16 4v16" />
+                </svg>
+              </button>
+              <select
+                :if={@grid_snap_enabled}
+                phx-change="update_grid_size"
+                name="size"
+                class="text-xs border-gray-300 rounded py-1 pl-2 pr-6"
+              >
+                <option value="2" selected={@grid_size == 2}>2mm</option>
+                <option value="5" selected={@grid_size == 5}>5mm</option>
+                <option value="10" selected={@grid_size == 10}>10mm</option>
+              </select>
+            </div>
+
+            <!-- Alignment Controls (shown when multiple elements selected) -->
+            <div :if={length(@selected_elements) > 1} class="flex items-center space-x-1 bg-white rounded-lg shadow-md px-3 py-2">
+              <span class="text-xs text-gray-500 font-medium mr-1">ALINEAR</span>
+              <button phx-click="align_elements" phx-value-direction="left" class="p-1.5 rounded hover:bg-gray-100" title="Alinear izquierda">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16M8 8h12M8 16h8" /></svg>
+              </button>
+              <button phx-click="align_elements" phx-value-direction="center" class="p-1.5 rounded hover:bg-gray-100" title="Centrar horizontal">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16M6 8h12M8 16h8" /></svg>
+              </button>
+              <button phx-click="align_elements" phx-value-direction="right" class="p-1.5 rounded hover:bg-gray-100" title="Alinear derecha">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 4v16M4 8h12M8 16h8" /></svg>
+              </button>
+              <div class="w-px h-4 bg-gray-300 mx-1"></div>
+              <button phx-click="align_elements" phx-value-direction="top" class="p-1.5 rounded hover:bg-gray-100" title="Alinear arriba">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16M8 8v12M16 8v8" /></svg>
+              </button>
+              <button phx-click="align_elements" phx-value-direction="middle" class="p-1.5 rounded hover:bg-gray-100" title="Centrar vertical">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16M8 6v12M16 8v8" /></svg>
+              </button>
+              <button phx-click="align_elements" phx-value-direction="bottom" class="p-1.5 rounded hover:bg-gray-100" title="Alinear abajo">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16M8 4v12M16 8v8" /></svg>
+              </button>
+              <div :if={length(@selected_elements) > 2} class="w-px h-4 bg-gray-300 mx-1"></div>
+              <button :if={length(@selected_elements) > 2} phx-click="distribute_elements" phx-value-direction="horizontal" class="p-1.5 rounded hover:bg-gray-100" title="Distribuir horizontal">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16M12 6v12M20 4v16" /></svg>
+              </button>
+              <button :if={length(@selected_elements) > 2} phx-click="distribute_elements" phx-value-direction="vertical" class="p-1.5 rounded hover:bg-gray-100" title="Distribuir vertical">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16M6 12h12M4 20h16" /></svg>
+              </button>
+            </div>
+
+            <!-- Size info -->
+            <div class="flex items-center bg-white rounded-lg shadow-md px-3 py-2">
+              <span class="text-xs text-gray-400"><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
+            </div>
           </div>
 
           <div class="relative">
@@ -542,6 +871,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               data-border-width={@design.border_width || 0}
               data-border-color={@design.border_color || "#000000"}
               data-border-radius={@design.border_radius || 0}
+              data-snap-enabled={@snap_enabled}
+              data-grid-snap-enabled={@grid_snap_enabled}
+              data-grid-size={@grid_size}
+              data-snap-threshold={@snap_threshold}
               class="rounded-lg overflow-visible"
               style={"transform: scale(#{@zoom / 100}); transform-origin: center center; transition: transform 0.2s ease;"}
             >
@@ -549,6 +882,121 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
         </div>
+
+        <!-- Layers Panel -->
+        <div :if={@show_layers} class="w-56 bg-white border-l border-gray-200 flex flex-col">
+          <div class="p-3 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">Capas</h3>
+            <button phx-click="toggle_layers" class="text-gray-400 hover:text-gray-600">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Layer order controls -->
+          <div :if={@selected_element} class="px-3 py-2 border-b border-gray-100 flex items-center justify-center space-x-1">
+            <button phx-click="bring_to_front" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Traer al frente">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" /></svg>
+            </button>
+            <button phx-click="move_layer_up" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Subir una capa">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+            </button>
+            <button phx-click="move_layer_down" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bajar una capa">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            <button phx-click="send_to_back" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Enviar atrás">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
+            </button>
+          </div>
+
+          <!-- Layer list -->
+          <div class="flex-1 overflow-y-auto" id="layers-list" phx-hook="SortableLayers">
+            <%= for element <- Enum.sort_by(@design.elements || [], fn el -> Map.get(el, :z_index, 0) end, :desc) do %>
+              <div
+                class={"flex items-center px-3 py-2 border-b border-gray-50 cursor-pointer transition #{if @selected_element && @selected_element.id == element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
+                phx-click="select_layer"
+                phx-value-id={element.id}
+                data-id={element.id}
+              >
+                <!-- Visibility toggle -->
+                <button
+                  phx-click="toggle_element_visibility"
+                  phx-value-id={element.id}
+                  class={"p-1 rounded transition #{if Map.get(element, :visible, true), do: "text-gray-600 hover:text-gray-800", else: "text-gray-300 hover:text-gray-500"}"}
+                  title={if Map.get(element, :visible, true), do: "Ocultar", else: "Mostrar"}
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <%= if Map.get(element, :visible, true) do %>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    <% else %>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    <% end %>
+                  </svg>
+                </button>
+
+                <!-- Lock toggle -->
+                <button
+                  phx-click="toggle_element_lock"
+                  phx-value-id={element.id}
+                  class={"p-1 rounded transition #{if Map.get(element, :locked, false), do: "text-yellow-600 hover:text-yellow-700", else: "text-gray-400 hover:text-gray-600"}"}
+                  title={if Map.get(element, :locked, false), do: "Desbloquear", else: "Bloquear"}
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <%= if Map.get(element, :locked, false) do %>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    <% else %>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                    <% end %>
+                  </svg>
+                </button>
+
+                <!-- Layer name and type icon -->
+                <div class="flex-1 ml-2 flex items-center min-w-0">
+                  <span class={"text-xs mr-2 #{if Map.get(element, :visible, true), do: "text-gray-500", else: "text-gray-300"}"}>
+                    <%= case element.type do %>
+                      <% "qr" -> %>QR
+                      <% "barcode" -> %>BC
+                      <% "text" -> %>T
+                      <% "line" -> %>—
+                      <% "rectangle" -> %>□
+                      <% "image" -> %>IMG
+                      <% _ -> %>?
+                    <% end %>
+                  </span>
+                  <span class={"text-sm truncate #{if Map.get(element, :visible, true), do: "text-gray-700", else: "text-gray-400"}"}>
+                    <%= Map.get(element, :name) || element.type %>
+                  </span>
+                </div>
+
+                <!-- Drag handle -->
+                <div class="text-gray-300 cursor-move drag-handle">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              </div>
+            <% end %>
+          </div>
+
+          <!-- Empty state -->
+          <div :if={@element_count == 0} class="flex-1 flex items-center justify-center p-4">
+            <p class="text-sm text-gray-400 text-center">No hay elementos</p>
+          </div>
+        </div>
+
+        <!-- Layers toggle button (when panel is hidden) -->
+        <button
+          :if={!@show_layers}
+          phx-click="toggle_layers"
+          class="absolute right-72 top-20 bg-white border border-gray-200 rounded-l-lg p-2 shadow-md text-gray-600 hover:text-gray-800"
+          title="Mostrar capas"
+        >
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        </button>
 
         <!-- Right Sidebar - Properties -->
         <div class="w-72 bg-white border-l border-gray-200 overflow-y-auto">
@@ -560,7 +1008,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} />
+              <.element_properties element={@selected_element} uploads={@uploads} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -637,6 +1085,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp element_properties(assigns) do
     ~H"""
     <div class="space-y-4">
+      <!-- Layer name -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Nombre</label>
+        <input
+          type="text"
+          value={Map.get(@element, :name) || @element.type}
+          phx-blur="update_element"
+          phx-value-field="name"
+          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+        />
+      </div>
+
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700">X (mm)</label>
@@ -819,6 +1279,65 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
+        <% "image" -> %>
+          <div class="border-t pt-4 space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Imagen</label>
+              <%= if Map.get(@element, :image_data) do %>
+                <div class="mt-2 relative">
+                  <img src={@element.image_data} class="w-full h-auto rounded border border-gray-200" />
+                  <p class="mt-1 text-xs text-gray-500 truncate"><%= Map.get(@element, :image_filename, "imagen") %></p>
+                </div>
+              <% end %>
+
+              <form id={"upload-form-#{@element.id}"} phx-change="validate_image_upload" phx-submit="upload_element_image" class="mt-2">
+                <input type="hidden" name="element_id" value={@element.id} />
+                <.live_file_input upload={@uploads.element_image} class="hidden" />
+                <label
+                  for={@uploads.element_image.ref}
+                  class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition"
+                >
+                  <div class="text-center">
+                    <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p class="mt-1 text-xs text-gray-500">
+                      <%= if Map.get(@element, :image_data), do: "Cambiar imagen", else: "Subir imagen" %>
+                    </p>
+                    <p class="text-xs text-gray-400">PNG, JPG, GIF, SVG (max 2MB)</p>
+                  </div>
+                </label>
+
+                <%= for entry <- @uploads.element_image.entries do %>
+                  <div class="mt-2">
+                    <div class="flex items-center justify-between text-sm">
+                      <span class="text-gray-600 truncate"><%= entry.client_name %></span>
+                      <button type="button" phx-click="cancel-upload" phx-value-ref={entry.ref} class="text-red-500 hover:text-red-700">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="mt-1 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                      <div class="h-full bg-blue-500 transition-all" style={"width: #{entry.progress}%"}></div>
+                    </div>
+                    <%= for err <- upload_errors(@uploads.element_image, entry) do %>
+                      <p class="mt-1 text-xs text-red-500"><%= error_to_string(err) %></p>
+                    <% end %>
+                  </div>
+                <% end %>
+
+                <button
+                  :if={length(@uploads.element_image.entries) > 0}
+                  type="submit"
+                  class="mt-2 w-full bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium"
+                >
+                  Subir imagen
+                </button>
+              </form>
+            </div>
+          </div>
+
         <% _ -> %>
           <div class="border-t pt-4 space-y-3">
             <div>
@@ -836,6 +1355,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     </div>
     """
   end
+
+  defp error_to_string(:too_large), do: "Archivo muy grande (máx. 2MB)"
+  defp error_to_string(:too_many_files), do: "Solo se permite un archivo"
+  defp error_to_string(:not_accepted), do: "Tipo de archivo no permitido"
+  defp error_to_string(_), do: "Error desconocido"
 
   defp label_properties(assigns) do
     ~H"""

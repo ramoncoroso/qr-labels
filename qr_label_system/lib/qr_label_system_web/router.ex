@@ -55,6 +55,13 @@ defmodule QrLabelSystemWeb.Router do
       live_dashboard "/dashboard", metrics: QrLabelSystemWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+
+    # Debug route - editor without auth (DEV ONLY)
+    scope "/debug", QrLabelSystemWeb do
+      pipe_through :browser
+
+      live "/editor/:id", DesignLive.EditorDebug, :edit
+    end
   end
 
   ## Authentication routes
@@ -89,6 +96,18 @@ defmodule QrLabelSystemWeb.Router do
     # POST fallback for design creation when LiveView websocket fails
     post "/designs/new", DesignController, :create
 
+    # DELETE for designs
+    delete "/designs/:id", DesignController, :delete
+
+    # POST fallback for data source creation when LiveView websocket fails
+    post "/data-sources/new", DataSourceController, :create
+
+    # File upload for data sources
+    post "/data-sources/upload", DataSourceController, :upload
+
+    # DELETE for data sources
+    delete "/data-sources/:id", DataSourceController, :delete
+
     live_session :require_authenticated_user,
       on_mount: [{QrLabelSystemWeb.UserAuth, :ensure_authenticated}] do
       # User settings
@@ -104,8 +123,9 @@ defmodule QrLabelSystemWeb.Router do
       # Data Sources
       live "/data-sources", DataSourceLive.Index, :index
       live "/data-sources/new", DataSourceLive.New, :new
+      live "/data-sources/new/details", DataSourceLive.NewDetails, :details
       live "/data-sources/:id", DataSourceLive.Show, :show
-      live "/data-sources/:id/edit", DataSourceLive.Index, :edit
+      live "/data-sources/:id/edit", DataSourceLive.Edit, :edit
 
       # Batches
       live "/batches", BatchLive.Index, :index
