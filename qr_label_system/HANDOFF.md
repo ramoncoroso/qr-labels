@@ -1,24 +1,109 @@
 # QR Label System - Documento de Handoff
 
-**Fecha**: 29 Enero 2026
-**Version**: 1.2.0
-**Estado**: En desarrollo activo - Editor visual mejorado
+**Fecha**: 30 Enero 2026
+**Version**: 1.3.0
+**Estado**: En desarrollo activo - Editor visual con propiedades de texto completas
 
 ---
 
-## CHANGELOG v1.2.0 (Sesión Actual)
+## CHANGELOG v1.3.0 (Sesión Actual - 30 Enero 2026)
+
+### Correcciones Críticas del Editor
+
+**Problema resuelto:** Las propiedades de elementos (fuente, negrita, alineación, rotación) no se aplicaban al canvas.
+
+#### Causa raíz identificada:
+1. Los `<select>` con `phx-change` y `phx-value-field` no enviaban el campo correctamente
+2. Los elementos nuevos no se guardaban en BD inmediatamente, impidiendo su selección
+3. La búsqueda de elementos fallaba con keys mixtas (atom/string)
+
+#### Soluciones implementadas:
+
+**1. Formularios para selects** - Envueltos en `<form>` con hidden input para el campo:
+```html
+<form phx-change="update_element" class="mt-1">
+  <input type="hidden" name="field" value="font_family" />
+  <select name="value" class="...">
+    <option value="Arial">Arial</option>
+    ...
+  </select>
+</form>
+```
+
+**2. Guardado inmediato de elementos nuevos:**
+```elixir
+def handle_event("add_element", %{"type" => type}, socket) do
+  element = create_default_element(type)
+  current_elements = socket.assigns.design.elements || []
+  new_elements = current_elements ++ [element]
+
+  case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
+    {:ok, updated_design} ->
+      {:noreply, socket
+       |> assign(:design, updated_design)
+       |> assign(:selected_element, element)  # Ya seleccionable
+       |> push_event("add_element", %{element: element})}
+    ...
+  end
+end
+```
+
+**3. Búsqueda de elementos con keys mixtas:**
+```elixir
+element = Enum.find(elements, fn el ->
+  el_id = Map.get(el, :id) || Map.get(el, "id")
+  el_id == id
+end)
+```
+
+**4. Cambios en tiempo real** - Inputs cambiados de `phx-blur` a `phx-change` con debounce:
+```html
+<input
+  type="number"
+  name="value"
+  phx-change="update_element"
+  phx-debounce="150"
+  phx-value-field="font_size"
+/>
+```
+
+### Selector de Fuentes Compatible con Zebra
+
+Nuevo selector con fuentes seguras para impresoras térmicas:
+- Arial, Helvetica, Verdana (sans-serif)
+- Courier New (monospace - ideal para códigos)
+- Times New Roman, Georgia (serif)
+- Genéricas: sans-serif, serif, monospace
+
+### Limpieza de Código
+
+- ✅ Removidos `IO.inspect` y `IO.puts` de debug
+- ✅ Corregida indentación inconsistente en inputs
+- ✅ Catch-all handler simplificado para seguridad
+
+### Archivos Modificados en v1.3.0:
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system_web/live/design_live/editor.ex` | Forms para selects, guardado inmediato, debounce, selector fuentes |
+| `assets/js/hooks/canvas_designer.js` | Handlers para font_family, font_weight, text_align |
+
+---
+
+## CHANGELOG v1.2.0 (Sesión Anterior)
 
 ### Editor Visual de Etiquetas (Canvas Designer)
 
 **Archivo:** `assets/js/hooks/canvas_designer.js`
 
-#### Nuevas Funcionalidades:
+#### Funcionalidades:
 - Canvas interactivo con Fabric.js completamente reescrito
 - Reglas con marcas en milímetros (cada 5mm, etiquetas cada 10mm)
-- Zoom via CSS transform (50% - 200%)
+- Zoom nativo de Fabric.js (50% - 200%)
 - Soporte para elementos: QR, Código de barras, Texto, Línea, Rectángulo, Imagen
 - Arrastrar, redimensionar y rotar elementos
 - Controles visuales estilizados (círculos azules)
+- Protección del canvas contra DOM morphing de LiveView
 
 #### Mejoras de Seguridad y Rendimiento:
 - **Debouncing** en guardado (300ms) para evitar llamadas excesivas al servidor
@@ -26,7 +111,7 @@
 - **Sanitización de colores** (regex para validar hex)
 - **Cleanup en `destroyed()`** para prevenir memory leaks
 - **Flag `_isDestroyed`** para evitar operaciones en componentes desmontados
-- **Redondeo de valores** a 2 decimales para precisión
+- **Protección DOM** via `onBeforeElUpdated` en app.js
 
 ```javascript
 // Constantes clave
@@ -42,25 +127,17 @@ const SAVE_DEBOUNCE_MS = 300     // Debounce para save
 
 #### Seguridad Implementada:
 - **Whitelist de tipos de elemento:** `@valid_element_types`
-- **Whitelist de campos actualizables:** `@allowed_element_fields` (NUEVO)
+- **Whitelist de campos actualizables:** `@allowed_element_fields`
 - **Verificación de propiedad** del diseño en `mount/3`
+- **Catch-all silencioso** para campos no permitidos
 
 ```elixir
 @valid_element_types ~w(qr barcode text line rectangle image)
 @allowed_element_fields ~w(x y width height rotation binding qr_error_level
   barcode_format barcode_show_text font_size font_family font_weight
-  text_align text_content color background_color border_width border_color)
+  text_align text_content color background_color border_width border_color
+  z_index visible locked name image_data image_filename)
 ```
-
-### Archivos Modificados en v1.2.0:
-
-| Archivo | Cambios |
-|---------|---------|
-| `assets/js/hooks/canvas_designer.js` | Reescrito completamente con mejoras de seguridad |
-| `lib/qr_label_system_web/live/design_live/editor.ex` | Zoom, whitelist de campos, UI mejorada |
-| `lib/qr_label_system_web/live/design_live/new.ex` | Página dedicada para crear diseños |
-| `lib/qr_label_system_web/controllers/design_controller.ex` | Fallback POST para WebSocket fail |
-| `lib/qr_label_system_web/router.ex` | Ruta POST /designs/new |
 
 ---
 
@@ -68,37 +145,41 @@ const SAVE_DEBOUNCE_MS = 300     // Debounce para save
 
 ### Prioridad Alta (Próximas sesiones)
 
-1. **Renderizado Real de QR y Códigos de Barras**
+1. **Limpiar console.logs de JavaScript** (35+ statements en canvas_designer.js)
+   - Opción A: Remover todos para producción
+   - Opción B: Envolver en flag DEBUG condicional
+
+2. **Renderizado Real de QR y Códigos de Barras**
    - Integrar `eqrcode` para generación QR
    - Integrar `barlix` para códigos de barras
    - Mostrar códigos reales en lugar de placeholders en el canvas
 
-2. **Importación de Datos Completa**
+3. **Importación de Datos Completa**
    - Completar parser de Excel (base existe con `xlsxir`)
    - Agregar soporte CSV
    - UI de mapeo de columnas a bindings de elementos
 
-3. **Generación de PDF para Impresión**
+4. **Generación de PDF para Impresión**
    - Evaluar `chromic_pdf` vs `pdf_generator`
    - Layout de múltiples etiquetas por página
    - Configuración de márgenes y espaciado
 
 ### Prioridad Media
 
-4. **Mejoras del Editor**
-   - Snap to grid
-   - Guías de alineación
+5. **Mejoras del Editor**
+   - Snap to grid (parcialmente implementado)
+   - Guías de alineación (implementado)
    - Copiar/pegar elementos
-   - Capas (z-index)
-   - Bloquear elementos
+   - Capas (z-index) - UI existe
+   - Bloquear elementos - UI existe
 
-5. **Vista Previa en Tiempo Real**
+6. **Vista Previa en Tiempo Real**
    - Renderizar etiqueta con datos reales del data source
    - Navegación entre registros de datos
 
 ### Prioridad Baja
 
-6. **Optimizaciones**
+7. **Optimizaciones**
    - Caching de diseños renderizados
    - Lazy loading de lotes grandes
    - Compresión de imágenes subidas
@@ -665,6 +746,7 @@ Caracteristicas:
 
 ### Alta Prioridad
 
+- [ ] Limpiar console.logs en canvas_designer.js (35+ statements)
 - [ ] Implementar rotacion automatica de tokens
 - [ ] Agregar Content Security Policy (CSP) headers
 - [ ] Implementar CSRF para API (double-submit cookie)
@@ -676,6 +758,8 @@ Caracteristicas:
 - [ ] Implementar rate limiting por usuario ademas de por IP
 - [x] ~~Agregar metricas de Prometheus/Telemetry~~ (Completado v1.1.0)
 - [x] ~~Implementar cache de disenos frecuentes~~ (Completado v1.1.0)
+- [x] ~~Propiedades de texto (fuente, negrita, alineación)~~ (Completado v1.3.0)
+- [x] ~~Selector de fuentes compatible con Zebra~~ (Completado v1.3.0)
 - [ ] Agregar soft-delete a entidades principales
 - [ ] Generacion de codigos QR/barcode en servidor para lotes grandes (>10,000)
 - [ ] Datos de preview editables por usuario
@@ -772,4 +856,4 @@ mix format
 
 ---
 
-*Documento actualizado: Enero 2026 - Version 1.1.0*
+*Documento actualizado: 30 Enero 2026 - Version 1.3.0*

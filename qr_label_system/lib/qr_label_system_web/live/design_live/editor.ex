@@ -80,12 +80,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("element_selected", %{"id" => id}, socket) do
     elements = socket.assigns.design.elements || []
-    # Handle both atom and string keys for id
+    # Handle both atom and string keys for id (elements may come from DB or JS)
     element = Enum.find(elements, fn el ->
       el_id = Map.get(el, :id) || Map.get(el, "id")
       el_id == id
     end)
-    IO.inspect({id, element != nil, length(elements)}, label: "element_selected")
     {:noreply, assign(socket, :selected_element, element)}
   end
 
@@ -118,21 +117,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     z_index visible locked name image_data image_filename)
 
   @impl true
-  def handle_event("update_element", %{"field" => field, "value" => value} = params, socket)
+  def handle_event("update_element", %{"field" => field, "value" => value}, socket)
       when field in @allowed_element_fields do
-    IO.inspect(params, label: "update_element params")
     if socket.assigns.selected_element do
-      IO.puts("Pushing update_element_property: field=#{field}, value=#{inspect(value)}")
       {:noreply, push_event(socket, "update_element_property", %{field: field, value: value})}
     else
-      IO.puts("No selected element, ignoring")
       {:noreply, socket}
     end
   end
 
-  def handle_event("update_element", params, socket) do
-    IO.inspect(params, label: "update_element UNMATCHED params")
-    # Silently ignore invalid fields - potential security probe
+  # Catch-all for invalid/disallowed fields - silently ignore (security)
+  def handle_event("update_element", _params, socket) do
     {:noreply, socket}
   end
 
@@ -1121,7 +1116,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           type="text"
           name="value"
           value={Map.get(@element, :name) || @element.type}
-          phx-blur="update_element"
+          phx-change="update_element"
+          phx-debounce="200"
           phx-value-field="name"
           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
         />
@@ -1135,7 +1131,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             name="value"
             step="0.1"
             value={@element.x}
-            phx-blur="update_element"
+            phx-change="update_element"
+            phx-debounce="150"
             phx-value-field="x"
             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
           />
@@ -1147,7 +1144,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             name="value"
             step="0.1"
             value={@element.y}
-            phx-blur="update_element"
+            phx-change="update_element"
+            phx-debounce="150"
             phx-value-field="y"
             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
           />
@@ -1162,7 +1160,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             name="value"
             step="0.1"
             value={@element.width}
-            phx-blur="update_element"
+            phx-change="update_element"
+            phx-debounce="150"
             phx-value-field="width"
             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
           />
@@ -1174,7 +1173,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             name="value"
             step="0.1"
             value={@element.height}
-            phx-blur="update_element"
+            phx-change="update_element"
+            phx-debounce="150"
             phx-value-field="height"
             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
           />
@@ -1188,7 +1188,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           name="value"
           step="1"
           value={@element.rotation || 0}
-          phx-blur="update_element"
+          phx-change="update_element"
+          phx-debounce="150"
           phx-value-field="rotation"
           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
         />
@@ -1201,7 +1202,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           name="value"
           value={@element.binding || ""}
           placeholder="Nombre de columna"
-          phx-blur="update_element"
+          phx-change="update_element"
+          phx-debounce="150"
           phx-value-field="binding"
           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
         />
@@ -1214,47 +1216,53 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <% "qr" -> %>
           <div class="border-t pt-4">
             <label class="block text-sm font-medium text-gray-700">Nivel de corrección de error</label>
-            <select
-              name="value"
-              phx-change="update_element"
-              phx-value-field="qr_error_level"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            >
-              <option value="L" selected={@element.qr_error_level == "L"}>L (7%)</option>
-              <option value="M" selected={@element.qr_error_level == "M"}>M (15%)</option>
-              <option value="Q" selected={@element.qr_error_level == "Q"}>Q (25%)</option>
-              <option value="H" selected={@element.qr_error_level == "H"}>H (30%)</option>
-            </select>
+            <form phx-change="update_element" class="mt-1">
+              <input type="hidden" name="field" value="qr_error_level" />
+              <select
+                name="value"
+                class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              >
+                <option value="L" selected={@element.qr_error_level == "L"}>L (7%)</option>
+                <option value="M" selected={@element.qr_error_level == "M"}>M (15%)</option>
+                <option value="Q" selected={@element.qr_error_level == "Q"}>Q (25%)</option>
+                <option value="H" selected={@element.qr_error_level == "H"}>H (30%)</option>
+              </select>
+            </form>
           </div>
 
         <% "barcode" -> %>
           <div class="border-t pt-4 space-y-3">
             <div>
               <label class="block text-sm font-medium text-gray-700">Formato</label>
-              <select
-                name="value"
-                phx-change="update_element"
-                phx-value-field="barcode_format"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <option value="CODE128" selected={@element.barcode_format == "CODE128"}>CODE128</option>
-                <option value="CODE39" selected={@element.barcode_format == "CODE39"}>CODE39</option>
-                <option value="EAN13" selected={@element.barcode_format == "EAN13"}>EAN-13</option>
-                <option value="EAN8" selected={@element.barcode_format == "EAN8"}>EAN-8</option>
-                <option value="UPC" selected={@element.barcode_format == "UPC"}>UPC</option>
-                <option value="ITF14" selected={@element.barcode_format == "ITF14"}>ITF-14</option>
-              </select>
+              <form phx-change="update_element" class="mt-1">
+                <input type="hidden" name="field" value="barcode_format" />
+                <select
+                  name="value"
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
+                  <option value="CODE128" selected={@element.barcode_format == "CODE128"}>CODE128</option>
+                  <option value="CODE39" selected={@element.barcode_format == "CODE39"}>CODE39</option>
+                  <option value="EAN13" selected={@element.barcode_format == "EAN13"}>EAN-13</option>
+                  <option value="EAN8" selected={@element.barcode_format == "EAN8"}>EAN-8</option>
+                  <option value="UPC" selected={@element.barcode_format == "UPC"}>UPC</option>
+                  <option value="ITF14" selected={@element.barcode_format == "ITF14"}>ITF-14</option>
+                </select>
+              </form>
             </div>
             <div class="flex items-center">
-              <input
-                type="checkbox"
-                id="barcode_show_text"
-                checked={@element.barcode_show_text}
-                phx-click="update_element"
-                phx-value-field="barcode_show_text"
-                class="rounded border-gray-300"
-              />
-              <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
+              <form phx-change="update_element">
+                <input type="hidden" name="field" value="barcode_show_text" />
+                <input type="hidden" name="value" value="false" />
+                <input
+                  type="checkbox"
+                  id="barcode_show_text"
+                  name="value"
+                  value="true"
+                  checked={@element.barcode_show_text}
+                  class="rounded border-gray-300"
+                />
+                <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
+              </form>
             </div>
           </div>
 
@@ -1266,7 +1274,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 type="text"
                 name="value"
                 value={@element.text_content || ""}
-                phx-blur="update_element"
+                phx-change="update_element"
+                phx-debounce="150"
                 phx-value-field="text_content"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               />
@@ -1278,7 +1287,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   type="number"
                   name="value"
                   value={@element.font_size || 12}
-                  phx-blur="update_element"
+                  phx-change="update_element"
+                  phx-debounce="150"
                   phx-value-field="font_size"
                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
@@ -1297,50 +1307,53 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Fuente</label>
-              <select
-                name="value"
-                phx-change="update_element"
-                phx-value-field="font_family"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <!-- Fuentes compatibles con impresoras Zebra y sistemas comunes -->
-                <option value="Arial" selected={@element.font_family == "Arial"}>Arial</option>
-                <option value="Helvetica" selected={@element.font_family == "Helvetica"}>Helvetica</option>
-                <option value="Verdana" selected={@element.font_family == "Verdana"}>Verdana</option>
-                <option value="Courier New" selected={@element.font_family == "Courier New"}>Courier New (monospace)</option>
-                <option value="Times New Roman" selected={@element.font_family == "Times New Roman"}>Times New Roman</option>
-                <option value="Georgia" selected={@element.font_family == "Georgia"}>Georgia</option>
-                <!-- Fuentes genéricas como fallback -->
-                <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif (genérica)</option>
-                <option value="serif" selected={@element.font_family == "serif"}>Serif (genérica)</option>
-                <option value="monospace" selected={@element.font_family == "monospace"}>Monospace (genérica)</option>
-              </select>
+              <form phx-change="update_element" class="mt-1">
+                <input type="hidden" name="field" value="font_family" />
+                <select
+                  name="value"
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
+                  <!-- Fuentes compatibles con impresoras Zebra y sistemas comunes -->
+                  <option value="Arial" selected={@element.font_family == "Arial"}>Arial</option>
+                  <option value="Helvetica" selected={@element.font_family == "Helvetica"}>Helvetica</option>
+                  <option value="Verdana" selected={@element.font_family == "Verdana"}>Verdana</option>
+                  <option value="Courier New" selected={@element.font_family == "Courier New"}>Courier New (monospace)</option>
+                  <option value="Times New Roman" selected={@element.font_family == "Times New Roman"}>Times New Roman</option>
+                  <option value="Georgia" selected={@element.font_family == "Georgia"}>Georgia</option>
+                  <!-- Fuentes genéricas como fallback -->
+                  <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif (genérica)</option>
+                  <option value="serif" selected={@element.font_family == "serif"}>Serif (genérica)</option>
+                  <option value="monospace" selected={@element.font_family == "monospace"}>Monospace (genérica)</option>
+                </select>
+              </form>
               <p class="mt-1 text-xs text-gray-400">Compatible con impresoras Zebra</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Alineación</label>
-              <select
-                name="value"
-                phx-change="update_element"
-                phx-value-field="text_align"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <option value="left" selected={@element.text_align == "left"}>Izquierda</option>
-                <option value="center" selected={@element.text_align == "center"}>Centro</option>
-                <option value="right" selected={@element.text_align == "right"}>Derecha</option>
-              </select>
+              <form phx-change="update_element" class="mt-1">
+                <input type="hidden" name="field" value="text_align" />
+                <select
+                  name="value"
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
+                  <option value="left" selected={@element.text_align == "left"}>Izquierda</option>
+                  <option value="center" selected={@element.text_align == "center"}>Centro</option>
+                  <option value="right" selected={@element.text_align == "right"}>Derecha</option>
+                </select>
+              </form>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Peso</label>
-              <select
-                name="value"
-                phx-change="update_element"
-                phx-value-field="font_weight"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <option value="normal" selected={@element.font_weight == "normal"}>Normal</option>
-                <option value="bold" selected={@element.font_weight == "bold"}>Negrita</option>
-              </select>
+              <form phx-change="update_element" class="mt-1">
+                <input type="hidden" name="field" value="font_weight" />
+                <select
+                  name="value"
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
+                  <option value="normal" selected={@element.font_weight == "normal"}>Normal</option>
+                  <option value="bold" selected={@element.font_weight == "bold"}>Negrita</option>
+                </select>
+              </form>
             </div>
           </div>
 
