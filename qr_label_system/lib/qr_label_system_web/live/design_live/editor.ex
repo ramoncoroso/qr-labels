@@ -170,18 +170,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("zoom_in", _params, socket) do
     new_zoom = min(socket.assigns.zoom + 25, 200)
-    {:noreply, assign(socket, :zoom, new_zoom)}
+    {:noreply,
+     socket
+     |> assign(:zoom, new_zoom)
+     |> push_event("update_zoom", %{zoom: new_zoom})}
   end
 
   @impl true
   def handle_event("zoom_out", _params, socket) do
     new_zoom = max(socket.assigns.zoom - 25, 50)
-    {:noreply, assign(socket, :zoom, new_zoom)}
+    {:noreply,
+     socket
+     |> assign(:zoom, new_zoom)
+     |> push_event("update_zoom", %{zoom: new_zoom})}
   end
 
   @impl true
   def handle_event("zoom_reset", _params, socket) do
-    {:noreply, assign(socket, :zoom, 100)}
+    {:noreply,
+     socket
+     |> assign(:zoom, 100)
+     |> push_event("update_zoom", %{zoom: 100})}
   end
 
   @impl true
@@ -851,20 +860,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
 
           <div class="relative">
-            <!-- Empty State Hint -->
-            <div :if={@element_count == 0} class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div class="bg-white/90 backdrop-blur rounded-xl p-6 shadow-lg text-center max-w-xs">
-                <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <h3 class="font-medium text-gray-900 mb-1">Etiqueta vacía</h3>
-                <p class="text-sm text-gray-500">Haz clic en los elementos de la izquierda para agregarlos a tu diseño</p>
-              </div>
-            </div>
-
             <div
               id="canvas-container"
               phx-hook="CanvasDesigner"
+              phx-update="ignore"
               data-width={@design.width_mm}
               data-height={@design.height_mm}
               data-background-color={@design.background_color}
@@ -875,11 +874,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               data-grid-snap-enabled={@grid_snap_enabled}
               data-grid-size={@grid_size}
               data-snap-threshold={@snap_threshold}
-              class="rounded-lg overflow-visible"
-              style={"transform: scale(#{@zoom / 100}); transform-origin: center center; transition: transform 0.2s ease;"}
+              class="rounded-lg bg-slate-200 min-h-[200px] min-w-[300px] inline-block"
             >
               <canvas id="label-canvas"></canvas>
             </div>
+
+            <!-- Empty State Hint - positioned AFTER canvas to not interfere with mouse events -->
+            <!-- Note: This hint is shown only when there are no elements, but the canvas is always interactive -->
           </div>
         </div>
 

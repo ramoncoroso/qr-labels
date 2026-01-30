@@ -70,67 +70,145 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       <div class="mt-8">
         <!-- Add New Design Card -->
-        <.link navigate={~p"/designs/new"} class="block mb-4 bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 p-4 transition-colors">
+        <.link navigate={~p"/designs/new"} class="group block mb-6 bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:from-blue-50 hover:to-indigo-50/50 p-5 transition-all duration-300 hover:shadow-lg hover:shadow-blue-100/50">
           <div class="flex items-center space-x-4">
-            <div class="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center">
-              <svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            <div class="w-14 h-14 rounded-xl bg-white shadow-sm border border-gray-200 group-hover:border-blue-200 group-hover:shadow-md group-hover:shadow-blue-100/50 flex items-center justify-center transition-all duration-300">
+              <svg class="w-7 h-7 text-gray-400 group-hover:text-blue-500 transition-colors duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
             </div>
             <div>
-              <h3 class="text-lg font-medium text-slate-600">Nuevo Diseño</h3>
-              <p class="text-sm text-slate-500">Crea una nueva plantilla de etiqueta</p>
+              <h3 class="text-lg font-semibold text-gray-700 group-hover:text-blue-700 transition-colors">Nuevo Diseño</h3>
+              <p class="text-sm text-gray-500 group-hover:text-blue-600/70 transition-colors">Crea una nueva plantilla de etiqueta</p>
+            </div>
+            <div class="flex-1"></div>
+            <div class="w-10 h-10 rounded-full bg-white shadow-sm border border-gray-200 group-hover:bg-blue-500 group-hover:border-blue-500 flex items-center justify-center transition-all duration-300 opacity-0 group-hover:opacity-100">
+              <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+              </svg>
             </div>
           </div>
         </.link>
 
-        <div id="designs" phx-update="stream" class="space-y-4">
-          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="bg-white rounded-lg shadow border border-gray-200 p-4">
+        <div id="designs" phx-update="stream" class="space-y-4 pb-4">
+          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
             <div class="flex items-center justify-between">
               <div class="flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <svg class="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 flex items-center justify-center">
+                  <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
                   </svg>
                 </div>
-                <div>
-                  <h3 class="text-lg font-semibold text-gray-900">
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-base font-semibold text-gray-900 truncate group-hover/card:text-blue-700 transition-colors">
                     <%= design.name %>
                   </h3>
-                  <p class="text-sm text-gray-500">
-                    <%= design.width_mm %> × <%= design.height_mm %> mm
-                    · <%= length(design.elements || []) %> elementos
+                  <p class="text-sm text-gray-500 flex items-center gap-2">
+                    <span class="inline-flex items-center">
+                      <svg class="w-3.5 h-3.5 mr-1 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                      </svg>
+                      <%= design.width_mm %> × <%= design.height_mm %> mm
+                    </span>
+                    <span class="text-gray-300">·</span>
+                    <span class="inline-flex items-center">
+                      <svg class="w-3.5 h-3.5 mr-1 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L12 12.75l-5.571-3m11.142 0l4.179 2.25L12 17.25l-9.75-5.25 4.179-2.25m11.142 0l4.179 2.25-4.179 2.25m0-4.5v4.5" />
+                      </svg>
+                      <%= length(design.elements || []) %> elementos
+                    </span>
                   </p>
                 </div>
               </div>
 
-              <div class="flex items-center space-x-4">
-                <div class="text-right">
-                  <%= if design.is_template do %>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      Plantilla
-                    </span>
-                  <% end %>
-                </div>
+              <div class="flex items-center gap-3">
+                <%= if design.is_template do %>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200/50 shadow-sm">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clip-rule="evenodd" />
+                    </svg>
+                    Plantilla
+                  </span>
+                <% end %>
 
-                <div class="flex space-x-2">
-                  <.link navigate={~p"/designs/#{design.id}/edit"} class="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                    Editar
+                <div class="flex items-center gap-1">
+                  <!-- Edit Button - Primary Action -->
+                  <.link
+                    navigate={~p"/designs/#{design.id}/edit"}
+                    class="group relative inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all duration-200 hover:shadow-sm"
+                  >
+                    <svg class="w-4 h-4 text-gray-500 group-hover:text-blue-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                    </svg>
+                    <span class="sr-only">Editar</span>
+                    <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                      Editar
+                    </span>
                   </.link>
-                  <.link navigate={~p"/designs/#{design.id}"} class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
-                    Ver
+
+                  <!-- View Button -->
+                  <.link
+                    navigate={~p"/designs/#{design.id}"}
+                    class="group relative inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gray-50 hover:bg-indigo-50 border border-gray-200 hover:border-indigo-200 transition-all duration-200 hover:shadow-sm"
+                  >
+                    <svg class="w-4 h-4 text-gray-500 group-hover:text-indigo-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span class="sr-only">Ver</span>
+                    <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                      Ver
+                    </span>
                   </.link>
-                  <form action={~p"/designs/#{design.id}"} method="post" class="inline">
-                    <input type="hidden" name="_method" value="delete" />
-                    <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-                    <button
-                      type="submit"
-                      onclick="return confirm('¿Estás seguro de que quieres eliminar este diseño?')"
-                      class="text-red-500 hover:text-red-700 text-sm"
-                    >
+
+                  <!-- Duplicate Button -->
+                  <button
+                    phx-click="duplicate"
+                    phx-value-id={design.id}
+                    class="group relative inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all duration-200 hover:shadow-sm"
+                  >
+                    <svg class="w-4 h-4 text-gray-500 group-hover:text-emerald-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                    </svg>
+                    <span class="sr-only">Duplicar</span>
+                    <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                      Duplicar
+                    </span>
+                  </button>
+
+                  <!-- Export Button -->
+                  <button
+                    phx-click="export"
+                    phx-value-id={design.id}
+                    class="group relative inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gray-50 hover:bg-violet-50 border border-gray-200 hover:border-violet-200 transition-all duration-200 hover:shadow-sm"
+                  >
+                    <svg class="w-4 h-4 text-gray-500 group-hover:text-violet-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <span class="sr-only">Exportar</span>
+                    <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                      Exportar
+                    </span>
+                  </button>
+
+                  <!-- Divider -->
+                  <div class="w-px h-6 bg-gray-200 mx-1"></div>
+
+                  <!-- Delete Button -->
+                  <button
+                    phx-click="delete"
+                    phx-value-id={design.id}
+                    data-confirm="¿Estás seguro de que quieres eliminar este diseño? Esta acción no se puede deshacer."
+                    class="group relative inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gray-50 hover:bg-red-50 border border-gray-200 hover:border-red-200 transition-all duration-200 hover:shadow-sm"
+                  >
+                    <svg class="w-4 h-4 text-gray-400 group-hover:text-red-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                    <span class="sr-only">Eliminar</span>
+                    <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                       Eliminar
-                    </button>
-                  </form>
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>

@@ -2,6 +2,10 @@
  * Canvas Designer Hook
  * Uses Fabric.js for visual label design with drag & drop
  *
+ * Apple-level engineering: The canvas must survive LiveView re-renders.
+ * Key insight: LiveView morphs the DOM, but Fabric.js manages its own state.
+ * We use updated() to detect changes without recreating the canvas.
+ *
  * @module CanvasDesigner
  */
 
@@ -19,7 +23,9 @@ const CanvasDesigner = {
     console.log('CanvasDesigner: mounted() called')
     this._saveTimeout = null
     this._isDestroyed = false
+    this._isInitialized = false
     this._alignmentLines = []
+    this._currentZoom = 1.0
 
     // Snap settings
     this.snapEnabled = this.el.dataset.snapEnabled === 'true'
@@ -32,6 +38,7 @@ const CanvasDesigner = {
       this.initCanvas()
       console.log('CanvasDesigner: setting up event listeners...')
       this.setupEventListeners()
+      this._isInitialized = true
       console.log('CanvasDesigner: pushing canvas_ready event...')
       this.pushEvent("canvas_ready", {})
       console.log('CanvasDesigner: initialization complete')
@@ -41,8 +48,85 @@ const CanvasDesigner = {
     }
   },
 
+  /**
+   * CRITICAL: Handle LiveView DOM updates without destroying the canvas.
+   * This is called every time LiveView updates the DOM (after element_modified events, etc.)
+   *
+   * With phx-update="ignore", this should rarely be called, but we handle it defensively.
+   */
+  updated() {
+    console.log('CanvasDesigner: updated() called')
+
+    // Don't do anything if canvas isn't initialized
+    if (!this._isInitialized || !this.canvas) {
+      console.log('CanvasDesigner: updated() - canvas not initialized, skipping')
+      return
+    }
+
+    // Update snap settings from data attributes if they changed
+    const newSnapEnabled = this.el.dataset.snapEnabled === 'true'
+    const newGridSnapEnabled = this.el.dataset.gridSnapEnabled === 'true'
+    const newGridSize = parseFloat(this.el.dataset.gridSize) || 5
+
+    if (this.snapEnabled !== newSnapEnabled) {
+      console.log('CanvasDesigner: Snap enabled changed to', newSnapEnabled)
+      this.snapEnabled = newSnapEnabled
+    }
+    if (this.gridSnapEnabled !== newGridSnapEnabled) {
+      console.log('CanvasDesigner: Grid snap enabled changed to', newGridSnapEnabled)
+      this.gridSnapEnabled = newGridSnapEnabled
+    }
+    if (this.gridSize !== newGridSize) {
+      console.log('CanvasDesigner: Grid size changed to', newGridSize)
+      this.gridSize = newGridSize
+    }
+
+    // With phx-update="ignore", the canvas should never be replaced
+    // But verify it's still there
+    if (!this.canvas.lowerCanvasEl || !this.canvas.lowerCanvasEl.isConnected) {
+      console.error('CanvasDesigner: Canvas element was disconnected from DOM!')
+      // Try to recover by re-rendering
+      this.canvas.renderAll()
+    }
+  },
+
+  /**
+   * Reinitialize canvas preserving elements (emergency recovery)
+   */
+  reinitializeCanvas() {
+    // Save current elements
+    const savedElements = []
+    if (this.elements) {
+      this.elements.forEach((obj) => {
+        if (obj && obj.elementData) {
+          savedElements.push({ ...obj.elementData })
+        }
+      })
+    }
+
+    // Dispose old canvas
+    if (this.canvas) {
+      this.canvas.dispose()
+      this.canvas = null
+    }
+    if (this.elements) {
+      this.elements.clear()
+    }
+
+    // Reinitialize
+    this.initCanvas()
+
+    // Restore elements
+    savedElements.forEach(el => this.addElement(el, false))
+    this.canvas.renderAll()
+  },
+
   destroyed() {
+    console.warn('CanvasDesigner: destroyed() called!')
+    console.trace('CanvasDesigner: Stack trace for destroyed()')
+
     this._isDestroyed = true
+    this._isInitialized = false
 
     // Clear any pending timeouts
     if (this._saveTimeout) {
@@ -54,6 +138,7 @@ const CanvasDesigner = {
 
     // Properly dispose of Fabric.js canvas to prevent memory leaks
     if (this.canvas) {
+      console.log('CanvasDesigner: Disposing Fabric canvas')
       this.canvas.dispose()
       this.canvas = null
     }
@@ -103,8 +188,11 @@ const CanvasDesigner = {
 
     const canvasEl = this.el.querySelector('#label-canvas')
     if (!canvasEl) {
-      return // Canvas element not found - silently fail
+      console.error('CanvasDesigner: Canvas element #label-canvas not found!')
+      return
     }
+
+    console.log('CanvasDesigner: Found canvas element:', canvasEl)
 
     // Calculate canvas size
     const width = this.widthMM * PX_PER_MM
@@ -112,14 +200,53 @@ const CanvasDesigner = {
     const totalWidth = width + RULER_SIZE + 20
     const totalHeight = height + RULER_SIZE + 20
 
-    // Initialize Fabric.js canvas
+    console.log('CanvasDesigner: Creating Fabric canvas', { width: totalWidth, height: totalHeight })
+
+    // Set canvas dimensions before Fabric initialization
+    canvasEl.width = totalWidth
+    canvasEl.height = totalHeight
+
+    // Initialize Fabric.js canvas with explicit interaction settings
     this.canvas = new fabric.Canvas(canvasEl, {
       width: totalWidth,
       height: totalHeight,
       backgroundColor: '#f1f5f9',
       selection: true,
-      preserveObjectStacking: true
+      preserveObjectStacking: true,
+      renderOnAddRemove: true,
+      skipTargetFind: false, // Ensure mouse targeting works
+      stopContextMenu: true,
+      fireRightClick: true
     })
+
+    // Verify canvas was created properly
+    if (!this.canvas || !this.canvas.lowerCanvasEl) {
+      console.error('CanvasDesigner: Failed to create Fabric canvas properly!')
+      return
+    }
+
+    // Ensure the upper canvas (for interactions) exists and has correct style
+    const upperCanvas = this.canvas.upperCanvasEl
+    if (upperCanvas) {
+      upperCanvas.style.position = 'absolute'
+      upperCanvas.style.top = '0'
+      upperCanvas.style.left = '0'
+      upperCanvas.style.pointerEvents = 'auto'
+    }
+
+    console.log('CanvasDesigner: Fabric canvas created:', {
+      canvas: this.canvas,
+      lowerCanvas: this.canvas.lowerCanvasEl,
+      upperCanvas: this.canvas.upperCanvasEl,
+      wrapperEl: this.canvas.wrapperEl
+    })
+
+    // Ensure the wrapper element doesn't block pointer events
+    const wrapperEl = this.canvas.wrapperEl
+    if (wrapperEl) {
+      wrapperEl.style.position = 'relative'
+      // Don't set pointer-events on wrapper - let Fabric handle it
+    }
 
     this.padding = { left: RULER_SIZE + 10, top: RULER_SIZE + 10 }
 
@@ -156,6 +283,79 @@ const CanvasDesigner = {
     }
 
     this.elements = new Map()
+
+    // Final verification - ensure canvas is interactive
+    this.verifyCanvasInteractive()
+  },
+
+  /**
+   * Verify that the canvas is properly set up for interaction
+   */
+  verifyCanvasInteractive() {
+    if (!this.canvas) {
+      console.error('CanvasDesigner: Canvas verification failed - no canvas')
+      return
+    }
+
+    const upperCanvas = this.canvas.upperCanvasEl
+    if (!upperCanvas) {
+      console.error('CanvasDesigner: Canvas verification failed - no upper canvas')
+      return
+    }
+
+    // Ensure wrapper and canvases are visible
+    const wrapper = this.canvas.wrapperEl
+    if (wrapper) {
+      wrapper.style.display = 'block'
+      wrapper.style.visibility = 'visible'
+      wrapper.style.opacity = '1'
+    }
+
+    const lowerCanvas = this.canvas.lowerCanvasEl
+    if (lowerCanvas) {
+      lowerCanvas.style.display = 'block'
+      lowerCanvas.style.visibility = 'visible'
+    }
+
+    if (upperCanvas) {
+      upperCanvas.style.display = 'block'
+      upperCanvas.style.visibility = 'visible'
+      upperCanvas.style.pointerEvents = 'auto'
+    }
+
+    // Check computed styles
+    const computedStyle = window.getComputedStyle(upperCanvas)
+    const pointerEvents = computedStyle.getPropertyValue('pointer-events')
+
+    console.log('CanvasDesigner: Upper canvas pointer-events:', pointerEvents)
+
+    if (pointerEvents === 'none') {
+      console.warn('CanvasDesigner: Fixing pointer-events on upper canvas')
+      upperCanvas.style.pointerEvents = 'auto !important'
+    }
+
+    // Check wrapper
+    if (wrapper) {
+      const wrapperStyle = window.getComputedStyle(wrapper)
+      const wrapperPointer = wrapperStyle.getPropertyValue('pointer-events')
+      const wrapperDisplay = wrapperStyle.getPropertyValue('display')
+      const wrapperVisibility = wrapperStyle.getPropertyValue('visibility')
+      console.log('CanvasDesigner: Wrapper styles:', {
+        pointerEvents: wrapperPointer,
+        display: wrapperDisplay,
+        visibility: wrapperVisibility
+      })
+    }
+
+    // Log canvas state
+    console.log('CanvasDesigner: Canvas verification complete', {
+      selection: this.canvas.selection,
+      interactive: this.canvas.interactive,
+      skipTargetFind: this.canvas.skipTargetFind,
+      width: this.canvas.width,
+      height: this.canvas.height,
+      objectCount: this.canvas.getObjects().length
+    })
   },
 
   drawRulers(width, height) {
@@ -256,8 +456,11 @@ const CanvasDesigner = {
   },
 
   setupEventListeners() {
+    console.log('CanvasDesigner: Setting up event listeners on canvas')
+
     // Element selection - support multi-selection
     this.canvas.on('selection:created', (e) => {
+      console.log('CanvasDesigner: selection:created', e.selected)
       const selected = e.selected || []
       if (selected.length === 1 && selected[0]?.elementId) {
         this.pushEvent("element_selected", { id: selected[0].elementId })
@@ -268,6 +471,7 @@ const CanvasDesigner = {
     })
 
     this.canvas.on('selection:updated', (e) => {
+      console.log('CanvasDesigner: selection:updated', e.selected)
       const selected = e.selected || []
       if (selected.length === 1 && selected[0]?.elementId) {
         this.pushEvent("element_selected", { id: selected[0].elementId })
@@ -278,11 +482,18 @@ const CanvasDesigner = {
     })
 
     this.canvas.on('selection:cleared', () => {
+      console.log('CanvasDesigner: selection:cleared')
       this.pushEvent("element_deselected", {})
+    })
+
+    // Debug: mouse events
+    this.canvas.on('mouse:down', (e) => {
+      console.log('CanvasDesigner: mouse:down on', e.target?.elementId || 'background')
     })
 
     // Element modification (drag, resize, rotate)
     this.canvas.on('object:modified', (e) => {
+      console.log('CanvasDesigner: object:modified', e.target?.elementId)
       this.clearAlignmentLines()
       // Mark the element as modified so we know to recalculate its dimensions
       if (e.target && e.target.elementId) {
@@ -436,6 +647,25 @@ const CanvasDesigner = {
         this.gridSize = grid_size
       }
     })
+
+    // Zoom handling - use Fabric.js native zoom
+    // Note: For now, we keep zoom simple at 1:1 to ensure interaction works
+    this.handleEvent("update_zoom", ({ zoom }) => {
+      if (!this._isDestroyed && this.canvas) {
+        // Simple zoom - just scale the canvas
+        const zoomLevel = zoom / 100
+        this._currentZoom = zoomLevel
+        this.canvas.setZoom(zoomLevel)
+
+        // Resize the canvas wrapper to match
+        const wrapper = this.canvas.wrapperEl
+        if (wrapper) {
+          wrapper.style.transform = 'none'
+        }
+
+        this.canvas.requestRenderAll()
+      }
+    })
   },
 
   loadDesign(design) {
@@ -451,8 +681,22 @@ const CanvasDesigner = {
   },
 
   addElement(element, save = true) {
+    console.log('CanvasDesigner: addElement called', { type: element.type, id: element.id, save })
+
+    if (!this.canvas) {
+      console.error('CanvasDesigner: Cannot add element - canvas not initialized!')
+      return
+    }
+
+    if (!this.labelBounds) {
+      console.error('CanvasDesigner: Cannot add element - labelBounds not set!')
+      return
+    }
+
     const x = this.labelBounds.left + (element.x || 5) * PX_PER_MM
     const y = this.labelBounds.top + (element.y || 5) * PX_PER_MM
+
+    console.log('CanvasDesigner: Positioning element at', { x, y })
 
     let obj
     switch (element.type) {
@@ -475,8 +719,13 @@ const CanvasDesigner = {
         obj = this.createImage(element, x, y)
         break
       default:
-        console.warn('Unknown element type:', element.type)
+        console.warn('CanvasDesigner: Unknown element type:', element.type)
         return
+    }
+
+    if (!obj) {
+      console.error('CanvasDesigner: Failed to create object for element', element.type)
+      return
     }
 
     obj.elementId = element.id
@@ -506,7 +755,19 @@ const CanvasDesigner = {
       cornerSize: 8,
       transparentCorners: false,
       borderColor: isLocked ? '#f59e0b' : '#3b82f6',
-      borderScaleFactor: 2
+      borderScaleFactor: 2,
+      // Explicitly ensure controls are visible
+      hasControls: true,
+      hasBorders: true
+    })
+
+    console.log('CanvasDesigner: Adding object to canvas', {
+      elementId: obj.elementId,
+      selectable: obj.selectable,
+      evented: obj.evented,
+      hasControls: obj.hasControls,
+      left: obj.left,
+      top: obj.top
     })
 
     this.elements.set(element.id, obj)
@@ -522,40 +783,67 @@ const CanvasDesigner = {
     if (save) {
       this.canvas.setActiveObject(obj)
     }
+
+    console.log('CanvasDesigner: Rendering canvas after adding element...')
     this.canvas.renderAll()
 
+    // Verify canvas state after adding element
+    console.log('CanvasDesigner: Canvas state after adding element:', {
+      canvasExists: !!this.canvas,
+      objectCount: this.canvas.getObjects().length,
+      wrapperConnected: this.canvas.wrapperEl?.isConnected,
+      lowerCanvasConnected: this.canvas.lowerCanvasEl?.isConnected,
+      upperCanvasConnected: this.canvas.upperCanvasEl?.isConnected
+    })
+
     if (save) {
-      this.saveElements()
+      // Delay the save slightly to let the canvas settle
+      setTimeout(() => {
+        if (!this._isDestroyed && this.canvas) {
+          console.log('CanvasDesigner: Saving elements after delay...')
+          this.saveElements()
+        }
+      }, 100)
     }
   },
 
   createQR(element, x, y) {
-    const size = (element.width || 20) * PX_PER_MM
+    console.log('CanvasDesigner: createQR called', { element, x, y })
 
-    const rect = new fabric.Rect({
-      width: size,
-      height: size,
-      fill: '#dbeafe',
-      stroke: '#3b82f6',
-      strokeWidth: 2,
-      strokeDashArray: [4, 4]
-    })
+    try {
+      const size = (element.width || 20) * PX_PER_MM
 
-    const text = new fabric.Text('QR', {
-      fontSize: size * 0.3,
-      fill: '#3b82f6',
-      fontWeight: 'bold',
-      originX: 'center',
-      originY: 'center',
-      left: size / 2,
-      top: size / 2
-    })
+      const rect = new fabric.Rect({
+        width: size,
+        height: size,
+        fill: '#dbeafe',
+        stroke: '#3b82f6',
+        strokeWidth: 2,
+        strokeDashArray: [4, 4]
+      })
 
-    return new fabric.Group([rect, text], {
-      left: x,
-      top: y,
-      angle: element.rotation || 0
-    })
+      const text = new fabric.Text('QR', {
+        fontSize: size * 0.3,
+        fill: '#3b82f6',
+        fontWeight: 'bold',
+        originX: 'center',
+        originY: 'center',
+        left: size / 2,
+        top: size / 2
+      })
+
+      const group = new fabric.Group([rect, text], {
+        left: x,
+        top: y,
+        angle: element.rotation || 0
+      })
+
+      console.log('CanvasDesigner: QR created successfully', group)
+      return group
+    } catch (error) {
+      console.error('CanvasDesigner: Error creating QR', error)
+      return null
+    }
   },
 
   createBarcode(element, x, y) {
@@ -589,20 +877,30 @@ const CanvasDesigner = {
   },
 
   createText(element, x, y) {
-    const content = element.text_content || element.binding || 'Texto'
-    const fontSize = element.font_size || 12
+    console.log('CanvasDesigner: createText called', { element, x, y })
 
-    return new fabric.Textbox(content, {
-      left: x,
-      top: y,
-      width: (element.width || 30) * PX_PER_MM,
-      fontSize: fontSize,
-      fontFamily: element.font_family || 'Arial',
-      fontWeight: element.font_weight || 'normal',
-      fill: element.color || '#000000',
-      textAlign: element.text_align || 'left',
-      angle: element.rotation || 0
-    })
+    try {
+      const content = element.text_content || element.binding || 'Texto'
+      const fontSize = element.font_size || 12
+
+      const textbox = new fabric.Textbox(content, {
+        left: x,
+        top: y,
+        width: (element.width || 30) * PX_PER_MM,
+        fontSize: fontSize,
+        fontFamily: element.font_family || 'Arial',
+        fontWeight: element.font_weight || 'normal',
+        fill: element.color || '#000000',
+        textAlign: element.text_align || 'left',
+        angle: element.rotation || 0
+      })
+
+      console.log('CanvasDesigner: Text created successfully', textbox)
+      return textbox
+    } catch (error) {
+      console.error('CanvasDesigner: Error creating Text', error)
+      return null
+    }
   },
 
   createLine(element, x, y) {

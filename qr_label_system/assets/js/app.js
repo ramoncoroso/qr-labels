@@ -26,10 +26,33 @@ let liveSocket = new LiveSocket("/live", Socket, {
   hooks: Hooks,
   dom: {
     onBeforeElUpdated(from, to) {
-      // Preserve Fabric.js canvas elements during LiveView updates
-      if (from.id === "label-canvas") {
+      // Preserve Fabric.js canvas elements and their wrappers during LiveView updates
+      // This is critical for Fabric.js to maintain state
+
+      // Protect the canvas container (has phx-update="ignore" but this is extra protection)
+      if (from.id === "canvas-container") {
+        console.log('DOM: Protecting canvas-container from update')
         return false
       }
+
+      // Protect the actual canvas
+      if (from.id === "label-canvas") {
+        console.log('DOM: Protecting label-canvas from update')
+        return false
+      }
+
+      // Protect Fabric.js wrapper elements (they have class "canvas-container")
+      if (from.classList?.contains('canvas-container')) {
+        console.log('DOM: Protecting Fabric wrapper from update')
+        return false
+      }
+
+      // Protect any element inside the canvas container
+      if (from.closest('#canvas-container')) {
+        console.log('DOM: Protecting element inside canvas-container from update')
+        return false
+      }
+
       return true
     }
   }
