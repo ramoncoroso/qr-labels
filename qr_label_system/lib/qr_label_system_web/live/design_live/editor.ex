@@ -94,16 +94,20 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     z_index visible locked name image_data image_filename)
 
   @impl true
-  def handle_event("update_element", %{"field" => field, "value" => value}, socket)
+  def handle_event("update_element", %{"field" => field, "value" => value} = params, socket)
       when field in @allowed_element_fields do
+    IO.inspect(params, label: "update_element params")
     if socket.assigns.selected_element do
+      IO.puts("Pushing update_element_property: field=#{field}, value=#{inspect(value)}")
       {:noreply, push_event(socket, "update_element_property", %{field: field, value: value})}
     else
+      IO.puts("No selected element, ignoring")
       {:noreply, socket}
     end
   end
 
-  def handle_event("update_element", %{"field" => _invalid_field}, socket) do
+  def handle_event("update_element", params, socket) do
+    IO.inspect(params, label: "update_element UNMATCHED params")
     # Silently ignore invalid fields - potential security probe
     {:noreply, socket}
   end
@@ -1091,6 +1095,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <label class="block text-sm font-medium text-gray-700">Nombre</label>
         <input
           type="text"
+          name="value"
           value={Map.get(@element, :name) || @element.type}
           phx-blur="update_element"
           phx-value-field="name"
@@ -1103,6 +1108,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <label class="block text-sm font-medium text-gray-700">X (mm)</label>
           <input
             type="number"
+            name="value"
             step="0.1"
             value={@element.x}
             phx-blur="update_element"
@@ -1114,6 +1120,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <label class="block text-sm font-medium text-gray-700">Y (mm)</label>
           <input
             type="number"
+            name="value"
             step="0.1"
             value={@element.y}
             phx-blur="update_element"
@@ -1128,6 +1135,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
           <input
             type="number"
+            name="value"
             step="0.1"
             value={@element.width}
             phx-blur="update_element"
@@ -1139,6 +1147,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
           <input
             type="number"
+            name="value"
             step="0.1"
             value={@element.height}
             phx-blur="update_element"
@@ -1152,6 +1161,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <label class="block text-sm font-medium text-gray-700">Rotación (°)</label>
         <input
           type="number"
+          name="value"
           step="1"
           value={@element.rotation || 0}
           phx-blur="update_element"
@@ -1164,6 +1174,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
         <input
           type="text"
+          name="value"
           value={@element.binding || ""}
           placeholder="Nombre de columna"
           phx-blur="update_element"
@@ -1180,7 +1191,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <div class="border-t pt-4">
             <label class="block text-sm font-medium text-gray-700">Nivel de corrección de error</label>
             <select
-              phx-blur="update_element"
+              name="value"
+              phx-change="update_element"
               phx-value-field="qr_error_level"
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
             >
@@ -1196,7 +1208,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div>
               <label class="block text-sm font-medium text-gray-700">Formato</label>
               <select
-                phx-blur="update_element"
+                name="value"
+                phx-change="update_element"
                 phx-value-field="barcode_format"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               >
@@ -1227,6 +1240,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <label class="block text-sm font-medium text-gray-700">Contenido (si no está vinculado)</label>
               <input
                 type="text"
+                name="value"
                 value={@element.text_content || ""}
                 phx-blur="update_element"
                 phx-value-field="text_content"
@@ -1238,6 +1252,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <label class="block text-sm font-medium text-gray-700">Tamaño fuente</label>
                 <input
                   type="number"
+                  name="value"
                   value={@element.font_size || 12}
                   phx-blur="update_element"
                   phx-value-field="font_size"
@@ -1248,6 +1263,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <label class="block text-sm font-medium text-gray-700">Color</label>
                 <input
                   type="color"
+                  name="value"
                   value={@element.color || "#000000"}
                   phx-change="update_element"
                   phx-value-field="color"
@@ -1258,7 +1274,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div>
               <label class="block text-sm font-medium text-gray-700">Alineación</label>
               <select
-                phx-blur="update_element"
+                name="value"
+                phx-change="update_element"
                 phx-value-field="text_align"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               >
@@ -1270,7 +1287,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div>
               <label class="block text-sm font-medium text-gray-700">Peso</label>
               <select
-                phx-blur="update_element"
+                name="value"
+                phx-change="update_element"
                 phx-value-field="font_weight"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               >
@@ -1345,6 +1363,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <label class="block text-sm font-medium text-gray-700">Color</label>
               <input
                 type="color"
+                name="value"
                 value={@element.color || "#000000"}
                 phx-change="update_element"
                 phx-value-field="color"

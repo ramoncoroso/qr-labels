@@ -18,9 +18,13 @@ const MAX_CANVAS_SIZE_MM = 500 // Maximum canvas dimension in mm
 const MIN_CANVAS_SIZE_MM = 10 // Minimum canvas dimension in mm
 const SAVE_DEBOUNCE_MS = 300 // Debounce time for save operations
 
+// Instance counter for debugging
+let instanceCounter = 0
+
 const CanvasDesigner = {
   mounted() {
-    console.log('CanvasDesigner: mounted() called')
+    this._instanceId = ++instanceCounter
+    console.log(`CanvasDesigner[${this._instanceId}]: mounted() called`)
     this._saveTimeout = null
     this._isDestroyed = false
     this._isInitialized = false
@@ -669,6 +673,12 @@ const CanvasDesigner = {
   },
 
   loadDesign(design) {
+    console.log('CanvasDesigner: loadDesign called', {
+      elementCount: design?.elements?.length || 0,
+      currentElementCount: this.elements?.size || 0
+    })
+    console.trace('CanvasDesigner: loadDesign stack trace')
+
     // Remove existing elements
     this.elements.forEach((obj) => this.canvas.remove(obj))
     this.elements.clear()
@@ -883,6 +893,7 @@ const CanvasDesigner = {
       const content = element.text_content || element.binding || 'Texto'
       const fontSize = element.font_size || 12
 
+      // Create textbox with initial width
       const textbox = new fabric.Textbox(content, {
         left: x,
         top: y,
@@ -892,10 +903,28 @@ const CanvasDesigner = {
         fontWeight: element.font_weight || 'normal',
         fill: element.color || '#000000',
         textAlign: element.text_align || 'left',
-        angle: element.rotation || 0
+        angle: element.rotation || 0,
+        // Allow text to wrap but also allow manual resize
+        splitByGrapheme: false
       })
 
-      console.log('CanvasDesigner: Text created successfully', textbox)
+      // Auto-fit width to content
+      const textWidth = textbox.calcTextWidth()
+      const minWidth = 10 * PX_PER_MM // Minimum 10mm
+      const padding = 2 * PX_PER_MM // 2mm padding
+      const fittedWidth = Math.max(textWidth + padding, minWidth)
+
+      // Only auto-fit if we don't have an explicit width from saved data
+      if (!element.width || element.width === 30) {
+        textbox.set('width', fittedWidth)
+      }
+
+      console.log('CanvasDesigner: Text created successfully', {
+        content,
+        fontSize,
+        width: textbox.width,
+        textWidth
+      })
       return textbox
     } catch (error) {
       console.error('CanvasDesigner: Error creating Text', error)
@@ -1028,6 +1057,8 @@ const CanvasDesigner = {
     const obj = this.canvas.getActiveObject()
     if (!obj?.elementId) return
 
+    console.log('CanvasDesigner: updateSelectedElement', { field, value, objType: obj.type })
+
     const data = obj.elementData || {}
 
     // Parse numeric values
@@ -1037,13 +1068,21 @@ const CanvasDesigner = {
 
     data[field] = value
 
-    // Apply changes
+    // Apply changes based on field
     switch (field) {
       case 'x':
         obj.set('left', this.labelBounds.left + value * PX_PER_MM)
         break
       case 'y':
         obj.set('top', this.labelBounds.top + value * PX_PER_MM)
+        break
+      case 'width':
+        if (obj.type === 'textbox') {
+          obj.set('width', value * PX_PER_MM)
+        }
+        break
+      case 'height':
+        // Height is auto-calculated for textbox
         break
       case 'rotation':
         obj.set('angle', value)
@@ -1052,10 +1091,44 @@ const CanvasDesigner = {
         obj.set('fill', value)
         break
       case 'text_content':
-        if (obj.type === 'textbox') obj.set('text', value)
+        if (obj.type === 'textbox') {
+          obj.set('text', value)
+          // Auto-fit width to content if text is short
+          this.autoFitTextWidth(obj)
+        }
         break
       case 'font_size':
-        if (obj.type === 'textbox') obj.set('fontSize', value)
+        if (obj.type === 'textbox') {
+          obj.set('fontSize', value)
+          // Recalculate dimensions after font size change
+          this.autoFitTextWidth(obj)
+        }
+        break
+      case 'font_weight':
+        if (obj.type === 'textbox') {
+          obj.set('fontWeight', value)
+          this.autoFitTextWidth(obj)
+        }
+        break
+      case 'font_family':
+        if (obj.type === 'textbox') {
+          obj.set('fontFamily', value)
+          this.autoFitTextWidth(obj)
+        }
+        break
+      case 'text_align':
+        if (obj.type === 'textbox') {
+          obj.set('textAlign', value)
+        }
+        break
+      case 'background_color':
+        obj.set('fill', value)
+        break
+      case 'border_color':
+        obj.set('stroke', value)
+        break
+      case 'border_width':
+        obj.set('strokeWidth', value * PX_PER_MM)
         break
     }
 
@@ -1063,6 +1136,27 @@ const CanvasDesigner = {
     obj.setCoords()
     this.canvas.renderAll()
     this.saveElements()
+  },
+
+  /**
+   * Auto-fit text width to content (with minimum width)
+   */
+  autoFitTextWidth(textObj) {
+    if (!textObj || textObj.type !== 'textbox') return
+
+    // Get the actual text width
+    const textWidth = textObj.calcTextWidth()
+    const minWidth = 10 * PX_PER_MM // Minimum 10mm
+    const padding = 2 * PX_PER_MM // 2mm padding
+
+    // Set width to fit content (with minimum and padding)
+    const newWidth = Math.max(textWidth + padding, minWidth)
+    textObj.set('width', newWidth)
+
+    // Update elementData
+    if (textObj.elementData) {
+      textObj.elementData.width = newWidth / PX_PER_MM
+    }
   },
 
   deleteElement(id) {
@@ -1176,6 +1270,8 @@ const CanvasDesigner = {
   saveElementsImmediate() {
     if (this._isDestroyed || !this.elements) return
 
+    console.log('CanvasDesigner: saveElementsImmediate called, element count:', this.elements.size)
+
     const elements = []
 
     this.elements.forEach((obj, id) => {
@@ -1222,6 +1318,9 @@ const CanvasDesigner = {
         name: data.name
       })
     })
+
+    console.log('CanvasDesigner: Sending element_modified event with', elements.length, 'elements')
+    console.log('CanvasDesigner: Elements data:', JSON.stringify(elements, null, 2))
 
     this.pushEvent("element_modified", { elements })
   },
