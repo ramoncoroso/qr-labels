@@ -24,7 +24,7 @@ defmodule QrLabelSystem do
   - `Accounts` - Gestión de usuarios y autenticación
   - `Designs` - Diseños de etiquetas
   - `DataSources` - Fuentes de datos (Excel, BD externas)
-  - `Batches` - Lotes de etiquetas generados
+  - `Batches` - Configuraciones de impresión
   - `Audit` - Registro de actividad
   """
 end

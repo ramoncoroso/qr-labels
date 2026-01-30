@@ -8,8 +8,8 @@
 import { fabric } from 'fabric'
 
 // Constants
-const PX_PER_MM = 3.78 // Pixels per mm at 96 DPI (screen standard)
-const RULER_SIZE = 30 // pixels
+const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usability
+const RULER_SIZE = 35 // pixels
 const MAX_CANVAS_SIZE_MM = 500 // Maximum canvas dimension in mm
 const MIN_CANVAS_SIZE_MM = 10 // Minimum canvas dimension in mm
 const SAVE_DEBOUNCE_MS = 300 // Debounce time for save operations
@@ -282,8 +282,12 @@ const CanvasDesigner = {
     })
 
     // Element modification (drag, resize, rotate)
-    this.canvas.on('object:modified', () => {
+    this.canvas.on('object:modified', (e) => {
       this.clearAlignmentLines()
+      // Mark the element as modified so we know to recalculate its dimensions
+      if (e.target && e.target.elementId) {
+        e.target._wasModified = true
+      }
       this.saveElements()
     })
 
@@ -880,14 +884,39 @@ const CanvasDesigner = {
       if (!obj || !obj.elementType) return
 
       const data = obj.elementData || {}
+
+      // Calculate position from canvas coordinates
+      const currentX = Math.round(((obj.left - this.labelBounds.left) / PX_PER_MM) * 100) / 100
+      const currentY = Math.round(((obj.top - this.labelBounds.top) / PX_PER_MM) * 100) / 100
+
+      // IMPORTANT: Preserve original width/height from elementData
+      // Only update them if the element was explicitly resized (scaleX/scaleY != 1)
+      let width = data.width
+      let height = data.height
+
+      // If element was scaled by user, recalculate dimensions
+      const scaleX = obj.scaleX || 1
+      const scaleY = obj.scaleY || 1
+      if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+        // Element was resized - calculate new dimensions
+        width = Math.round((data.width * scaleX) * 100) / 100
+        height = Math.round((data.height * scaleY) * 100) / 100
+        // Reset scale and update data
+        obj.set({ scaleX: 1, scaleY: 1 })
+        obj.setCoords()
+        data.width = width
+        data.height = height
+        obj.elementData = data
+      }
+
       elements.push({
         ...data,
         id: id,
         type: obj.elementType,
-        x: Math.round(((obj.left - this.labelBounds.left) / PX_PER_MM) * 100) / 100,
-        y: Math.round(((obj.top - this.labelBounds.top) / PX_PER_MM) * 100) / 100,
-        width: Math.round(((obj.width * (obj.scaleX || 1)) / PX_PER_MM) * 100) / 100,
-        height: Math.round(((obj.height * (obj.scaleY || 1)) / PX_PER_MM) * 100) / 100,
+        x: currentX,
+        y: currentY,
+        width: width,
+        height: height,
         rotation: Math.round((obj.angle || 0) * 100) / 100,
         visible: obj.visible !== false,
         locked: obj.lockMovementX === true,

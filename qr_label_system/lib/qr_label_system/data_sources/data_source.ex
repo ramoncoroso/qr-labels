@@ -20,6 +20,10 @@ defmodule QrLabelSystem.DataSources.DataSource do
     field :type, :string
     field :query, :string
 
+    # File path for Excel/CSV uploads
+    field :file_path, :string
+    field :file_name, :string
+
     # Connection config stored as encrypted binary
     field :connection_config, QrLabelSystem.Encrypted.Map
 
@@ -46,7 +50,7 @@ defmodule QrLabelSystem.DataSources.DataSource do
   """
   def changeset(data_source, attrs) do
     data_source
-    |> cast(attrs, [:name, :type, :query, :connection_config, :user_id, :host, :port, :database, :username, :password])
+    |> cast(attrs, [:name, :type, :query, :connection_config, :user_id, :host, :port, :database, :username, :password, :file_path, :file_name])
     |> validate_required([:name, :type])
     |> validate_inclusion(:type, @source_types)
     |> validate_connection_config()

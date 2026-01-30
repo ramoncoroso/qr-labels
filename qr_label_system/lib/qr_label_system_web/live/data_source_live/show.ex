@@ -104,7 +104,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Show do
         </div>
       </div>
 
-      <.back navigate={~p"/data-sources"}>Volver a fuentes de datos</.back>
+      <.back navigate={~p"/data-sources"}>Volver a datos para etiquetas</.back>
     </div>
     """
   end

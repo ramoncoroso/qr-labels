@@ -164,7 +164,7 @@ defmodule QrLabelSystemWeb.HomeLive do
     {:ok,
      assign(socket,
        page_title: "Generador de Etiquetas QR",
-       meta_description: "Crea etiquetas profesionales con códigos QR. Importa datos desde Excel o CSV, diseña tus plantillas y genera lotes de etiquetas listas para imprimir.",
+       meta_description: "Crea etiquetas profesionales con códigos QR. Importa datos desde Excel o CSV, diseña tus plantillas y configura impresiones de etiquetas.",
        meta_keywords: "etiquetas QR, generador QR, códigos QR, etiquetas productos, impresión etiquetas, Excel a QR",
        og_title: "QR Label System",
        og_description: "Genera etiquetas con códigos QR desde tus datos. Importa Excel, diseña plantillas e imprime.",

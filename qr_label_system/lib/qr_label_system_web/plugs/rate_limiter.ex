@@ -98,7 +98,7 @@ defmodule QrLabelSystemWeb.Plugs.RateLimiter do
         conn
 
       {:deny, _limit} ->
-        rate_limited_response(conn, "Demasiadas generaciones de lotes. Intenta de nuevo en 1 minuto.")
+        rate_limited_response(conn, "Demasiadas configuraciones de impresión. Intenta de nuevo en 1 minuto.")
     end
   end
 
