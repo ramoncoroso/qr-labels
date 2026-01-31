@@ -5,10 +5,15 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   alias QrLabelSystem.Batches
 
   @impl true
-  def mount(_params, _session, socket) do
-    # Get data from flash
-    upload_data = Phoenix.Flash.get(socket.assigns.flash, :upload_data)
-    upload_columns = Phoenix.Flash.get(socket.assigns.flash, :upload_columns)
+  def mount(_params, session, socket) do
+    # Get data from flash first, then fallback to session
+    upload_data =
+      Phoenix.Flash.get(socket.assigns.flash, :upload_data) ||
+      Map.get(session, "upload_data")
+
+    upload_columns =
+      Phoenix.Flash.get(socket.assigns.flash, :upload_columns) ||
+      Map.get(session, "upload_columns")
 
     if is_nil(upload_data) or length(upload_data) == 0 do
       {:ok,

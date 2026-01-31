@@ -5,7 +5,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   alias QrLabelSystem.Designs.Design
 
   @impl true
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(%{"id" => id}, session, socket) do
     design = Designs.get_design!(id)
 
     if design.user_id != socket.assigns.current_user.id do
@@ -14,9 +14,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> put_flash(:error, "No tienes permiso para editar este diseño")
        |> push_navigate(to: ~p"/designs")}
     else
-      # Load available columns from flash if present (from data-first flow)
-      available_columns = Phoenix.Flash.get(socket.assigns.flash, :upload_columns) || []
-      upload_data = Phoenix.Flash.get(socket.assigns.flash, :upload_data) || []
+      # Load available columns from flash first (from data-first flow), fallback to session
+      available_columns =
+        Phoenix.Flash.get(socket.assigns.flash, :upload_columns) ||
+        Map.get(session, "upload_columns") ||
+        []
+
+      upload_data =
+        Phoenix.Flash.get(socket.assigns.flash, :upload_data) ||
+        Map.get(session, "upload_data") ||
+        []
 
       # Build preview data from first row if we have data
       preview_data = case upload_data do
@@ -224,6 +231,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
      socket
      |> assign(:zoom, 100)
      |> push_event("update_zoom", %{zoom: 100})}
+  end
+
+  @impl true
+  def handle_event("update_zoom_from_wheel", %{"zoom" => zoom}, socket) do
+    new_zoom = max(50, min(200, round(zoom)))
+    {:noreply,
+     socket
+     |> assign(:zoom, new_zoom)
+     |> push_event("update_zoom", %{zoom: new_zoom})}
   end
 
   @impl true
@@ -689,8 +705,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       <!-- Main Content -->
       <div class="flex-1 flex overflow-hidden">
-        <!-- Left Sidebar - Element Tools -->
-        <div class="w-20 bg-white border-r border-gray-200 flex flex-col py-4">
+        <!-- Left Sidebar - Element Tools (fixed width, won't shrink) -->
+        <div class="w-20 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col py-4">
           <div class="px-2 mb-4">
             <p class="text-xs font-medium text-gray-400 text-center mb-3">ELEMENTOS</p>
             <div class="space-y-2">
@@ -788,8 +804,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
         </div>
 
-        <!-- Canvas Area -->
-        <div class="flex-1 overflow-auto p-8 flex flex-col items-center justify-center">
+        <!-- Canvas Area - grows but doesn't push sidebars -->
+        <div class="flex-1 min-w-0 overflow-auto p-8 flex flex-col items-center justify-center">
           <!-- Toolbar -->
           <div class="mb-4 flex items-center space-x-2 flex-wrap gap-y-2">
             <!-- Zoom Controls -->
@@ -917,8 +933,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
         </div>
 
-        <!-- Layers Panel -->
-        <div :if={@show_layers} class="w-56 bg-white border-l border-gray-200 flex flex-col">
+        <!-- Layers Panel (fixed width, won't shrink) -->
+        <div :if={@show_layers} class="w-56 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
           <div class="p-3 border-b border-gray-200 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-gray-900">Capas</h3>
             <button phx-click="toggle_layers" class="text-gray-400 hover:text-gray-600">
@@ -1032,8 +1048,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </svg>
         </button>
 
-        <!-- Right Sidebar - Properties -->
-        <div class="w-72 bg-white border-l border-gray-200 overflow-y-auto">
+        <!-- Right Sidebar - Properties (fixed width, won't shrink) -->
+        <div class="w-72 flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto">
           <div class="p-4">
             <!-- Available Columns Panel (when data is loaded) -->
             <div :if={length(@available_columns) > 0} class="bg-indigo-50 rounded-lg p-3 mb-4">

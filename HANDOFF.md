@@ -562,3 +562,180 @@ DATABASE_URL=postgres://user:pass@host/db
 SECRET_KEY_BASE=tu_secret_key_base_muy_largo
 PHX_HOST=tu-dominio.com
 ```
+
+---
+
+## Cambios Implementados (2025-01-31) - Correcciones del Editor
+
+### Resumen
+Se implementaron 5 correcciones importantes en el editor de etiquetas:
+
+### 1. ✅ QR/Barcode: Tamaño ahora se guarda correctamente
+
+**Archivo:** `assets/js/hooks/canvas_designer.js`
+
+**Problema:** En `updateSelectedElement()`, los cambios de width/height solo funcionaban para textbox. QR y Barcode (que son `fabric.Group`) no se actualizaban.
+
+**Solución:** Se modificó el switch case para manejar grupos escalando proporcionalmente:
+```javascript
+case 'width':
+  if (obj.type === 'group') {
+    const currentWidth = obj.getScaledWidth()
+    const newWidth = value * PX_PER_MM
+    const scaleW = newWidth / currentWidth
+    obj.set('scaleX', obj.scaleX * scaleW)
+  }
+  // ...
+case 'height':
+  if (obj.type === 'group') {
+    const currentHeight = obj.getScaledHeight()
+    const newHeight = value * PX_PER_MM
+    const scaleH = newHeight / currentHeight
+    obj.set('scaleY', obj.scaleY * scaleH)
+  }
+```
+
+### 2. ✅ Layout: Paneles ya no desaparecen
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+**Problema:** Cuando el canvas era muy ancho, los paneles laterales (Capas, Propiedades) eran empujados fuera de la vista.
+
+**Solución:** Se agregaron clases CSS de flexbox:
+- `flex-shrink-0` a los paneles laterales para que no se compriman
+- `min-w-0` al área del canvas para que pueda reducirse
+
+Paneles modificados:
+- Left sidebar (w-20): `flex-shrink-0`
+- Layers panel (w-56): `flex-shrink-0`
+- Properties panel (w-72): `flex-shrink-0`
+- Canvas area: `min-w-0`
+
+### 3. ✅ Zoom con rueda del ratón
+
+**Archivos:**
+- `assets/js/hooks/canvas_designer.js`
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+
+**Funcionalidad:** Ctrl/Cmd + scroll del ratón sobre el canvas ahora hace zoom.
+
+**Implementación JS:**
+```javascript
+container.addEventListener('wheel', (e) => {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? -10 : 10
+    const currentZoom = this._currentZoom * 100
+    const newZoom = Math.max(50, Math.min(200, currentZoom + delta))
+    this.pushEvent("update_zoom_from_wheel", { zoom: newZoom })
+  }
+}, { passive: false })
+```
+
+**Handler Elixir:**
+```elixir
+def handle_event("update_zoom_from_wheel", %{"zoom" => zoom}, socket) do
+  new_zoom = max(50, min(200, round(zoom)))
+  {:noreply,
+   socket
+   |> assign(:zoom, new_zoom)
+   |> push_event("update_zoom", %{zoom: new_zoom})}
+end
+```
+
+### 4. ✅ Dropdown de columnas: Ya muestra las columnas del Excel
+
+**Archivos:**
+- `lib/qr_label_system_web/live/design_live/new.ex`
+- `lib/qr_label_system_web/live/generate_live/design_select.ex`
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+
+**Problema:** El flujo data-first perdía las columnas del Excel porque el flash expiraba después de múltiples navegaciones:
+1. `/generate/data` → flash con columnas
+2. `/generate/design` → lee flash, pero al ir a "nuevo diseño"...
+3. `/designs/new` → crea diseño → `/designs/{id}/edit`
+4. Editor: flash ya expiró, columnas perdidas
+
+**Solución:**
+1. `new.ex` ahora lee y preserva `upload_data` y `upload_columns` del flash
+2. Al guardar el diseño, `new.ex` re-pone los datos en flash antes de redirigir
+3. `design_select.ex` y `editor.ex` ahora leen de flash primero, y de session como fallback
+
+### 5. ✅ Navegación simplificada
+
+**Archivo:** `lib/qr_label_system_web/components/layouts/app.html.heex`
+
+**Cambios:**
+- Eliminado: "Datos para etiquetas" (`/data-sources`) - ya no es necesario con el flujo data-first
+- Renombrado: "Combinar e imprimir" → "Historial"
+- Renombrado: "Diseños de etiquetas" → "Diseños"
+- Actualizado icono de Historial a un reloj
+
+---
+
+## Tests Pendientes (Próxima Sesión)
+
+### Test 1: QR/Barcode size
+```
+1. Crear diseño nuevo
+2. Añadir elemento QR
+3. En panel de propiedades, cambiar Ancho a 30mm
+4. Guardar diseño
+5. Recargar página
+6. Verificar que QR mantiene tamaño 30mm
+```
+
+### Test 2: Layout
+```
+1. Crear diseño muy ancho (ej: 200mm x 50mm)
+2. Verificar que paneles de Capas y Propiedades siempre son visibles
+3. Verificar que el canvas tiene scroll horizontal
+```
+
+### Test 3: Zoom wheel
+```
+1. En el editor, posicionar mouse sobre el canvas
+2. Ctrl + scroll arriba = zoom in
+3. Ctrl + scroll abajo = zoom out
+4. Verificar que el porcentaje de zoom se actualiza en la UI
+```
+
+### Test 4: Columnas dropdown
+```
+1. Ir a `/generate` → "Múltiples etiquetas"
+2. Cargar Excel con columnas: Producto, SKU, Precio
+3. Continuar → "Nuevo Diseño"
+4. Crear el diseño y entrar al editor
+5. Añadir elemento texto
+6. Verificar que "Vincular a columna" muestra: Producto, SKU, Precio
+```
+
+### Test 5: Navegación
+```
+1. Verificar que solo aparecen "Diseños" e "Historial" en el sidebar
+2. Verificar que los flujos siguen funcionando correctamente
+```
+
+---
+
+## Archivos Modificados (2025-01-31)
+
+| Archivo | Cambio |
+|---------|--------|
+| `assets/js/hooks/canvas_designer.js` | +45 líneas: width/height para grupos, wheel zoom |
+| `lib/qr_label_system_web/components/layouts/app.html.heex` | Simplificación navegación |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | +40 líneas: layout fix, wheel handler, session fallback |
+| `lib/qr_label_system_web/live/design_live/new.ex` | +27 líneas: preservar datos upload |
+| `lib/qr_label_system_web/live/generate_live/design_select.ex` | +13 líneas: session fallback |
+
+---
+
+## Historial de Cambios (Actualizado)
+
+| Fecha | Cambio |
+|-------|--------|
+| 2025-01-29 | Auditoría completa de seguridad y código |
+| 2025-01-29 | Documentación de issues encontrados |
+| 2025-01-29 | Actualización de HANDOFF con próximos pasos |
+| 2025-01-29 | **IMPLEMENTACIÓN DE FIXES DE SEGURIDAD Y CALIDAD** |
+| 2025-01-31 | **CORRECCIONES DEL EDITOR DE ETIQUETAS** (5 fixes) |

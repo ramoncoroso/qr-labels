@@ -652,6 +652,20 @@ const CanvasDesigner = {
       }
     })
 
+    // Mouse wheel zoom - Ctrl/Cmd + scroll to zoom
+    const container = document.getElementById('canvas-container')
+    if (container) {
+      container.addEventListener('wheel', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault()
+          const delta = e.deltaY > 0 ? -10 : 10
+          const currentZoom = this._currentZoom * 100
+          const newZoom = Math.max(50, Math.min(200, currentZoom + delta))
+          this.pushEvent("update_zoom_from_wheel", { zoom: newZoom })
+        }
+      }, { passive: false })
+    }
+
     // Zoom handling - use Fabric.js native zoom
     // Note: For now, we keep zoom simple at 1:1 to ensure interaction works
     this.handleEvent("update_zoom", ({ zoom }) => {
@@ -1079,9 +1093,40 @@ const CanvasDesigner = {
       case 'width':
         if (obj.type === 'textbox') {
           obj.set('width', value * PX_PER_MM)
+        } else if (obj.type === 'group') {
+          // Scale group (QR/barcode) to new width
+          const currentWidth = obj.getScaledWidth()
+          const newWidth = value * PX_PER_MM
+          const scaleW = newWidth / currentWidth
+          obj.set('scaleX', obj.scaleX * scaleW)
+        } else if (obj.type === 'rect' || obj.type === 'image') {
+          // For rectangles and images, set width directly or scale
+          if (obj.type === 'image') {
+            const currentW = obj.getScaledWidth()
+            const newW = value * PX_PER_MM
+            obj.set('scaleX', (newW / obj.width))
+          } else {
+            obj.set('width', value * PX_PER_MM)
+          }
         }
         break
       case 'height':
+        if (obj.type === 'group') {
+          // Scale group (QR/barcode) to new height
+          const currentHeight = obj.getScaledHeight()
+          const newHeight = value * PX_PER_MM
+          const scaleH = newHeight / currentHeight
+          obj.set('scaleY', obj.scaleY * scaleH)
+        } else if (obj.type === 'rect' || obj.type === 'image') {
+          // For rectangles and images
+          if (obj.type === 'image') {
+            const currentH = obj.getScaledHeight()
+            const newH = value * PX_PER_MM
+            obj.set('scaleY', (newH / obj.height))
+          } else {
+            obj.set('height', value * PX_PER_MM)
+          }
+        }
         // Height is auto-calculated for textbox
         break
       case 'rotation':

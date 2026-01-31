@@ -10,10 +10,18 @@ defmodule QrLabelSystemWeb.DesignLive.New do
   def mount(_params, _session, socket) do
     changeset = Designs.change_design(%Design{})
 
+    # Preserve upload data from flash (for data-first flow)
+    upload_data = Phoenix.Flash.get(socket.assigns.flash, :upload_data)
+    upload_columns = Phoenix.Flash.get(socket.assigns.flash, :upload_columns)
+    return_to = Phoenix.Flash.get(socket.assigns.flash, :return_to)
+
     {:ok,
      socket
      |> assign(:page_title, "Nuevo Diseño")
      |> assign(:design, %Design{})
+     |> assign(:upload_data, upload_data)
+     |> assign(:upload_columns, upload_columns)
+     |> assign(:return_to, return_to)
      |> assign_form(changeset)}
   end
 
@@ -33,10 +41,21 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
     case Designs.create_design(design_params) do
       {:ok, design} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Diseño creado exitosamente")
-         |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
+        # Preserve upload data/columns for the editor (data-first flow)
+        socket =
+          socket
+          |> put_flash(:info, "Diseño creado exitosamente")
+
+        socket =
+          if socket.assigns.upload_data do
+            socket
+            |> put_flash(:upload_data, socket.assigns.upload_data)
+            |> put_flash(:upload_columns, socket.assigns.upload_columns)
+          else
+            socket
+          end
+
+        {:noreply, push_navigate(socket, to: ~p"/designs/#{design.id}/edit")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
