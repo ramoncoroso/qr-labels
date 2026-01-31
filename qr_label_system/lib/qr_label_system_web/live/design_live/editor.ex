@@ -50,6 +50,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:grid_snap_enabled, false)
        |> assign(:grid_size, 5)
        |> assign(:snap_threshold, 5)
+       |> assign(:renaming, false)
+       |> assign(:rename_value, design.name)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif .svg),
          max_entries: 1,
@@ -295,6 +297,49 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Error al guardar el diseño")}
+    end
+  end
+
+  # ============================================================================
+  # Rename Design Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("start_rename", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:renaming, true)
+     |> assign(:rename_value, socket.assigns.design.name)}
+  end
+
+  @impl true
+  def handle_event("cancel_rename", _params, socket) do
+    {:noreply, assign(socket, :renaming, false)}
+  end
+
+  @impl true
+  def handle_event("update_rename_value", %{"value" => value}, socket) do
+    {:noreply, assign(socket, :rename_value, value)}
+  end
+
+  @impl true
+  def handle_event("save_rename", _params, socket) do
+    name = String.trim(socket.assigns.rename_value)
+
+    if name == "" do
+      {:noreply, put_flash(socket, :error, "El nombre no puede estar vacío")}
+    else
+      case Designs.update_design(socket.assigns.design, %{name: name}) do
+        {:ok, updated_design} ->
+          {:noreply,
+           socket
+           |> assign(:design, updated_design)
+           |> assign(:renaming, false)
+           |> assign(:page_title, "Editor: #{updated_design.name}")}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Error al renombrar el diseño")}
+      end
     end
   end
 
@@ -763,7 +808,42 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </.link>
           <div class="h-6 w-px bg-gray-300"></div>
           <div>
-            <h1 class="text-lg font-semibold text-gray-900"><%= @design.name %></h1>
+            <%= if @renaming do %>
+              <form phx-submit="save_rename" class="flex items-center space-x-2">
+                <input
+                  type="text"
+                  name="value"
+                  value={@rename_value}
+                  phx-change="update_rename_value"
+                  phx-debounce="50"
+                  autofocus
+                  class="text-lg font-semibold text-gray-900 border-gray-300 rounded-md px-2 py-1 w-48"
+                />
+                <button type="submit" class="p-1.5 rounded-lg bg-green-100 text-green-600 hover:bg-green-200" title="Guardar">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+                <button type="button" phx-click="cancel_rename" class="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200" title="Cancelar">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </form>
+            <% else %>
+              <div class="flex items-center space-x-2">
+                <h1 class="text-lg font-semibold text-gray-900"><%= @design.name %></h1>
+                <button
+                  phx-click="start_rename"
+                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                  title="Renombrar"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              </div>
+            <% end %>
             <p class="text-xs text-gray-500"><%= @design.width_mm %> × <%= @design.height_mm %> mm</p>
           </div>
         </div>
@@ -778,7 +858,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
-            <span>Preview</span>
+            <span>Vista previa</span>
           </button>
 
           <button
@@ -1203,7 +1283,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       <span class="font-medium"><%= length(@upload_data) %> registros</span>
                     </div>
                     <p class="text-xs text-indigo-600">
-                      Datos Excel cargados. Asigna columnas a los elementos y usa Preview para ver el resultado.
+                      Datos Excel cargados. Asigna columnas a los elementos y usa Vista previa para ver el resultado.
                     </p>
                   </div>
                 </div>

@@ -198,7 +198,15 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
-  Duplicates a design with a new name.
+  Duplicates a design. Generates a new name automatically.
+  """
+  def duplicate_design(%Design{} = design, user_id) do
+    new_name = "#{design.name} (copia)"
+    duplicate_design(design, new_name, user_id)
+  end
+
+  @doc """
+  Duplicates a design with a specific new name.
   """
   def duplicate_design(%Design{} = design, new_name, user_id) do
     design
@@ -339,5 +347,100 @@ defmodule QrLabelSystem.Designs do
       border_color: element_data["border_color"] || "#000000",
       image_url: element_data["image_url"]
     }
+  end
+
+  # ==========================================
+  # BACKUP / RESTORE FUNCTIONALITY
+  # ==========================================
+
+  @doc """
+  Exports all designs to a JSON string for backup.
+  """
+  def export_all_designs_to_json(designs) when is_list(designs) do
+    backup = %{
+      version: "1.0",
+      type: "backup",
+      exported_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      count: length(designs),
+      designs: Enum.map(designs, fn design ->
+        %{
+          name: design.name,
+          description: design.description,
+          width_mm: design.width_mm,
+          height_mm: design.height_mm,
+          background_color: design.background_color,
+          border_width: design.border_width,
+          border_color: design.border_color,
+          border_radius: design.border_radius,
+          label_type: design.label_type,
+          is_template: design.is_template,
+          elements: Enum.map(design.elements || [], &export_element/1)
+        }
+      end)
+    }
+
+    Jason.encode!(backup, pretty: true)
+  end
+
+  @doc """
+  Imports multiple designs from a backup JSON string.
+  Returns {:ok, imported_designs} or {:error, reason}.
+  """
+  def import_designs_from_json(json_string, user_id) when is_binary(json_string) do
+    case Jason.decode(json_string) do
+      {:ok, %{"type" => "backup", "designs" => designs_data}} ->
+        import_backup_designs(designs_data, user_id)
+
+      {:ok, %{"design" => _} = single_design} ->
+        # Handle single design export format
+        case import_design(single_design, user_id) do
+          {:ok, design} -> {:ok, [design]}
+          error -> error
+        end
+
+      {:ok, _} ->
+        {:error, "Formato de archivo no reconocido"}
+
+      {:error, _} ->
+        {:error, "JSON inválido"}
+    end
+  end
+
+  defp import_backup_designs(designs_data, user_id) when is_list(designs_data) do
+    results =
+      Enum.reduce_while(designs_data, {:ok, []}, fn design_data, {:ok, acc} ->
+        case import_single_backup_design(design_data, user_id) do
+          {:ok, design} -> {:cont, {:ok, [design | acc]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    case results do
+      {:ok, designs} -> {:ok, Enum.reverse(designs)}
+      error -> error
+    end
+  end
+
+  defp import_single_backup_design(design_data, user_id) do
+    elements =
+      (design_data["elements"] || [])
+      |> Enum.map(&import_element/1)
+
+    attrs = %{
+      name: design_data["name"] || "Diseño importado",
+      description: design_data["description"],
+      width_mm: design_data["width_mm"],
+      height_mm: design_data["height_mm"],
+      background_color: design_data["background_color"] || "#FFFFFF",
+      border_width: design_data["border_width"] || 0,
+      border_color: design_data["border_color"] || "#000000",
+      border_radius: design_data["border_radius"] || 0,
+      label_type: design_data["label_type"] || "single",
+      is_template: design_data["is_template"] || false,
+      user_id: user_id,
+      elements: elements
+    }
+
+    create_design(attrs)
   end
 end

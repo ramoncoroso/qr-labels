@@ -452,9 +452,17 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
           </div>
         <% end %>
 
-        <!-- Back link when no data -->
+        <!-- Back button when no data -->
         <div :if={!@upload_data || length(@upload_data) == 0} class="mt-8">
-          <.back navigate={~p"/generate"}>Volver a selección de modo</.back>
+          <.link
+            navigate={~p"/generate"}
+            class="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 hover:border-gray-400 font-medium transition"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Volver a selección de modo</span>
+          </.link>
         </div>
       </div>
     </div>
