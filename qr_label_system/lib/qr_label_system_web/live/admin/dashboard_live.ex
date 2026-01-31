@@ -74,7 +74,7 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
 
   defp get_system_stats do
     memory = :erlang.memory()
-    {_, run_queue} = :erlang.statistics(:total_run_queue_lengths)
+    run_queue = get_run_queue()
 
     %{
       memory_total_mb: div(Keyword.get(memory, :total, 0), 1024 * 1024),
@@ -83,6 +83,14 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
       run_queue: run_queue,
       uptime: get_uptime()
     }
+  end
+
+  defp get_run_queue do
+    case :erlang.statistics(:total_run_queue_lengths) do
+      {_, queue} when is_integer(queue) -> queue
+      queue when is_integer(queue) -> queue
+      _ -> 0
+    end
   end
 
   defp get_uptime do

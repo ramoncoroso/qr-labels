@@ -11,7 +11,7 @@ defmodule QrLabelSystem.Designs do
   alias QrLabelSystem.Cache
   alias QrLabelSystem.Designs.Design
 
-  @cache_ttl 300_000  # 5 minutes
+  @cache_ttl 30_000  # 30 seconds - reduced to prevent stale data issues
 
   @doc """
   Returns the list of designs.
@@ -209,8 +209,8 @@ defmodule QrLabelSystem.Designs do
   Duplicates a design with a specific new name.
   """
   def duplicate_design(%Design{} = design, new_name, user_id) do
+    # Note: elements is an embedded schema, no need to preload
     design
-    |> Repo.preload(:elements)
     |> Design.duplicate_changeset(%{name: new_name, user_id: user_id})
     |> Repo.insert()
   end

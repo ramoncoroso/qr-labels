@@ -78,13 +78,13 @@ defmodule QrLabelSystem.Designs.Element do
       :image_url, :image_data, :image_filename,
       :z_index, :visible, :locked, :name
     ])
+    |> generate_id_if_missing()
+    |> generate_name_if_missing()
     |> validate_required([:id, :type, :x, :y])
     |> validate_inclusion(:type, @element_types)
     |> validate_barcode_format()
     |> validate_qr_error_level()
     |> validate_image_data_size()
-    |> generate_id_if_missing()
-    |> generate_name_if_missing()
   end
 
   defp validate_barcode_format(changeset) do

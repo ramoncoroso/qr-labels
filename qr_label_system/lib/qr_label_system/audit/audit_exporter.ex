@@ -31,7 +31,7 @@ defmodule QrLabelSystem.Audit.AuditExporter do
 
   import Ecto.Query
   alias QrLabelSystem.Repo
-  alias QrLabelSystem.Audit.AuditLog
+  alias QrLabelSystem.Audit.Log
 
   @csv_headers [
     "ID",
@@ -108,7 +108,8 @@ defmodule QrLabelSystem.Audit.AuditExporter do
   Returns statistics about audit logs.
   """
   def stats(opts \\ []) do
-    query = build_query(opts)
+    # Use base query without order_by for aggregate functions
+    query = build_base_query(opts)
 
     %{
       total: Repo.aggregate(query, :count),
@@ -128,14 +129,19 @@ defmodule QrLabelSystem.Audit.AuditExporter do
     |> Repo.preload(:user)
   end
 
-  defp build_query(opts) do
-    limit = Keyword.get(opts, :limit, 10_000)
-
-    AuditLog
+  defp build_base_query(opts) do
+    Log
     |> maybe_filter_date_range(opts)
     |> maybe_filter_action(opts)
     |> maybe_filter_resource_type(opts)
     |> maybe_filter_user(opts)
+  end
+
+  defp build_query(opts) do
+    limit = Keyword.get(opts, :limit, 10_000)
+
+    opts
+    |> build_base_query()
     |> order_by([a], desc: a.inserted_at)
     |> limit(^limit)
   end

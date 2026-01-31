@@ -16,7 +16,8 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
       role_filter: nil,
       show_modal: false,
       selected_user: nil,
-      changeset: nil
+      changeset: nil,
+      form: nil
     )}
   end
 
@@ -54,6 +55,7 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
 
     {:noreply,
       socket
+      |> assign(:form, to_form(changeset))
       |> assign(:show_modal, true)
       |> assign(:selected_user, user)
       |> assign(:changeset, changeset)
@@ -285,9 +287,9 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
             <:subtitle><%= @selected_user.email %></:subtitle>
           </.header>
 
-          <.simple_form for={@changeset} phx-submit="update_role">
+          <.simple_form for={@form} phx-submit="update_role">
             <.input
-              field={@changeset[:role]}
+              field={@form[:role]}
               type="select"
               label={gettext("Role")}
               options={[
