@@ -1,6 +1,8 @@
 // Hook to make element toolbar buttons draggable using manual drag (more reliable than native)
 const DraggableElements = {
   mounted() {
+    this._cleanupFns = []
+    this._canvasContainer = null
     this.setupDraggable()
   },
 
@@ -8,22 +10,37 @@ const DraggableElements = {
     this.setupDraggable()
   },
 
+  destroyed() {
+    // Clean up all event listeners
+    this._cleanupFns.forEach(fn => fn())
+    this._cleanupFns = []
+    this._canvasContainer = null
+  },
+
+  getCanvasContainer() {
+    // Cache the canvas container reference
+    if (!this._canvasContainer || !this._canvasContainer.isConnected) {
+      this._canvasContainer = document.getElementById('canvas-container')
+    }
+    return this._canvasContainer
+  },
+
   setupDraggable() {
     const buttons = this.el.querySelectorAll('.draggable-element')
     const hook = this
+    const DRAG_THRESHOLD = 5
 
     buttons.forEach(btn => {
       if (btn._draggableSetup) return
       btn._draggableSetup = true
 
       btn.style.cursor = 'grab'
-      btn.setAttribute('draggable', 'false') // Disable native drag
+      btn.setAttribute('draggable', 'false')
 
       let startX = 0
       let startY = 0
       let isDragging = false
       let ghost = null
-      const DRAG_THRESHOLD = 5 // Pixels to move before considering it a drag
 
       const createGhost = (text) => {
         const el = document.createElement('div')
@@ -45,35 +62,11 @@ const DraggableElements = {
         return el
       }
 
-      const moveGhost = (x, y) => {
-        if (ghost) {
-          ghost.style.left = x + 'px'
-          ghost.style.top = y + 'px'
-        }
-      }
-
       const removeGhost = () => {
         if (ghost) {
           ghost.remove()
           ghost = null
         }
-      }
-
-      const getCanvasContainer = () => {
-        return document.getElementById('canvas-container')
-      }
-
-      const handleMouseDown = (e) => {
-        if (e.button !== 0) return // Only left click
-
-        startX = e.clientX
-        startY = e.clientY
-        isDragging = false
-        btn.style.cursor = 'grabbing'
-
-        document.addEventListener('mousemove', handleMouseMove)
-        document.addEventListener('mouseup', handleMouseUp)
-        e.preventDefault()
       }
 
       const handleMouseMove = (e) => {
@@ -87,20 +80,17 @@ const DraggableElements = {
           ghost = createGhost(text)
         }
 
-        if (isDragging) {
-          moveGhost(e.clientX, e.clientY)
+        if (isDragging && ghost) {
+          ghost.style.left = e.clientX + 'px'
+          ghost.style.top = e.clientY + 'px'
 
-          // Highlight canvas when hovering over it
-          const canvas = getCanvasContainer()
+          const canvas = hook.getCanvasContainer()
           if (canvas) {
             const rect = canvas.getBoundingClientRect()
             const isOver = e.clientX >= rect.left && e.clientX <= rect.right &&
                           e.clientY >= rect.top && e.clientY <= rect.bottom
-            if (isOver) {
-              canvas.classList.add('ring-2', 'ring-blue-400')
-            } else {
-              canvas.classList.remove('ring-2', 'ring-blue-400')
-            }
+            canvas.classList.toggle('ring-2', isOver)
+            canvas.classList.toggle('ring-blue-400', isOver)
           }
         }
       }
@@ -110,7 +100,7 @@ const DraggableElements = {
         document.removeEventListener('mouseup', handleMouseUp)
         btn.style.cursor = 'grab'
 
-        const canvas = getCanvasContainer()
+        const canvas = hook.getCanvasContainer()
         if (canvas) {
           canvas.classList.remove('ring-2', 'ring-blue-400')
         }
@@ -122,7 +112,6 @@ const DraggableElements = {
         }
 
         if (isDragging) {
-          // Was a drag - check if dropped on canvas
           removeGhost()
 
           if (canvas) {
@@ -131,26 +120,41 @@ const DraggableElements = {
                                 e.clientY >= rect.top && e.clientY <= rect.bottom
 
             if (isOverCanvas) {
-              // Calculate position relative to canvas
               const x = e.clientX - rect.left
               const y = e.clientY - rect.top
 
-              // Dispatch custom event to canvas for position calculation
-              const dropEvent = new CustomEvent('element-drop', {
+              canvas.dispatchEvent(new CustomEvent('element-drop', {
                 detail: { type: elementType, x, y }
-              })
-              canvas.dispatchEvent(dropEvent)
+              }))
             }
           }
         } else {
-          // Was a click - add element at default position
           hook.pushEvent('add_element', { type: elementType })
         }
 
         isDragging = false
       }
 
+      const handleMouseDown = (e) => {
+        if (e.button !== 0) return
+
+        startX = e.clientX
+        startY = e.clientY
+        isDragging = false
+        btn.style.cursor = 'grabbing'
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+        e.preventDefault()
+      }
+
       btn.addEventListener('mousedown', handleMouseDown)
+
+      // Store cleanup function
+      this._cleanupFns.push(() => {
+        btn.removeEventListener('mousedown', handleMouseDown)
+        btn._draggableSetup = false
+      })
     })
   }
 }
