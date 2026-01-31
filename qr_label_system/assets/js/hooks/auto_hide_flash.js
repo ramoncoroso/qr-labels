@@ -3,7 +3,7 @@ const AutoHideFlash = {
     this.timeout = setTimeout(() => {
       this.el.style.opacity = '0'
       setTimeout(() => {
-        this.pushEvent("lv:clear-flash", { key: this.el.dataset.kind })
+        // Don't push event - just remove the element to avoid LiveView re-render
         this.el.remove()
       }, 300)
     }, 3000)

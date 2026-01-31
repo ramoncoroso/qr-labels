@@ -16,7 +16,7 @@ const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usabi
 const RULER_SIZE = 35 // pixels
 const MAX_CANVAS_SIZE_MM = 500 // Maximum canvas dimension in mm
 const MIN_CANVAS_SIZE_MM = 10 // Minimum canvas dimension in mm
-const SAVE_DEBOUNCE_MS = 300 // Debounce time for save operations
+const SAVE_DEBOUNCE_MS = 100 // Debounce time for save operations (reduced for faster response)
 
 // Instance counter for debugging
 let instanceCounter = 0
@@ -24,12 +24,13 @@ let instanceCounter = 0
 const CanvasDesigner = {
   mounted() {
     this._instanceId = ++instanceCounter
-    console.log(`CanvasDesigner[${this._instanceId}]: mounted() called`)
     this._saveTimeout = null
     this._isDestroyed = false
     this._isInitialized = false
     this._alignmentLines = []
     this._currentZoom = 1.0
+    this._lastSaveTime = null
+    this._isInitialLoad = true  // Flag to allow first load_design
 
     // Snap settings
     this.snapEnabled = this.el.dataset.snapEnabled === 'true'
@@ -38,14 +39,10 @@ const CanvasDesigner = {
     this.snapThreshold = parseFloat(this.el.dataset.snapThreshold) || 5
 
     try {
-      console.log('CanvasDesigner: initializing canvas...')
       this.initCanvas()
-      console.log('CanvasDesigner: setting up event listeners...')
       this.setupEventListeners()
       this._isInitialized = true
-      console.log('CanvasDesigner: pushing canvas_ready event...')
       this.pushEvent("canvas_ready", {})
-      console.log('CanvasDesigner: initialization complete')
 
       // Save immediately before page unload to prevent data loss
       this._beforeUnloadHandler = () => {
@@ -70,11 +67,8 @@ const CanvasDesigner = {
    * With phx-update="ignore", this should rarely be called, but we handle it defensively.
    */
   updated() {
-    console.log('CanvasDesigner: updated() called')
-
     // Don't do anything if canvas isn't initialized
     if (!this._isInitialized || !this.canvas) {
-      console.log('CanvasDesigner: updated() - canvas not initialized, skipping')
       return
     }
 
@@ -84,15 +78,12 @@ const CanvasDesigner = {
     const newGridSize = parseFloat(this.el.dataset.gridSize) || 5
 
     if (this.snapEnabled !== newSnapEnabled) {
-      console.log('CanvasDesigner: Snap enabled changed to', newSnapEnabled)
       this.snapEnabled = newSnapEnabled
     }
     if (this.gridSnapEnabled !== newGridSnapEnabled) {
-      console.log('CanvasDesigner: Grid snap enabled changed to', newGridSnapEnabled)
       this.gridSnapEnabled = newGridSnapEnabled
     }
     if (this.gridSize !== newGridSize) {
-      console.log('CanvasDesigner: Grid size changed to', newGridSize)
       this.gridSize = newGridSize
     }
 
@@ -137,9 +128,6 @@ const CanvasDesigner = {
   },
 
   destroyed() {
-    console.warn('CanvasDesigner: destroyed() called!')
-    console.trace('CanvasDesigner: Stack trace for destroyed()')
-
     this._isDestroyed = true
     this._isInitialized = false
 
@@ -167,7 +155,6 @@ const CanvasDesigner = {
 
     // Properly dispose of Fabric.js canvas to prevent memory leaks
     if (this.canvas) {
-      console.log('CanvasDesigner: Disposing Fabric canvas')
       this.canvas.dispose()
       this.canvas = null
     }
@@ -221,15 +208,11 @@ const CanvasDesigner = {
       return
     }
 
-    console.log('CanvasDesigner: Found canvas element:', canvasEl)
-
     // Calculate canvas size
     const width = this.widthMM * PX_PER_MM
     const height = this.heightMM * PX_PER_MM
     const totalWidth = width + RULER_SIZE + 20
     const totalHeight = height + RULER_SIZE + 20
-
-    console.log('CanvasDesigner: Creating Fabric canvas', { width: totalWidth, height: totalHeight })
 
     // Set canvas dimensions before Fabric initialization
     canvasEl.width = totalWidth
@@ -262,13 +245,6 @@ const CanvasDesigner = {
       upperCanvas.style.left = '0'
       upperCanvas.style.pointerEvents = 'auto'
     }
-
-    console.log('CanvasDesigner: Fabric canvas created:', {
-      canvas: this.canvas,
-      lowerCanvas: this.canvas.lowerCanvasEl,
-      upperCanvas: this.canvas.upperCanvasEl,
-      wrapperEl: this.canvas.wrapperEl
-    })
 
     // Ensure the wrapper element doesn't block pointer events
     const wrapperEl = this.canvas.wrapperEl
@@ -355,14 +331,6 @@ const CanvasDesigner = {
     // Apply minimum zoom of 10% and maximum of 100%
     const finalZoom = Math.max(0.1, Math.min(1, fitZoom))
 
-    console.log('CanvasDesigner: fitToContainer', {
-      viewport: { width: viewportWidth, height: viewportHeight },
-      available: { width: availableWidth, height: availableHeight },
-      canvas: { width: canvasWidth, height: canvasHeight },
-      scales: { x: scaleX, y: scaleY },
-      finalZoom
-    })
-
     this._currentZoom = finalZoom
     this.applyZoom(finalZoom)
 
@@ -409,16 +377,10 @@ const CanvasDesigner = {
    * Verify that the canvas is properly set up for interaction
    */
   verifyCanvasInteractive() {
-    if (!this.canvas) {
-      console.error('CanvasDesigner: Canvas verification failed - no canvas')
-      return
-    }
+    if (!this.canvas) return
 
     const upperCanvas = this.canvas.upperCanvasEl
-    if (!upperCanvas) {
-      console.error('CanvasDesigner: Canvas verification failed - no upper canvas')
-      return
-    }
+    if (!upperCanvas) return
 
     // Ensure wrapper and canvases are visible
     const wrapper = this.canvas.wrapperEl
@@ -440,39 +402,13 @@ const CanvasDesigner = {
       upperCanvas.style.pointerEvents = 'auto'
     }
 
-    // Check computed styles
+    // Fix pointer-events if needed
     const computedStyle = window.getComputedStyle(upperCanvas)
     const pointerEvents = computedStyle.getPropertyValue('pointer-events')
 
-    console.log('CanvasDesigner: Upper canvas pointer-events:', pointerEvents)
-
     if (pointerEvents === 'none') {
-      console.warn('CanvasDesigner: Fixing pointer-events on upper canvas')
       upperCanvas.style.pointerEvents = 'auto !important'
     }
-
-    // Check wrapper
-    if (wrapper) {
-      const wrapperStyle = window.getComputedStyle(wrapper)
-      const wrapperPointer = wrapperStyle.getPropertyValue('pointer-events')
-      const wrapperDisplay = wrapperStyle.getPropertyValue('display')
-      const wrapperVisibility = wrapperStyle.getPropertyValue('visibility')
-      console.log('CanvasDesigner: Wrapper styles:', {
-        pointerEvents: wrapperPointer,
-        display: wrapperDisplay,
-        visibility: wrapperVisibility
-      })
-    }
-
-    // Log canvas state
-    console.log('CanvasDesigner: Canvas verification complete', {
-      selection: this.canvas.selection,
-      interactive: this.canvas.interactive,
-      skipTargetFind: this.canvas.skipTargetFind,
-      width: this.canvas.width,
-      height: this.canvas.height,
-      objectCount: this.canvas.getObjects().length
-    })
   },
 
   drawRulers(width, height) {
@@ -573,11 +509,8 @@ const CanvasDesigner = {
   },
 
   setupEventListeners() {
-    console.log('CanvasDesigner: Setting up event listeners on canvas')
-
     // Element selection - support multi-selection
     this.canvas.on('selection:created', (e) => {
-      console.log('CanvasDesigner: selection:created', e.selected)
       const selected = e.selected || []
       if (selected.length === 1 && selected[0]?.elementId) {
         this.pushEvent("element_selected", { id: selected[0].elementId })
@@ -588,7 +521,6 @@ const CanvasDesigner = {
     })
 
     this.canvas.on('selection:updated', (e) => {
-      console.log('CanvasDesigner: selection:updated', e.selected)
       const selected = e.selected || []
       if (selected.length === 1 && selected[0]?.elementId) {
         this.pushEvent("element_selected", { id: selected[0].elementId })
@@ -599,18 +531,11 @@ const CanvasDesigner = {
     })
 
     this.canvas.on('selection:cleared', () => {
-      console.log('CanvasDesigner: selection:cleared')
       this.pushEvent("element_deselected", {})
-    })
-
-    // Debug: mouse events
-    this.canvas.on('mouse:down', (e) => {
-      console.log('CanvasDesigner: mouse:down on', e.target?.elementId || 'background')
     })
 
     // Element modification (drag, resize, rotate)
     this.canvas.on('object:modified', (e) => {
-      console.log('CanvasDesigner: object:modified', e.target?.elementId)
       this.clearAlignmentLines()
       // Mark the element as modified so we know to recalculate its dimensions
       if (e.target && e.target.elementId) {
@@ -636,7 +561,22 @@ const CanvasDesigner = {
 
     // LiveView events
     this.handleEvent("load_design", ({ design }) => {
+      const now = Date.now()
+      const timeSinceLastSave = this._lastSaveTime ? (now - this._lastSaveTime) : Infinity
+
+      // CRITICAL: Don't reload if we just saved (prevents reverting user changes)
+      // Wait at least 1 second after a save before accepting load_design
+      if (timeSinceLastSave < 1000) {
+        return
+      }
+
+      // Also don't reload if we already have elements (only load on initial mount)
+      if (this.elements && this.elements.size > 0 && !this._isInitialLoad) {
+        return
+      }
+
       if (design && !this._isDestroyed) {
+        this._isInitialLoad = false
         this.loadDesign(design)
       }
     })
@@ -821,22 +761,6 @@ const CanvasDesigner = {
   },
 
   loadDesign(design) {
-    console.log('CanvasDesigner: loadDesign called', {
-      elementCount: design?.elements?.length || 0,
-      currentElementCount: this.elements?.size || 0
-    })
-    console.trace('CanvasDesigner: loadDesign stack trace')
-
-    // Debug: check for image elements
-    const imageElements = (design?.elements || []).filter(el => el.type === 'image')
-    imageElements.forEach(el => {
-      console.log('CanvasDesigner: loadDesign image element:', {
-        id: el.id,
-        hasImageData: !!el.image_data,
-        imageDataLength: el.image_data ? el.image_data.length : 0
-      })
-    })
-
     // Remove existing elements
     this.elements.forEach((obj) => this.canvas.remove(obj))
     this.elements.clear()
@@ -849,22 +773,12 @@ const CanvasDesigner = {
   },
 
   addElement(element, save = true) {
-    console.log('CanvasDesigner: addElement called', { type: element.type, id: element.id, save })
-
-    if (!this.canvas) {
-      console.error('CanvasDesigner: Cannot add element - canvas not initialized!')
-      return
-    }
-
-    if (!this.labelBounds) {
-      console.error('CanvasDesigner: Cannot add element - labelBounds not set!')
+    if (!this.canvas || !this.labelBounds) {
       return
     }
 
     const x = this.labelBounds.left + (element.x || 5) * PX_PER_MM
     const y = this.labelBounds.top + (element.y || 5) * PX_PER_MM
-
-    console.log('CanvasDesigner: Positioning element at', { x, y })
 
     let obj
     switch (element.type) {
@@ -887,12 +801,10 @@ const CanvasDesigner = {
         obj = this.createImage(element, x, y)
         break
       default:
-        console.warn('CanvasDesigner: Unknown element type:', element.type)
         return
     }
 
     if (!obj) {
-      console.error('CanvasDesigner: Failed to create object for element', element.type)
       return
     }
 
@@ -929,15 +841,6 @@ const CanvasDesigner = {
       hasBorders: true
     })
 
-    console.log('CanvasDesigner: Adding object to canvas', {
-      elementId: obj.elementId,
-      selectable: obj.selectable,
-      evented: obj.evented,
-      hasControls: obj.hasControls,
-      left: obj.left,
-      top: obj.top
-    })
-
     this.elements.set(element.id, obj)
     this.canvas.add(obj)
 
@@ -952,23 +855,12 @@ const CanvasDesigner = {
       this.canvas.setActiveObject(obj)
     }
 
-    console.log('CanvasDesigner: Rendering canvas after adding element...')
     this.canvas.renderAll()
-
-    // Verify canvas state after adding element
-    console.log('CanvasDesigner: Canvas state after adding element:', {
-      canvasExists: !!this.canvas,
-      objectCount: this.canvas.getObjects().length,
-      wrapperConnected: this.canvas.wrapperEl?.isConnected,
-      lowerCanvasConnected: this.canvas.lowerCanvasEl?.isConnected,
-      upperCanvasConnected: this.canvas.upperCanvasEl?.isConnected
-    })
 
     if (save) {
       // Delay the save slightly to let the canvas settle
       setTimeout(() => {
         if (!this._isDestroyed && this.canvas) {
-          console.log('CanvasDesigner: Saving elements after delay...')
           this.saveElements()
         }
       }, 100)
@@ -976,42 +868,32 @@ const CanvasDesigner = {
   },
 
   createQR(element, x, y) {
-    console.log('CanvasDesigner: createQR called', { element, x, y })
+    const size = (element.width || 20) * PX_PER_MM
 
-    try {
-      const size = (element.width || 20) * PX_PER_MM
+    const rect = new fabric.Rect({
+      width: size,
+      height: size,
+      fill: '#dbeafe',
+      stroke: '#3b82f6',
+      strokeWidth: 2,
+      strokeDashArray: [4, 4]
+    })
 
-      const rect = new fabric.Rect({
-        width: size,
-        height: size,
-        fill: '#dbeafe',
-        stroke: '#3b82f6',
-        strokeWidth: 2,
-        strokeDashArray: [4, 4]
-      })
+    const text = new fabric.Text('QR', {
+      fontSize: size * 0.3,
+      fill: '#3b82f6',
+      fontWeight: 'bold',
+      originX: 'center',
+      originY: 'center',
+      left: size / 2,
+      top: size / 2
+    })
 
-      const text = new fabric.Text('QR', {
-        fontSize: size * 0.3,
-        fill: '#3b82f6',
-        fontWeight: 'bold',
-        originX: 'center',
-        originY: 'center',
-        left: size / 2,
-        top: size / 2
-      })
-
-      const group = new fabric.Group([rect, text], {
-        left: x,
-        top: y,
-        angle: element.rotation || 0
-      })
-
-      console.log('CanvasDesigner: QR created successfully', group)
-      return group
-    } catch (error) {
-      console.error('CanvasDesigner: Error creating QR', error)
-      return null
-    }
+    return new fabric.Group([rect, text], {
+      left: x,
+      top: y,
+      angle: element.rotation || 0
+    })
   },
 
   createBarcode(element, x, y) {
@@ -1045,49 +927,36 @@ const CanvasDesigner = {
   },
 
   createText(element, x, y) {
-    console.log('CanvasDesigner: createText called', { element, x, y })
+    const content = element.text_content || element.binding || 'Texto'
+    const fontSize = element.font_size || 12
 
-    try {
-      const content = element.text_content || element.binding || 'Texto'
-      const fontSize = element.font_size || 12
+    // Create textbox with initial width
+    const textbox = new fabric.Textbox(content, {
+      left: x,
+      top: y,
+      width: (element.width || 30) * PX_PER_MM,
+      fontSize: fontSize,
+      fontFamily: element.font_family || 'Arial',
+      fontWeight: element.font_weight || 'normal',
+      fill: element.color || '#000000',
+      textAlign: element.text_align || 'left',
+      angle: element.rotation || 0,
+      // Allow text to wrap but also allow manual resize
+      splitByGrapheme: false
+    })
 
-      // Create textbox with initial width
-      const textbox = new fabric.Textbox(content, {
-        left: x,
-        top: y,
-        width: (element.width || 30) * PX_PER_MM,
-        fontSize: fontSize,
-        fontFamily: element.font_family || 'Arial',
-        fontWeight: element.font_weight || 'normal',
-        fill: element.color || '#000000',
-        textAlign: element.text_align || 'left',
-        angle: element.rotation || 0,
-        // Allow text to wrap but also allow manual resize
-        splitByGrapheme: false
-      })
+    // Auto-fit width to content
+    const textWidth = textbox.calcTextWidth()
+    const minWidth = 10 * PX_PER_MM // Minimum 10mm
+    const padding = 2 * PX_PER_MM // 2mm padding
+    const fittedWidth = Math.max(textWidth + padding, minWidth)
 
-      // Auto-fit width to content
-      const textWidth = textbox.calcTextWidth()
-      const minWidth = 10 * PX_PER_MM // Minimum 10mm
-      const padding = 2 * PX_PER_MM // 2mm padding
-      const fittedWidth = Math.max(textWidth + padding, minWidth)
-
-      // Only auto-fit if we don't have an explicit width from saved data
-      if (!element.width || element.width === 30) {
-        textbox.set('width', fittedWidth)
-      }
-
-      console.log('CanvasDesigner: Text created successfully', {
-        content,
-        fontSize,
-        width: textbox.width,
-        textWidth
-      })
-      return textbox
-    } catch (error) {
-      console.error('CanvasDesigner: Error creating Text', error)
-      return null
+    // Only auto-fit if we don't have an explicit width from saved data
+    if (!element.width || element.width === 30) {
+      textbox.set('width', fittedWidth)
     }
+
+    return textbox
   },
 
   createLine(element, x, y) {
@@ -1236,8 +1105,6 @@ const CanvasDesigner = {
     const obj = targetObj || this.canvas.getActiveObject()
     if (!obj?.elementId) return
 
-    console.log('CanvasDesigner: updateSelectedElement', { field, value, objType: obj.type, id: obj.elementId })
-
     const data = obj.elementData || {}
 
     // Parse numeric values
@@ -1368,14 +1235,6 @@ const CanvasDesigner = {
    */
   recreateGroupAtSize(obj, newWidthMM, newHeightMM) {
     if (!obj || !obj.elementId) return
-
-    console.log('CanvasDesigner: RECREATE_GROUP_AT_SIZE', {
-      elementId: obj.elementId,
-      oldWidth: obj.elementData?.width,
-      oldHeight: obj.elementData?.height,
-      newWidthMM,
-      newHeightMM
-    })
 
     const elementId = obj.elementId
     const elementType = obj.elementType
@@ -1550,8 +1409,6 @@ const CanvasDesigner = {
   saveElementsImmediate() {
     if (this._isDestroyed || !this.elements) return
 
-    console.log('CanvasDesigner: saveElementsImmediate called, element count:', this.elements.size)
-
     const elements = []
 
     this.elements.forEach((obj, id) => {
@@ -1577,16 +1434,6 @@ const CanvasDesigner = {
         const visualWidthMM = Math.round((obj.getScaledWidth() / PX_PER_MM) * 100) / 100
         const visualHeightMM = Math.round((obj.getScaledHeight() / PX_PER_MM) * 100) / 100
 
-        console.log('CanvasDesigner: SAVE GROUP DEBUG', {
-          id,
-          scaleX,
-          scaleY,
-          dataWidth: data.width,
-          dataHeight: data.height,
-          visualWidthMM,
-          visualHeightMM
-        })
-
         // Always use the visual dimensions as the source of truth
         width = visualWidthMM
         height = visualHeightMM
@@ -1596,7 +1443,6 @@ const CanvasDesigner = {
           data.width = width
           data.height = height
           obj.elementData = data
-          console.log('CanvasDesigner: Updated elementData to match visual')
         }
 
         // If scale != 1, we need to recreate the group to normalize
@@ -1605,8 +1451,6 @@ const CanvasDesigner = {
             obj._pendingRecreate = { width, height }
           }
         }
-
-        console.log('CanvasDesigner: SAVE GROUP RESULT', { id, width, height })
       } else if (obj._explicitSizeUpdate) {
         // Size was set explicitly from properties panel
         delete obj._explicitSizeUpdate
@@ -1660,18 +1504,13 @@ const CanvasDesigner = {
       if (obj.elementType === 'image') {
         elementObj.image_data = data.image_data || null
         elementObj.image_filename = data.image_filename || null
-        console.log('CanvasDesigner: Saving image element', {
-          id: id,
-          hasImageData: !!elementObj.image_data,
-          imageDataLength: elementObj.image_data ? elementObj.image_data.length : 0
-        })
       }
 
       elements.push(elementObj)
     })
 
-    console.log('CanvasDesigner: Sending element_modified event with', elements.length, 'elements')
-
+    // Record save time to prevent load_design from reverting changes
+    this._lastSaveTime = Date.now()
     this.pushEvent("element_modified", { elements })
 
     // After saving, recreate any groups marked for recreation (to normalize scale)
@@ -1679,7 +1518,6 @@ const CanvasDesigner = {
       if (obj._pendingRecreate && obj.type === 'group') {
         const { width, height } = obj._pendingRecreate
         delete obj._pendingRecreate
-        console.log('CanvasDesigner: Recreating group to normalize scale', { id, width, height })
         this.recreateGroupWithoutSave(obj, width, height)
       }
     })
@@ -1758,8 +1596,6 @@ const CanvasDesigner = {
   // ============================================================================
 
   updateElementImage(elementId, imageData, imageFilename) {
-    console.log('CanvasDesigner: updateElementImage called', { elementId, hasData: !!imageData })
-
     // Try to find element by ID (handle both number and string keys)
     let obj = this.elements.get(elementId)
     if (!obj) {
@@ -1770,7 +1606,6 @@ const CanvasDesigner = {
     }
 
     if (!obj) {
-      console.error('CanvasDesigner: Element not found for image update', elementId)
       return
     }
 
@@ -1788,6 +1623,10 @@ const CanvasDesigner = {
 
     fabric.Image.fromURL(imageData, (img) => {
       if (this._isDestroyed) return
+
+      if (!img || !img.width || !img.height) {
+        return
+      }
 
       const scaleX = w / img.width
       const scaleY = h / img.height
@@ -1810,12 +1649,6 @@ const CanvasDesigner = {
       img.elementType = 'image'
       img.elementData = data
 
-      console.log('CanvasDesigner: Image loaded, updating canvas. elementData:', {
-        id: elementId,
-        hasImageData: !!data.image_data,
-        imageDataLength: data.image_data ? data.image_data.length : 0
-      })
-
       this.canvas.remove(obj)
       this.elements.set(elementId, img)
       this.canvas.add(img)
@@ -1826,12 +1659,6 @@ const CanvasDesigner = {
       // Important: Save with a delay to ensure image is properly set
       // Use immediate save (not debounced) to prevent race conditions
       setTimeout(() => {
-        console.log('CanvasDesigner: Saving after image update, verifying data:', {
-          elementId,
-          hasImageData: !!data.image_data,
-          imageDataLength: data.image_data ? data.image_data.length : 0
-        })
-        // Use immediate save instead of debounced to ensure image data is saved
         this.saveElementsImmediate()
       }, 100)
     }, { crossOrigin: 'anonymous' })

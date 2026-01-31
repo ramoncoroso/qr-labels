@@ -35,6 +35,8 @@ defmodule QrLabelSystem.Designs.Design do
     field :label_type, :string, default: "single"
 
     # Elements on the label
+    # IMPORTANT: Using :delete means elements not in the new data will be removed
+    # This requires the client to ALWAYS send ALL elements, even unchanged ones
     embeds_many :elements, Element, on_replace: :delete
 
     belongs_to :user, QrLabelSystem.Accounts.User
