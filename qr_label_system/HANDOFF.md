@@ -6,139 +6,107 @@ Sistema web para crear y generar etiquetas con códigos QR, códigos de barras y
 
 ---
 
-## Sesión Actual (31 enero 2026)
+## Sesión Actual (31 enero 2026) - Parte 3
 
 ### Lo Que Se Implementó
 
-#### 1. Auto-ajuste del Canvas para Etiquetas Grandes
+#### 1. Corrección de Acceso a Campos de Elementos
 
-**Problema:** Cuando una etiqueta tenía dimensiones grandes (ej: 300x200mm), el canvas empujaba los paneles laterales fuera de la pantalla.
+**Problema:** Al crear elementos rectangle, line o image, aparecía error:
+```
+** (KeyError) key :binding not found in: %{...}
+```
 
-**Solución implementada:**
+**Causa:** El template accedía directamente a `@element.binding` pero cuando los elementos vienen de vuelta del JavaScript canvas, son mapas planos que pueden no tener todas las claves.
 
-- **CSS Transform** para escalar visualmente el canvas sin afectar el sistema de coordenadas
-- **Cálculo dinámico** del espacio disponible basado en el viewport menos los sidebars fijos
-- **Posicionamiento absoluto** del wrapper de Fabric.js dentro de un contenedor con dimensiones escaladas
+**Solución:** Cambiar accesos directos a `Map.get/2`:
+```elixir
+# Antes (fallaba):
+value={@element.binding || ""}
+
+# Después (funciona):
+value={Map.get(@element, :binding) || ""}
+```
 
 **Archivos modificados:**
-- `assets/js/hooks/canvas_designer.js`:
-  - `fitToContainer()` - Calcula zoom óptimo para que el canvas quepa
-  - `applyZoom()` - Aplica CSS transform + ajusta dimensiones del contenedor
-- `lib/qr_label_system_web/live/design_live/editor.ex`:
-  - Wrapper del canvas con `max-w-full max-h-full overflow-hidden`
-  - Handler `zoom_changed` para sincronizar estado del zoom
-  - Handler `fit_to_view` para ajuste manual
-  - Botón "Ajustar a la vista" en toolbar
+- `lib/qr_label_system_web/live/design_live/editor.ex` líneas 1554, 1565
 
-**Comportamiento:**
-- Al cargar el editor, el canvas se ajusta automáticamente
-- Al redimensionar la ventana, se re-ajusta
-- Los controles de zoom (+/-/reset) funcionan normalmente
-- El botón de ajustar a vista permite re-ajustar manualmente
-- Las coordenadas del mouse funcionan correctamente (Fabric.js detecta el CSS transform)
+#### 2. Panel de Propiedades Específico por Tipo de Elemento
 
-#### 2. Separación de Diseños por Tipo
+**Problema:** Rectangle y line no tenían propiedades editables en el panel derecho.
 
-**Cambios:**
-- Campo `label_type` en el schema `Design` (`"single"` o `"multiple"`)
-- Migración `20260131174618_add_label_type_to_designs.exs`
-- Función `list_user_designs_by_type/2` en `Designs` context
-- `/generate/single` solo muestra diseños tipo "single"
-- `/generate/design` (múltiples) solo muestra diseños tipo "multiple"
-- Al crear diseño desde cada flujo, se asigna el tipo correcto
+**Solución:** Añadidos paneles específicos:
+- **Línea**: Color
+- **Rectángulo**: Color de fondo, color de borde, ancho de borde
+- **Imagen**: Ya tenía uploader de imagen
 
-#### 3. Eliminación de Batches/Historial (Seguridad)
+```elixir
+<% "line" -> %>
+  <div class="border-t pt-4 space-y-3">
+    <div>
+      <label>Color</label>
+      <input type="color" value={Map.get(@element, :color) || "#000000"} ... />
+    </div>
+  </div>
 
-**Razón:** Evitar almacenamiento de datos sensibles que podrían ser robados.
+<% "rectangle" -> %>
+  <div class="border-t pt-4 space-y-3">
+    <div><label>Color de fondo</label><input type="color" .../></div>
+    <div><label>Color de borde</label><input type="color" .../></div>
+    <div><label>Ancho de borde (mm)</label><input type="number" .../></div>
+  </div>
+```
 
-**Eliminado:**
-- Tabla `label_batches` (migración `20260131175329_drop_label_batches.exs`)
-- Módulo `QrLabelSystem.Batches`
-- LiveViews de batches (`BatchLive.*`)
-- Enlace "Historial" en navegación
-- Referencias en schemas relacionados
+#### 3. Configuración de Drag and Drop (EN PROGRESO)
 
-**Nuevo flujo:**
-- Los datos se procesan en memoria usando `UploadDataStore` (GenServer)
-- Se imprimen directamente sin persistencia
-- Los datos se borran al cerrar sesión
+**Estado:** El módulo JavaScript carga pero el hook `mounted()` no se ejecuta.
 
-#### 4. Flujo Data-First Mejorado
+**Configuración actual:**
+- Hook `DraggableElements` en `assets/js/hooks/draggable_elements.js`
+- Registrado en `assets/js/hooks/index.js`
+- Toolbar con `id="element-toolbar" phx-hook="DraggableElements"`
+- Botones con `class="draggable-element" data-element-type="xxx"`
+- Canvas tiene `setupDragAndDrop()` para recibir drops
 
-**Cambios en `/generate/design` → Editor:**
-- Al seleccionar un diseño existente, navega al editor
-- Los datos permanecen en `UploadDataStore`
-- En el editor se pueden asignar columnas a elementos
-- Preview muestra datos reales con navegación entre filas
-- Botón "Generar X etiquetas" (pendiente de implementar generación)
+**Problema a resolver:**
+- El console.log de nivel módulo aparece ("DraggableElements module loaded!")
+- Pero `mounted()` nunca se llama
+- Posible causa: conflicto con cómo LiveView maneja el hook en ese elemento específico
 
-#### 5. Cambio de Layout: Sidebar → Header Horizontal
-
-**Cambio:** Se migró de un sidebar izquierdo de 256px a un header horizontal para maximizar el ancho del contenido.
-
-**Archivos:**
-- `lib/qr_label_system_web/components/layouts/app.html.heex`
+**Para depurar:**
+1. Verificar en DevTools → Elements que el div tiene `id="element-toolbar"` y `phx-hook="DraggableElements"`
+2. Verificar que no hay errores de JavaScript en la consola
+3. Probar mover el hook a un elemento más simple para aislar el problema
 
 ---
 
-## Arquitectura Actual
+## Sesión Anterior (31 enero 2026) - Parte 2
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     FLUJO DE GENERACIÓN                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   /generate                                                  │
-│       │                                                      │
-│       ├── "Etiqueta Única"                                   │
-│       │       │                                              │
-│       │       ▼                                              │
-│       │   /generate/single (diseños type="single")           │
-│       │       │                                              │
-│       │       ▼                                              │
-│       │   /generate/single/:id → Imprimir                    │
-│       │                                                      │
-│       └── "Múltiples Etiquetas"                              │
-│               │                                              │
-│               ▼                                              │
-│           /generate/data (cargar Excel/CSV)                  │
-│               │                                              │
-│               ▼ (datos en UploadDataStore)                   │
-│           /generate/design (diseños type="multiple")         │
-│               │                                              │
-│               ▼                                              │
-│           /designs/:id/edit (Editor)                         │
-│               • Asignar columnas a elementos                 │
-│               • Preview con datos reales                     │
-│               • Generar PDF (pendiente)                      │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
+### Lo Que Se Implementó
 
----
+#### 1. Mejora de Visibilidad del Botón "Volver a selección de modo"
 
-## Cómo Funciona el Auto-Fit del Canvas
+**Archivos:** `single_select.ex`, `data_first.ex`
 
-```javascript
-// 1. Calcular espacio disponible
-const availableWidth = viewport - sidebars - padding
-const availableHeight = viewport - header - toolbar - padding
+#### 2. Botón de Renombrar Movido al Editor
 
-// 2. Calcular zoom necesario
-const scaleX = availableWidth / canvasWidth
-const scaleY = availableHeight / canvasHeight
-const fitZoom = Math.min(scaleX, scaleY, 1)  // No más de 100%
+**Archivos:** `index.ex`, `editor.ex`
 
-// 3. Aplicar zoom con CSS transform
-this.el.style.width = scaledWidth + 'px'
-this.el.style.height = scaledHeight + 'px'
-this.el.style.position = 'relative'
-this.el.style.overflow = 'hidden'
+#### 3. Simplificación de Controles de Ajuste (Grid)
 
-fabricWrapper.style.position = 'absolute'
-fabricWrapper.style.transform = `scale(${zoom})`
-fabricWrapper.style.transformOrigin = 'top left'
-```
+Eliminado "Imán", solo queda "Rejilla" con función `alignAllElementsToGrid()`.
+
+#### 4. Nombres Secuenciales para Elementos
+
+"Código QR 1", "Código QR 2", etc.
+
+#### 5. Offset de Posición para Nuevos Elementos
+
+5mm de offset por elemento del mismo tipo.
+
+#### 6. Campo `binding: nil` en todos los elementos
+
+Añadido a rectangle, line, image en `create_default_element/2`.
 
 ---
 
@@ -146,37 +114,25 @@ fabricWrapper.style.transformOrigin = 'top left'
 
 ### Alta Prioridad
 
-1. **Generación de PDF desde Editor**
+1. **Generación de PDF desde Editor** ⬅️ PRÓXIMO PASO PRINCIPAL
    - Implementar botón "Generar X etiquetas" que genera PDF
    - Usar los datos de `UploadDataStore`
    - Aplicar bindings de columnas a elementos
 
-2. **Preview Multi-Etiqueta**
-   - Modal/grid mostrando todas las etiquetas
-   - Permitir navegar y verificar antes de imprimir
+2. **Arreglar Drag and Drop** (si se desea esta funcionalidad)
+   - El hook DraggableElements no monta correctamente
+   - Mientras tanto, el CLICK funciona perfectamente para añadir elementos
 
 ### Media Prioridad
 
-3. **Mejoras en Preview del Editor**
-   - Renderizar QR/barcode reales con datos del preview
-   - Actualmente muestra placeholders
-
-4. **Configuración de Impresión**
-   - Tamaño de papel
-   - Márgenes
-   - Opciones para impresora de rollo
-
-5. **Limpieza de Código**
-   - Eliminar referencias residuales a batches en:
-     - `telemetry.ex`
-     - `audit/log.ex`
-     - Comentarios en `user.ex`
+3. **Preview Multi-Etiqueta**
+4. **Mejoras en Preview del Editor** (QR/barcode reales)
+5. **Configuración de Impresión**
 
 ### Baja Prioridad
 
-6. **Eliminar Soporte de BD Externa**
-   - `data_sources/db_connector.ex` ya no se usa
-   - Limpiar código relacionado
+6. **Limpieza de Código** (referencias a batches)
+7. **Eliminar Soporte de BD Externa**
 
 ---
 
@@ -184,11 +140,10 @@ fabricWrapper.style.transformOrigin = 'top left'
 
 | Archivo | Descripción |
 |---------|-------------|
-| `assets/js/hooks/canvas_designer.js` | Editor de canvas con Fabric.js, zoom, auto-fit |
+| `assets/js/hooks/canvas_designer.js` | Editor de canvas con Fabric.js |
+| `assets/js/hooks/draggable_elements.js` | Hook para drag (no funciona aún) |
 | `lib/qr_label_system_web/live/design_live/editor.ex` | LiveView del editor |
 | `lib/qr_label_system/upload_data_store.ex` | GenServer para datos en memoria |
-| `lib/qr_label_system_web/live/generate_live/` | Flujo de generación |
-| `lib/qr_label_system/designs.ex` | Context de diseños |
 
 ---
 
@@ -203,61 +158,22 @@ mix test
 
 # Consola interactiva
 iex -S mix
-
-# Ver datos en UploadDataStore
-QrLabelSystem.UploadDataStore.get(user_id)
-
-# Limpiar datos de un usuario
-QrLabelSystem.UploadDataStore.clear(user_id)
 ```
 
 ---
 
-## Commits Recientes
+## Bugs Conocidos y Soluciones
 
-```
-6f6abb2 refactor(layout): Replace sidebar with horizontal header
-f8be491 feat(generate): Improve data-first workflow with persistent upload storage
-957635f security: Add authorization checks and remove debug code
-7d21d23 security: Remove batch/history storage to prevent data theft
-5fdd103 fix(editor): Multiple editor improvements and fixes
-```
+### KeyError: key :binding not found
 
----
+**Síntoma:** Error al crear/seleccionar elementos.
+**Solución:** Usar `Map.get(@element, :field)` en lugar de `@element.field` en templates.
 
-## Notas Técnicas
+### Hook DraggableElements no monta
 
-### UploadDataStore (GenServer)
-
-Almacena datos cargados en memoria por usuario:
-
-```elixir
-# Guardar datos
-UploadDataStore.put(user_id, rows, columns)
-
-# Obtener datos
-{rows, columns} = UploadDataStore.get(user_id)
-
-# Limpiar
-UploadDataStore.clear(user_id)
-```
-
-Los datos se mantienen entre navegaciones pero se pierden al reiniciar el servidor.
-
-### CSS Transform + Fabric.js
-
-Fabric.js automáticamente detecta CSS transforms y ajusta coordenadas:
-- Compara `canvas.width` con `getBoundingClientRect().width`
-- Calcula `cssScale` internamente
-- Ajusta coordenadas del mouse en `getPointer()`
-
-Por eso no necesitamos ajustar manualmente las coordenadas.
-
-### Tipos de Etiqueta
-
-- `"single"`: Contenido estático, se imprime N copias iguales
-- `"multiple"`: Contenido dinámico desde datos, cada etiqueta diferente
+**Síntoma:** El módulo carga pero `mounted()` no se ejecuta.
+**Estado:** En investigación. Click funciona como alternativa.
 
 ---
 
-*Handoff actualizado: 31 enero 2026*
+*Handoff actualizado: 31 enero 2026 (sesión 3)*

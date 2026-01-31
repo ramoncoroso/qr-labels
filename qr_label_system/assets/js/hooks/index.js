@@ -6,6 +6,8 @@ import LabelPreview from "./label_preview"
 import KeyboardShortcuts from "./keyboard_shortcuts"
 import SortableLayers from "./sortable_layers"
 import SingleLabelPrint from "./single_label_print"
+import DraggableElements from "./draggable_elements"
+import AutoHideFlash from "./auto_hide_flash"
 
 const Hooks = {
   CanvasDesigner,
@@ -15,7 +17,9 @@ const Hooks = {
   LabelPreview,
   KeyboardShortcuts,
   SortableLayers,
-  SingleLabelPrint
+  SingleLabelPrint,
+  DraggableElements,
+  AutoHideFlash
 }
 
 export default Hooks

@@ -615,6 +615,9 @@ const CanvasDesigner = {
       this.clearAlignmentLines()
     })
 
+    // Drag and drop from sidebar
+    this.setupDragAndDrop()
+
     // LiveView events
     this.handleEvent("load_design", ({ design }) => {
       if (design && !this._isDestroyed) {
@@ -628,9 +631,10 @@ const CanvasDesigner = {
       }
     })
 
-    this.handleEvent("update_element_property", ({ field, value }) => {
+    this.handleEvent("update_element_property", ({ id, field, value }) => {
+      console.log('CanvasDesigner: Received update_element_property event', { id, field, value })
       if (field && !this._isDestroyed) {
-        this.updateSelectedElement(field, value)
+        this.updateElementById(id, field, value)
       }
     })
 
@@ -746,6 +750,13 @@ const CanvasDesigner = {
         this.snapEnabled = snap_enabled
         this.gridSnapEnabled = grid_snap_enabled
         this.gridSize = grid_size
+      }
+    })
+
+    // Align all elements to grid
+    this.handleEvent("align_all_to_grid", ({ grid_size }) => {
+      if (!this._isDestroyed) {
+        this.alignAllElementsToGrid(grid_size)
       }
     })
 
@@ -1175,11 +1186,39 @@ const CanvasDesigner = {
     })
   },
 
-  updateSelectedElement(field, value) {
-    const obj = this.canvas.getActiveObject()
+  /**
+   * Update element by ID (used when properties panel changes values)
+   */
+  updateElementById(id, field, value) {
+    console.log('CanvasDesigner: updateElementById called', { id, field, value })
+    console.log('CanvasDesigner: elements Map keys:', Array.from(this.elements.keys()))
+
+    // Find element by ID instead of relying on active selection
+    let obj = null
+    if (id) {
+      obj = this.elements.get(id)
+      // Also try string version of ID
+      if (!obj) {
+        obj = this.elements.get(String(id))
+      }
+    }
+    if (!obj) {
+      obj = this.canvas.getActiveObject()
+    }
+
+    if (!obj?.elementId) {
+      console.log('CanvasDesigner: updateElementById - element not found', { id, field })
+      return
+    }
+    console.log('CanvasDesigner: updateElementById - found element', { elementId: obj.elementId, type: obj.type })
+    this.updateSelectedElement(field, value, obj)
+  },
+
+  updateSelectedElement(field, value, targetObj = null) {
+    const obj = targetObj || this.canvas.getActiveObject()
     if (!obj?.elementId) return
 
-    console.log('CanvasDesigner: updateSelectedElement', { field, value, objType: obj.type })
+    console.log('CanvasDesigner: updateSelectedElement', { field, value, objType: obj.type, id: obj.elementId })
 
     const data = obj.elementData || {}
 
@@ -1235,9 +1274,14 @@ const CanvasDesigner = {
         break
       case 'text_content':
         if (obj.type === 'textbox') {
-          obj.set('text', value)
+          console.log('CanvasDesigner: Setting text content to:', value)
+          obj.set('text', value || '')
+          // Force text recalculation
+          obj.initDimensions()
+          obj.setCoords()
           // Auto-fit width to content if text is short
           this.autoFitTextWidth(obj)
+          console.log('CanvasDesigner: Text updated, new text:', obj.text)
         }
         break
       case 'font_size':
@@ -1554,6 +1598,18 @@ const CanvasDesigner = {
         if (obj.type === 'image') {
           obj.set({ scaleX: 1, scaleY: 1 })
           obj.setCoords()
+        }
+      } else if (obj.type === 'textbox') {
+        // Textbox: Fabric.js modifies width directly (not via scale)
+        // Always read current width from the object
+        width = Math.round((obj.width / PX_PER_MM) * 100) / 100
+        // Height is auto-calculated by Fabric based on text content
+        height = Math.round((obj.height / PX_PER_MM) * 100) / 100
+        // Update elementData to stay in sync
+        if (data.width !== width || data.height !== height) {
+          data.width = width
+          data.height = height
+          obj.elementData = data
         }
       } else if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
         // Element was resized by dragging handles - recalculate dimensions from scale
@@ -2090,7 +2146,7 @@ const CanvasDesigner = {
     if (!movingObj) return
 
     const snapLines = []
-    const threshold = this.snapThreshold
+    const threshold = this.snapThreshold * 2 // Increased for better UX
 
     // Get moving object bounds
     const movingBounds = this.getObjectBounds(movingObj)
@@ -2272,6 +2328,83 @@ const CanvasDesigner = {
       this.canvas.remove(line)
     })
     this._alignmentLines = []
+  },
+
+  alignAllElementsToGrid(gridSize) {
+    if (!this.canvas || !this.labelBounds) return
+
+    const gridPx = gridSize * PX_PER_MM
+    let hasChanges = false
+
+    this.elements.forEach((obj) => {
+      if (!obj || obj.locked) return
+
+      // Get current position relative to label
+      const relativeLeft = obj.left - this.labelBounds.left
+      const relativeTop = obj.top - this.labelBounds.top
+
+      // Snap to nearest grid point
+      const snappedLeft = Math.round(relativeLeft / gridPx) * gridPx + this.labelBounds.left
+      const snappedTop = Math.round(relativeTop / gridPx) * gridPx + this.labelBounds.top
+
+      // Only update if position changed
+      if (Math.abs(obj.left - snappedLeft) > 0.1 || Math.abs(obj.top - snappedTop) > 0.1) {
+        obj.set({
+          left: snappedLeft,
+          top: snappedTop
+        })
+        obj.setCoords()
+        hasChanges = true
+      }
+    })
+
+    if (hasChanges) {
+      this.canvas.requestRenderAll()
+      this.saveElements()
+    }
+  },
+
+  setupDragAndDrop() {
+    const container = this.el
+
+    // Allow drop on canvas container (dragstart is handled by DraggableElements hook)
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      container.classList.add('ring-2', 'ring-blue-400')
+    })
+
+    container.addEventListener('dragleave', (e) => {
+      // Only remove if leaving the container entirely
+      if (!container.contains(e.relatedTarget)) {
+        container.classList.remove('ring-2', 'ring-blue-400')
+      }
+    })
+
+    container.addEventListener('drop', (e) => {
+      e.preventDefault()
+      container.classList.remove('ring-2', 'ring-blue-400')
+
+      const elementType = e.dataTransfer.getData('element-type')
+      if (!elementType) return
+
+      // Calculate drop position relative to canvas
+      const rect = container.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+
+      // Convert to mm (accounting for zoom and label position)
+      const zoom = this._currentZoom || 1
+      const xMm = (x / zoom - this.labelBounds.left) / PX_PER_MM
+      const yMm = (y / zoom - this.labelBounds.top) / PX_PER_MM
+
+      // Send event to LiveView with position
+      this.pushEvent("add_element_at", {
+        type: elementType,
+        x: Math.max(0, Math.round(xMm * 10) / 10),
+        y: Math.max(0, Math.round(yMm * 10) / 10)
+      })
+    })
   }
 }
 

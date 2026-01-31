@@ -69,11 +69,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("add_element", %{"type" => type}, socket) when type in @valid_element_types do
-    element = create_default_element(type)
-
     # Add element to design immediately so it can be selected
     # Convert existing elements to maps to avoid Ecto.CastError when mixing structs and maps
     current_elements = socket.assigns.design.elements || []
+    element = create_default_element(type, current_elements)
     current_elements_as_maps = Enum.map(current_elements, fn el ->
       case el do
         %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
@@ -100,6 +99,42 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   def handle_event("add_element", %{"type" => _invalid_type}, socket) do
     {:noreply, put_flash(socket, :error, "Tipo de elemento no válido")}
+  end
+
+  @impl true
+  def handle_event("add_element_at", %{"type" => type, "x" => x, "y" => y}, socket)
+      when type in @valid_element_types do
+    current_elements = socket.assigns.design.elements || []
+    element = create_default_element(type, current_elements)
+    # Override position with drop location
+    element = Map.merge(element, %{x: x, y: y})
+
+    current_elements_as_maps = Enum.map(current_elements, fn el ->
+      case el do
+        %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
+        map when is_map(map) -> map
+      end
+    end)
+    new_elements = current_elements_as_maps ++ [element]
+
+    case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
+      {:ok, updated_design} ->
+        {:noreply,
+         socket
+         |> assign(:design, updated_design)
+         |> assign(:selected_element, element)
+         |> push_event("add_element", %{element: element})}
+
+      {:error, _changeset} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Error al crear elemento")
+         |> push_event("add_element", %{element: element})}
+    end
+  end
+
+  def handle_event("add_element_at", _params, socket) do
+    {:noreply, socket}
   end
 
   @impl true
@@ -158,7 +193,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   def handle_event("update_element", %{"field" => field, "value" => value}, socket)
       when field in @allowed_element_fields do
     if socket.assigns.selected_element do
-      {:noreply, push_event(socket, "update_element_property", %{field: field, value: value})}
+      # Update selected_element locally to keep UI in sync
+      # Handle both atom and string keys
+      key = String.to_atom(field)
+      updated_element =
+        socket.assigns.selected_element
+        |> Map.put(key, value)
+        |> Map.put(field, value)
+
+      # Get element ID (handle both atom and string keys)
+      element_id = Map.get(socket.assigns.selected_element, :id) ||
+                   Map.get(socket.assigns.selected_element, "id")
+
+      {:noreply,
+       socket
+       |> assign(:selected_element, updated_element)
+       |> push_event("update_element_property", %{id: element_id, field: field, value: value})}
     else
       {:noreply, socket}
     end
@@ -550,6 +600,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
      |> push_event("update_snap_settings", %{snap_enabled: socket.assigns.snap_enabled, grid_snap_enabled: new_value, grid_size: socket.assigns.grid_size})}
   end
 
+  @impl true
+  def handle_event("align_to_grid", _params, socket) do
+    new_value = !socket.assigns.grid_snap_enabled
+    grid_size = socket.assigns.grid_size
+
+    socket = socket
+      |> assign(:grid_snap_enabled, new_value)
+      |> push_event("update_snap_settings", %{
+        snap_enabled: socket.assigns.snap_enabled,
+        grid_snap_enabled: new_value,
+        grid_size: grid_size
+      })
+
+    # If enabling grid, also align existing elements
+    if new_value do
+      {:noreply, push_event(socket, "align_all_to_grid", %{grid_size: grid_size})}
+    else
+      {:noreply, socket}
+    end
+  end
+
   @valid_grid_sizes [2, 5, 10]
   @impl true
   def handle_event("update_grid_size", %{"size" => size}, socket) do
@@ -618,14 +689,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp element_to_map(element) when is_map(element), do: element
 
-  defp create_default_element(type) do
+  defp create_default_element(type, existing_elements) do
+    # Count existing elements of the same type to generate sequential name and offset position
+    count = Enum.count(existing_elements, fn el ->
+      el_type = Map.get(el, :type) || Map.get(el, "type")
+      el_type == type
+    end)
+    number = count + 1
+
+    # Offset each new element so they don't overlap (5mm offset per element)
+    offset = count * 5.0
+
     base = %{
       id: Ecto.UUID.generate(),
       type: type,
-      x: 10.0,
-      y: 10.0,
+      x: 10.0 + offset,
+      y: 10.0 + offset,
       rotation: 0,
-      z_index: 0,
+      z_index: length(existing_elements),
       visible: true,
       locked: false
     }
@@ -637,7 +718,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           height: 20.0,
           qr_error_level: "M",
           binding: nil,
-          name: "Código QR"
+          name: "Código QR #{number}"
         })
 
       "barcode" ->
@@ -647,7 +728,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           barcode_format: "CODE128",
           barcode_show_text: true,
           binding: nil,
-          name: "Código de Barras"
+          name: "Código de Barras #{number}"
         })
 
       "text" ->
@@ -661,7 +742,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           text_content: "Texto",
           color: "#000000",
           binding: nil,
-          name: "Texto"
+          name: "Texto #{number}"
         })
 
       "line" ->
@@ -669,17 +750,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           width: 50.0,
           height: 0.5,
           color: "#000000",
-          name: "Línea"
+          binding: nil,
+          name: "Línea #{number}"
         })
 
       "rectangle" ->
         Map.merge(base, %{
           width: 30.0,
           height: 20.0,
+          binding: nil,
           background_color: "transparent",
           border_width: 0.5,
           border_color: "#000000",
-          name: "Rectángulo"
+          name: "Rectángulo #{number}"
         })
 
       "image" ->
@@ -689,7 +772,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           image_url: nil,
           image_data: nil,
           image_filename: nil,
-          name: "Imagen"
+          binding: nil,
+          name: "Imagen #{number}"
         })
 
       _ ->
@@ -876,74 +960,86 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <!-- Main Content -->
       <div class="flex-1 flex overflow-hidden">
         <!-- Left Sidebar - Element Tools (fixed width, won't shrink) -->
-        <div class="w-20 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col py-4">
+        <div class="w-20 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col py-4" id="element-toolbar" phx-hook="DraggableElements">
           <div class="px-2 mb-4">
             <p class="text-xs font-medium text-gray-400 text-center mb-3">ELEMENTOS</p>
             <div class="space-y-2">
               <button
+                type="button"
                 phx-click="add_element"
                 phx-value-type="text"
-                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition group"
+                data-element-type="text"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
-                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
                 </svg>
-                <span class="text-xs">Texto</span>
+                <span class="text-xs pointer-events-none">Texto</span>
               </button>
 
               <button
+                type="button"
                 phx-click="add_element"
                 phx-value-type="qr"
-                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+                data-element-type="qr"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
-                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                 </svg>
-                <span class="text-xs">QR</span>
+                <span class="text-xs pointer-events-none">QR</span>
               </button>
 
               <button
+                type="button"
                 phx-click="add_element"
                 phx-value-type="barcode"
-                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+                data-element-type="barcode"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
-                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 17h.01M17 7h.01M17 17h.01M12 7v10M7 7v10m10-10v10" />
                 </svg>
-                <span class="text-xs">Barcode</span>
+                <span class="text-xs pointer-events-none">Barcode</span>
               </button>
 
               <button
+                type="button"
                 phx-click="add_element"
                 phx-value-type="rectangle"
-                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+                data-element-type="rectangle"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
-                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
                 </svg>
-                <span class="text-xs">Cuadro</span>
+                <span class="text-xs pointer-events-none">Cuadro</span>
               </button>
 
               <button
+                type="button"
                 phx-click="add_element"
                 phx-value-type="line"
-                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+                data-element-type="line"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
-                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16" />
                 </svg>
-                <span class="text-xs">Línea</span>
+                <span class="text-xs pointer-events-none">Línea</span>
               </button>
 
               <button
+                type="button"
                 phx-click="add_element"
                 phx-value-type="image"
-                class="w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+                data-element-type="image"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
-                <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span class="text-xs">Imagen</span>
+                <span class="text-xs pointer-events-none">Imagen</span>
               </button>
             </div>
           </div>
@@ -1018,32 +1114,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </button>
             </div>
 
-            <!-- Snap Controls -->
-            <div class="flex items-center space-x-2 bg-white rounded-lg shadow-md px-3 py-2">
-              <span class="text-xs text-gray-500 font-medium">AJUSTAR</span>
+            <!-- Grid Snap Control -->
+            <div class="flex items-center space-x-1 bg-white rounded-lg shadow-md px-2 py-1.5">
               <button
-                phx-click="toggle_snap"
-                class={"p-1.5 rounded-md transition #{if @snap_enabled, do: "bg-blue-100 text-blue-600", else: "hover:bg-gray-100 text-gray-600"}"}
-                title="Snap a elementos"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                </svg>
-              </button>
-              <button
-                phx-click="toggle_grid_snap"
-                class={"p-1.5 rounded-md transition #{if @grid_snap_enabled, do: "bg-blue-100 text-blue-600", else: "hover:bg-gray-100 text-gray-600"}"}
-                title="Snap a grid"
+                phx-click="align_to_grid"
+                class={"flex items-center space-x-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition #{if @grid_snap_enabled, do: "bg-blue-100 text-blue-700", else: "hover:bg-gray-100 text-gray-600"}"}
+                title="Alinea todos los elementos a una rejilla"
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16M8 4v16M16 4v16" />
                 </svg>
+                <span>Rejilla</span>
               </button>
               <select
                 :if={@grid_snap_enabled}
                 phx-change="update_grid_size"
                 name="size"
                 class="text-xs border-gray-300 rounded py-1 pl-2 pr-6"
+                title="Tamaño de la rejilla"
               >
                 <option value="2" selected={@grid_size == 2}>2mm</option>
                 <option value="5" selected={@grid_size == 5}>5mm</option>
@@ -1484,7 +1572,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             >
               <option value="">Sin vincular</option>
               <%= for col <- @available_columns do %>
-                <option value={col} selected={(@element.binding || "") == col}><%= col %></option>
+                <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
               <% end %>
             </select>
           </form>
@@ -1495,7 +1583,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <input
             type="text"
             name="value"
-            value={@element.binding || ""}
+            value={Map.get(@element, :binding) || ""}
             placeholder="Nombre de columna"
             phx-change="update_element"
             phx-debounce="150"
@@ -1565,16 +1653,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <% "text" -> %>
           <div class="border-t pt-4 space-y-3">
             <div>
-              <label class="block text-sm font-medium text-gray-700">Contenido (si no está vinculado)</label>
-              <input
-                type="text"
-                name="value"
-                value={@element.text_content || ""}
-                phx-change="update_element"
-                phx-debounce="150"
-                phx-value-field="text_content"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
+              <label for="text_content_input" class="block text-sm font-medium text-gray-700">Contenido (si no está vinculado)</label>
+              <form phx-change="update_element" phx-value-field="text_content">
+                <input
+                  type="text"
+                  id="text_content_input"
+                  name="value"
+                  value={@element.text_content || ""}
+                  phx-debounce="150"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
+              </form>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
@@ -1659,7 +1748,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <label class="block text-sm font-medium text-gray-700">Imagen</label>
               <%= if Map.get(@element, :image_data) do %>
                 <div class="mt-2 relative">
-                  <img src={@element.image_data} class="w-full h-auto rounded border border-gray-200" />
+                  <img src={Map.get(@element, :image_data)} class="w-full h-auto rounded border border-gray-200" />
                   <p class="mt-1 text-xs text-gray-500 truncate"><%= Map.get(@element, :image_filename, "imagen") %></p>
                 </div>
               <% end %>
@@ -1712,19 +1801,63 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
-        <% _ -> %>
+        <% "line" -> %>
           <div class="border-t pt-4 space-y-3">
             <div>
               <label class="block text-sm font-medium text-gray-700">Color</label>
               <input
                 type="color"
                 name="value"
-                value={@element.color || "#000000"}
+                value={Map.get(@element, :color) || "#000000"}
                 phx-change="update_element"
                 phx-value-field="color"
                 class="mt-1 block w-full h-9 rounded-md border-gray-300"
               />
             </div>
+          </div>
+
+        <% "rectangle" -> %>
+          <div class="border-t pt-4 space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :background_color) || "#ffffff"}
+                phx-change="update_element"
+                phx-value-field="background_color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color de borde</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :border_color) || "#000000"}
+                phx-change="update_element"
+                phx-value-field="border_color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Ancho de borde (mm)</label>
+              <input
+                type="number"
+                name="value"
+                value={Map.get(@element, :border_width) || 0.5}
+                step="0.1"
+                min="0"
+                phx-change="update_element"
+                phx-value-field="border_width"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </div>
+          </div>
+
+        <% _ -> %>
+          <div class="border-t pt-4">
+            <p class="text-sm text-gray-500">Este elemento no tiene propiedades adicionales.</p>
           </div>
       <% end %>
     </div>
