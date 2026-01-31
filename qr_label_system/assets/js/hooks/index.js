@@ -5,6 +5,7 @@ import PrintEngine from "./print_engine"
 import LabelPreview from "./label_preview"
 import KeyboardShortcuts from "./keyboard_shortcuts"
 import SortableLayers from "./sortable_layers"
+import SingleLabelPrint from "./single_label_print"
 
 const Hooks = {
   CanvasDesigner,
@@ -13,7 +14,8 @@ const Hooks = {
   PrintEngine,
   LabelPreview,
   KeyboardShortcuts,
-  SortableLayers
+  SortableLayers,
+  SingleLabelPrint
 }
 
 export default Hooks

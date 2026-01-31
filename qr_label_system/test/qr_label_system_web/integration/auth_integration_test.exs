@@ -48,7 +48,7 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
 
       # Use the magic link
       conn = get(conn, ~p"/users/magic_link/#{encoded_token}")
-      assert redirected_to(conn) == ~p"/designs"
+      assert redirected_to(conn) == ~p"/generate"
     end
 
     test "magic link token is single use", %{conn: conn} do
@@ -60,7 +60,7 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
 
       # First use - should succeed
       conn1 = get(conn, ~p"/users/magic_link/#{encoded_token}")
-      assert redirected_to(conn1) == ~p"/designs"
+      assert redirected_to(conn1) == ~p"/generate"
 
       # Second use - should fail (token deleted)
       # Use a fresh conn for the second request

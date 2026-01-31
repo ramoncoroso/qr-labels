@@ -13,14 +13,14 @@ defmodule QrLabelSystemWeb.HomeLiveTest do
       assert html =~ "Email"
     end
 
-    test "redirects authenticated users to designs", %{conn: conn} do
+    test "redirects authenticated users to generate", %{conn: conn} do
       user = user_fixture()
 
       result =
         conn
         |> log_in_user(user)
         |> live(~p"/")
-        |> follow_redirect(conn, ~p"/designs")
+        |> follow_redirect(conn, ~p"/generate")
 
       assert {:ok, _conn} = result
     end

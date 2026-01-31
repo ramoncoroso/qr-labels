@@ -14,6 +14,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> put_flash(:error, "No tienes permiso para editar este diseño")
        |> push_navigate(to: ~p"/designs")}
     else
+      # Load available columns from flash if present (from data-first flow)
+      available_columns = Phoenix.Flash.get(socket.assigns.flash, :upload_columns) || []
+      upload_data = Phoenix.Flash.get(socket.assigns.flash, :upload_data) || []
+
+      # Build preview data from first row if we have data
+      preview_data = case upload_data do
+        [first_row | _] when is_map(first_row) -> first_row
+        _ -> %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"}
+      end
+
       {:ok,
        socket
        |> assign(:page_title, "Editor: #{design.name}")
@@ -21,11 +31,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:selected_element, nil)
        |> assign(:selected_elements, [])
        |> assign(:clipboard, [])
-       |> assign(:available_columns, [])
+       |> assign(:available_columns, available_columns)
        |> assign(:show_properties, true)
        |> assign(:show_preview, false)
        |> assign(:show_layers, true)
-       |> assign(:preview_data, %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"})
+       |> assign(:preview_data, preview_data)
        |> assign(:history, [])
        |> assign(:history_index, -1)
        |> assign(:has_unsaved_changes, false)
@@ -1025,6 +1035,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <!-- Right Sidebar - Properties -->
         <div class="w-72 bg-white border-l border-gray-200 overflow-y-auto">
           <div class="p-4">
+            <!-- Available Columns Panel (when data is loaded) -->
+            <div :if={length(@available_columns) > 0} class="bg-indigo-50 rounded-lg p-3 mb-4">
+              <h4 class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">
+                Columnas Disponibles
+              </h4>
+              <div class="flex flex-wrap gap-1.5">
+                <%= for col <- @available_columns do %>
+                  <span class="inline-block px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-mono rounded">
+                    <%= col %>
+                  </span>
+                <% end %>
+              </div>
+              <p class="mt-2 text-xs text-indigo-600">
+                Selecciona un elemento para vincularlo a una columna
+              </p>
+            </div>
+
             <%= if @selected_element do %>
               <div class="flex items-center justify-between mb-4">
                 <h3 class="font-semibold text-gray-900">Propiedades</h3>
@@ -1032,7 +1059,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -1197,19 +1224,37 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       <div class="border-t pt-4">
         <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
-        <input
-          type="text"
-          name="value"
-          value={@element.binding || ""}
-          placeholder="Nombre de columna"
-          phx-change="update_element"
-          phx-debounce="150"
-          phx-value-field="binding"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-        />
-        <p class="mt-1 text-xs text-gray-500">
-          Ingresa el nombre exacto de la columna del Excel/BD
-        </p>
+        <%= if length(@available_columns) > 0 do %>
+          <form phx-change="update_element" class="mt-1">
+            <input type="hidden" name="field" value="binding" />
+            <select
+              name="value"
+              class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            >
+              <option value="">Sin vincular</option>
+              <%= for col <- @available_columns do %>
+                <option value={col} selected={(@element.binding || "") == col}><%= col %></option>
+              <% end %>
+            </select>
+          </form>
+          <p class="mt-1 text-xs text-gray-500">
+            Selecciona una columna de tus datos
+          </p>
+        <% else %>
+          <input
+            type="text"
+            name="value"
+            value={@element.binding || ""}
+            placeholder="Nombre de columna"
+            phx-change="update_element"
+            phx-debounce="150"
+            phx-value-field="binding"
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+          />
+          <p class="mt-1 text-xs text-gray-500">
+            Ingresa el nombre exacto de la columna del Excel/BD
+          </p>
+        <% end %>
       </div>
 
       <%= case @element.type do %>

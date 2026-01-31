@@ -22,7 +22,7 @@ defmodule QrLabelSystemWeb.UserAuthTest do
       conn = UserAuth.log_in_user(conn, user)
       assert token = get_session(conn, :user_token)
       assert get_session(conn, :live_socket_id) == "users_sessions:#{Base.url_encode64(token)}"
-      assert redirected_to(conn) == ~p"/designs"
+      assert redirected_to(conn) == ~p"/generate"
       assert Accounts.get_user_by_session_token(token)
     end
 
@@ -163,7 +163,7 @@ defmodule QrLabelSystemWeb.UserAuthTest do
         conn |> assign(:current_user, user) |> UserAuth.redirect_if_user_is_authenticated([])
 
       assert conn.halted
-      assert redirected_to(conn) == ~p"/designs"
+      assert redirected_to(conn) == ~p"/generate"
     end
 
     test "does not redirect if user is not authenticated", %{conn: conn} do

@@ -15,7 +15,7 @@ defmodule QrLabelSystemWeb.UserSessionControllerTest do
         })
 
       assert get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/designs"
+      assert redirected_to(conn) == ~p"/generate"
 
       # Verify user can access protected page
       conn = get(conn, ~p"/designs")
@@ -34,7 +34,7 @@ defmodule QrLabelSystemWeb.UserSessionControllerTest do
         })
 
       assert conn.resp_cookies["_qr_label_system_web_user_remember_me"]
-      assert redirected_to(conn) == ~p"/designs"
+      assert redirected_to(conn) == ~p"/generate"
     end
 
     test "logs the user in with return to", %{conn: conn, user: user} do
@@ -61,7 +61,7 @@ defmodule QrLabelSystemWeb.UserSessionControllerTest do
           }
         })
 
-      assert redirected_to(conn) == ~p"/designs"
+      assert redirected_to(conn) == ~p"/generate"
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "exitosamente"
     end
 
