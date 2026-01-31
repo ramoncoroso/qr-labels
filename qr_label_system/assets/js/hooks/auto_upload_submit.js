@@ -6,6 +6,7 @@ const AutoUploadSubmit = {
   mounted() {
     console.log('AutoUploadSubmit: mounted')
     this._submitted = false
+    this._lastProgress = 0
     this.startPolling()
   },
 
@@ -22,14 +23,22 @@ const AutoUploadSubmit = {
   },
 
   checkProgress() {
-    if (this._submitted) return
-
     // Find progress bar in this form
     const progressBar = this.el.querySelector('[style*="width:"]')
     if (progressBar) {
       const widthMatch = progressBar.style.width.match(/(\d+)%/)
       if (widthMatch) {
         const progress = parseInt(widthMatch[1])
+
+        // Reset if progress went back to 0 (new upload started)
+        if (progress < this._lastProgress && progress === 0) {
+          console.log('AutoUploadSubmit: resetting for new upload')
+          this._submitted = false
+        }
+        this._lastProgress = progress
+
+        if (this._submitted) return
+
         console.log('AutoUploadSubmit: progress', progress)
 
         if (progress === 100) {
@@ -43,6 +52,13 @@ const AutoUploadSubmit = {
             }
           }, 100)
         }
+      }
+    } else {
+      // No progress bar - reset submitted flag for next upload
+      if (this._submitted && this._lastProgress === 100) {
+        console.log('AutoUploadSubmit: upload completed, ready for next')
+        this._submitted = false
+        this._lastProgress = 0
       }
     }
   },

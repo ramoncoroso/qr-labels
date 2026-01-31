@@ -53,17 +53,26 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:snap_threshold, 5)
        |> assign(:renaming, false)
        |> assign(:rename_value, design.name)
+       |> assign(:canvas_loaded, false)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif .svg),
          max_entries: 1,
-         max_file_size: 2_000_000)}
+         max_file_size: 2_000_000,
+         auto_upload: true)}
     end
   end
 
   @impl true
   def handle_event("canvas_ready", _params, socket) do
-    # Send design data to canvas
-    {:noreply, push_event(socket, "load_design", %{design: Design.to_json(socket.assigns.design)})}
+    # Only send load_design ONCE per session to prevent reverting user changes
+    if socket.assigns[:canvas_loaded] do
+      {:noreply, socket}
+    else
+      {:noreply,
+       socket
+       |> assign(:canvas_loaded, true)
+       |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})}
+    end
   end
 
   @valid_element_types ~w(qr barcode text line rectangle image)
@@ -156,37 +165,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("element_modified", %{"elements" => elements_json}, socket) do
-    # Update design with modified elements from canvas
     design = socket.assigns.design
-
-    # DEBUG: Log image elements specifically
-    image_elements = Enum.filter(elements_json, fn el ->
-      type = Map.get(el, "type") || Map.get(el, :type)
-      type == "image"
-    end)
-
-    if length(image_elements) > 0 do
-      IO.puts("\n[IMAGE DEBUG] Saving #{length(image_elements)} image elements:")
-      Enum.each(image_elements, fn el ->
-        id = Map.get(el, "id") || Map.get(el, :id)
-        image_data = Map.get(el, "image_data") || Map.get(el, :image_data)
-        image_filename = Map.get(el, "image_filename") || Map.get(el, :image_filename)
-        data_length = if image_data, do: String.length(image_data), else: 0
-        IO.puts("  Image #{id}: filename=#{image_filename}, data_length=#{data_length}")
-      end)
-    end
 
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
-        # Verify image data was saved correctly
-        saved_images = Enum.filter(updated_design.elements || [], fn el -> el.type == "image" end)
-        Enum.each(saved_images, fn el ->
-          if el.image_data do
-            IO.puts("[IMAGE OK] Image #{el.id} saved with #{String.length(el.image_data)} bytes")
-          else
-            IO.puts("[IMAGE WARNING] Image #{el.id} saved WITHOUT image_data!")
-          end
-        end)
         # Sync selected_element with updated design to prevent stale data
         updated_selected =
           if socket.assigns.selected_element do
@@ -430,7 +412,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # ============================================================================
 
   @impl true
-  def handle_event("validate_image_upload", _params, socket) do
+  def handle_event("validate_upload", _params, socket) do
     {:noreply, socket}
   end
 
@@ -439,36 +421,42 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, cancel_upload(socket, :element_image, ref)}
   end
 
+
   @impl true
   def handle_event("upload_element_image", %{"element_id" => element_id}, socket) do
     IO.puts("[DEBUG] upload_element_image called with element_id: #{inspect(element_id)}")
 
-    uploaded_files =
-      consume_uploaded_entries(socket, :element_image, fn %{path: path}, entry ->
-        # Read file and convert to base64
-        {:ok, binary} = File.read(path)
-        base64 = Base.encode64(binary)
-        mime_type = entry.client_type || "image/png"
-        IO.puts("[DEBUG] Processed file: #{entry.client_name}, type: #{mime_type}")
-        {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
-      end)
+    # Handle empty element_id
+    if element_id == "" or is_nil(element_id) do
+      {:noreply, put_flash(socket, :error, "Selecciona un elemento de imagen primero")}
+    else
+      uploaded_files =
+        consume_uploaded_entries(socket, :element_image, fn %{path: path}, entry ->
+          # Read file and convert to base64
+          {:ok, binary} = File.read(path)
+          base64 = Base.encode64(binary)
+          mime_type = entry.client_type || "image/png"
+          IO.puts("[DEBUG] Processed file: #{entry.client_name}, type: #{mime_type}")
+          {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
+        end)
 
-    IO.puts("[DEBUG] uploaded_files count: #{length(uploaded_files)}")
+      IO.puts("[DEBUG] uploaded_files count: #{length(uploaded_files)}")
 
-    case uploaded_files do
-      [%{data: image_data, filename: filename}] ->
-        IO.puts("[DEBUG] Pushing update_element_image event for element: #{element_id}")
-        {:noreply,
-         socket
-         |> push_event("update_element_image", %{
-           element_id: element_id,
-           image_data: image_data,
-           image_filename: filename
-         })
-         |> put_flash(:info, "Imagen subida correctamente")}
+      case uploaded_files do
+        [%{data: image_data, filename: filename}] ->
+          IO.puts("[DEBUG] Pushing update_element_image event for element: #{element_id}")
+          {:noreply,
+           socket
+           |> push_event("update_element_image", %{
+             element_id: element_id,
+             image_data: image_data,
+             image_filename: filename
+           })
+           |> put_flash(:info, "Imagen subida correctamente")}
 
-      _ ->
-        {:noreply, put_flash(socket, :error, "Error al subir la imagen")}
+        _ ->
+          {:noreply, put_flash(socket, :error, "Error al subir la imagen")}
+      end
     end
   end
 
@@ -1688,6 +1676,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   name="value"
                   value={@element.text_content || ""}
                   phx-debounce="150"
+                  onfocus="this.select()"
                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
               </form>
@@ -1780,50 +1769,48 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </div>
               <% end %>
 
-              <form id={"upload-form-#{@element.id}"} phx-change="validate_image_upload" phx-submit="upload_element_image" phx-hook="AutoUploadSubmit" class="mt-2">
-                <input type="hidden" name="element_id" value={@element.id} />
-                <.live_file_input upload={@uploads.element_image} class="hidden" />
-                <label
-                  for={@uploads.element_image.ref}
-                  class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition"
-                >
-                  <div class="text-center">
-                    <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p class="mt-1 text-xs text-gray-500">
-                      <%= if Map.get(@element, :image_data), do: "Cambiar imagen", else: "Subir imagen" %>
-                    </p>
-                    <p class="text-xs text-gray-400">PNG, JPG, GIF, SVG (max 2MB)</p>
-                  </div>
-                </label>
-
-                <%= for entry <- @uploads.element_image.entries do %>
-                  <div class="mt-2">
-                    <div class="flex items-center justify-between text-sm">
-                      <span class="text-gray-600 truncate"><%= entry.client_name %></span>
-                      <button type="button" phx-click="cancel-upload" phx-value-ref={entry.ref} class="text-red-500 hover:text-red-700">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+              <form
+                id="image-upload-form"
+                phx-submit="upload_element_image"
+                phx-change="validate_upload"
+                phx-hook="AutoUploadSubmit"
+              >
+                <input type="hidden" name="element_id" value={Map.get(@element, :id) || ""} />
+                <div class="mt-2">
+                  <.live_file_input upload={@uploads.element_image} class="hidden" />
+                  <label
+                    for={@uploads.element_image.ref}
+                    class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition"
+                  >
+                    <div class="text-center">
+                      <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p class="mt-1 text-xs text-gray-500">
+                        <%= if Map.get(@element, :image_data), do: "Cambiar imagen", else: "Clic para seleccionar" %>
+                      </p>
+                      <p class="text-xs text-gray-400">PNG, JPG, GIF, SVG (max 2MB)</p>
                     </div>
-                    <div class="mt-1 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                      <div class="h-full bg-blue-500 transition-all" style={"width: #{entry.progress}%"}></div>
-                    </div>
-                    <%= for err <- upload_errors(@uploads.element_image, entry) do %>
-                      <p class="mt-1 text-xs text-red-500"><%= error_to_string(err) %></p>
-                    <% end %>
-                  </div>
-                <% end %>
+                  </label>
 
-                <button
-                  :if={length(@uploads.element_image.entries) > 0}
-                  type="submit"
-                  class="mt-2 w-full bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium"
-                >
-                  Subir imagen
-                </button>
+                  <%= for entry <- @uploads.element_image.entries do %>
+                    <div class="mt-2">
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-600 truncate"><%= entry.client_name %></span>
+                        <span class="text-green-600 text-xs">
+                          <%= if entry.done?, do: "✓ Aplicando...", else: "#{entry.progress}%" %>
+                        </span>
+                      </div>
+                      <div class="mt-1 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full bg-blue-500 transition-all" style={"width: #{entry.progress}%"}></div>
+                      </div>
+                      <%= for err <- upload_errors(@uploads.element_image, entry) do %>
+                        <p class="mt-1 text-xs text-red-500"><%= error_to_string(err) %></p>
+                      <% end %>
+                    </div>
+                  <% end %>
+                  <button type="submit" class="hidden">Submit</button>
+                </div>
               </form>
             </div>
           </div>
