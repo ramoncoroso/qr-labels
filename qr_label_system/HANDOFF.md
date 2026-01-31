@@ -2,212 +2,262 @@
 
 ## Resumen del Proyecto
 
-Sistema web para crear y generar etiquetas con códigos QR, códigos de barras y texto dinámico. Construido con **Elixir/Phoenix LiveView**.
+Sistema web para crear y generar etiquetas con códigos QR, códigos de barras y texto dinámico. Construido con **Elixir/Phoenix LiveView** y **Fabric.js** para el editor de canvas.
 
-## Lo Que Se Implementó
+---
 
-### Rediseño del Flujo de Generación de Etiquetas
+## Sesión Actual (31 enero 2026)
 
-Se implementó un nuevo flujo con dos modos de operación:
+### Lo Que Se Implementó
 
-#### 1. Modo Etiqueta Única (`/generate/single`)
-- Seleccionar o crear un diseño
-- Configurar cantidad (1-100 copias)
-- Imprimir directamente o descargar PDF
-- Contenido estático definido en el diseño
+#### 1. Auto-ajuste del Canvas para Etiquetas Grandes
 
-#### 2. Modo Múltiples Etiquetas (`/generate/data`) - **DATOS PRIMERO**
-- Cargar datos antes de elegir diseño
-- 3 métodos de carga:
-  - **Excel** (.xlsx)
-  - **CSV** (.csv)
-  - **Pegar desde Excel** (copiar/pegar datos tabulares)
-- Vista previa de columnas y datos
-- Seleccionar diseño existente o crear nuevo
-- Vinculación automática de columnas a elementos
+**Problema:** Cuando una etiqueta tenía dimensiones grandes (ej: 300x200mm), el canvas empujaba los paneles laterales fuera de la pantalla.
 
-### Archivos Creados
+**Solución implementada:**
+
+- **CSS Transform** para escalar visualmente el canvas sin afectar el sistema de coordenadas
+- **Cálculo dinámico** del espacio disponible basado en el viewport menos los sidebars fijos
+- **Posicionamiento absoluto** del wrapper de Fabric.js dentro de un contenedor con dimensiones escaladas
+
+**Archivos modificados:**
+- `assets/js/hooks/canvas_designer.js`:
+  - `fitToContainer()` - Calcula zoom óptimo para que el canvas quepa
+  - `applyZoom()` - Aplica CSS transform + ajusta dimensiones del contenedor
+- `lib/qr_label_system_web/live/design_live/editor.ex`:
+  - Wrapper del canvas con `max-w-full max-h-full overflow-hidden`
+  - Handler `zoom_changed` para sincronizar estado del zoom
+  - Handler `fit_to_view` para ajuste manual
+  - Botón "Ajustar a la vista" en toolbar
+
+**Comportamiento:**
+- Al cargar el editor, el canvas se ajusta automáticamente
+- Al redimensionar la ventana, se re-ajusta
+- Los controles de zoom (+/-/reset) funcionan normalmente
+- El botón de ajustar a vista permite re-ajustar manualmente
+- Las coordenadas del mouse funcionan correctamente (Fabric.js detecta el CSS transform)
+
+#### 2. Separación de Diseños por Tipo
+
+**Cambios:**
+- Campo `label_type` en el schema `Design` (`"single"` o `"multiple"`)
+- Migración `20260131174618_add_label_type_to_designs.exs`
+- Función `list_user_designs_by_type/2` en `Designs` context
+- `/generate/single` solo muestra diseños tipo "single"
+- `/generate/design` (múltiples) solo muestra diseños tipo "multiple"
+- Al crear diseño desde cada flujo, se asigna el tipo correcto
+
+#### 3. Eliminación de Batches/Historial (Seguridad)
+
+**Razón:** Evitar almacenamiento de datos sensibles que podrían ser robados.
+
+**Eliminado:**
+- Tabla `label_batches` (migración `20260131175329_drop_label_batches.exs`)
+- Módulo `QrLabelSystem.Batches`
+- LiveViews de batches (`BatchLive.*`)
+- Enlace "Historial" en navegación
+- Referencias en schemas relacionados
+
+**Nuevo flujo:**
+- Los datos se procesan en memoria usando `UploadDataStore` (GenServer)
+- Se imprimen directamente sin persistencia
+- Los datos se borran al cerrar sesión
+
+#### 4. Flujo Data-First Mejorado
+
+**Cambios en `/generate/design` → Editor:**
+- Al seleccionar un diseño existente, navega al editor
+- Los datos permanecen en `UploadDataStore`
+- En el editor se pueden asignar columnas a elementos
+- Preview muestra datos reales con navegación entre filas
+- Botón "Generar X etiquetas" (pendiente de implementar generación)
+
+#### 5. Cambio de Layout: Sidebar → Header Horizontal
+
+**Cambio:** Se migró de un sidebar izquierdo de 256px a un header horizontal para maximizar el ancho del contenido.
+
+**Archivos:**
+- `lib/qr_label_system_web/components/layouts/app.html.heex`
+
+---
+
+## Arquitectura Actual
 
 ```
-lib/qr_label_system_web/live/generate_live/
-├── index.ex          # Selector de modo (único vs múltiples)
-├── data_first.ex     # Carga de datos (Excel/CSV/pegar)
-├── design_select.ex  # Selección de diseño tras cargar datos
-├── single_select.ex  # Selección de diseño para etiqueta única
-└── single_label.ex   # Configuración e impresión de etiqueta única
-
-assets/js/hooks/
-└── single_label_print.js  # Hook para impresión/PDF de etiquetas únicas
-
-test/
-├── qr_label_system_web/live/generate_live_test.exs  # 10 tests nuevos
-└── support/fixtures/designs_fixtures.ex             # Fixtures para tests
+┌─────────────────────────────────────────────────────────────┐
+│                     FLUJO DE GENERACIÓN                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   /generate                                                  │
+│       │                                                      │
+│       ├── "Etiqueta Única"                                   │
+│       │       │                                              │
+│       │       ▼                                              │
+│       │   /generate/single (diseños type="single")           │
+│       │       │                                              │
+│       │       ▼                                              │
+│       │   /generate/single/:id → Imprimir                    │
+│       │                                                      │
+│       └── "Múltiples Etiquetas"                              │
+│               │                                              │
+│               ▼                                              │
+│           /generate/data (cargar Excel/CSV)                  │
+│               │                                              │
+│               ▼ (datos en UploadDataStore)                   │
+│           /generate/design (diseños type="multiple")         │
+│               │                                              │
+│               ▼                                              │
+│           /designs/:id/edit (Editor)                         │
+│               • Asignar columnas a elementos                 │
+│               • Preview con datos reales                     │
+│               • Generar PDF (pendiente)                      │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Archivos Modificados
+---
 
-- `router.ex` - 4 nuevas rutas
-- `design_live/editor.ex` - Dropdown de columnas + panel de columnas disponibles
-- `hooks/index.js` - Registro del nuevo hook
-- Tests de autenticación - Actualizado redirect a `/generate`
+## Cómo Funciona el Auto-Fit del Canvas
 
-### Rutas Disponibles
+```javascript
+// 1. Calcular espacio disponible
+const availableWidth = viewport - sidebars - padding
+const availableHeight = viewport - header - toolbar - padding
 
-| Ruta | Descripción |
-|------|-------------|
-| `/generate` | Selector de modo |
-| `/generate/single` | Selección de diseño (modo único) |
-| `/generate/single/:id` | Impresión de etiqueta única |
-| `/generate/data` | Carga de datos (modo múltiples) |
-| `/generate/design` | Selección de diseño tras cargar datos |
-| `/generate/design/:id` | (existente) Fuente de datos |
-| `/generate/map/:design_id/:source_id` | (existente) Mapeo de columnas |
-| `/generate/preview/:batch_id` | (existente) Vista previa del lote |
+// 2. Calcular zoom necesario
+const scaleX = availableWidth / canvasWidth
+const scaleY = availableHeight / canvasHeight
+const fitZoom = Math.min(scaleX, scaleY, 1)  // No más de 100%
 
-## Estado Actual
+// 3. Aplicar zoom con CSS transform
+this.el.style.width = scaledWidth + 'px'
+this.el.style.height = scaledHeight + 'px'
+this.el.style.position = 'relative'
+this.el.style.overflow = 'hidden'
 
-### Funcionando ✅
-- Selector de modo en `/generate`
-- Flujo de etiqueta única completo
-- Carga de datos (Excel, CSV, pegar)
-- Vista previa de datos cargados
-- Dropdown de columnas en el editor
-- Panel de columnas disponibles en sidebar
-- Todos los tests pasan (175 tests)
+fabricWrapper.style.position = 'absolute'
+fabricWrapper.style.transform = `scale(${zoom})`
+fabricWrapper.style.transformOrigin = 'top left'
+```
 
-### Pendiente / Para Continuar 🔄
+---
 
-#### 1. Integración del Editor con Datos
-El editor actualmente carga columnas del flash, pero el flujo completo necesita:
-- Permitir crear nuevo diseño desde `/generate/design` y mantener los datos
-- Al guardar diseño, redirigir de vuelta al flujo de generación
+## Pendiente / Para Continuar
 
-#### 2. Mejorar el Mapeo Automático
-En `design_select.ex`, la función `build_auto_mapping/2` hace mapeo case-insensitive. Considerar:
-- Mostrar al usuario qué columnas se mapearon automáticamente
-- Permitir corrección manual antes de crear el lote
+### Alta Prioridad
 
-#### 3. Vista Previa en Tiempo Real
-En el editor, cuando hay columnas disponibles:
-- Mostrar preview con datos reales del primer registro
-- Permitir navegar entre registros para previsualizar
+1. **Generación de PDF desde Editor**
+   - Implementar botón "Generar X etiquetas" que genera PDF
+   - Usar los datos de `UploadDataStore`
+   - Aplicar bindings de columnas a elementos
 
-#### 4. Configuración de Impresión
-El `SingleLabel` tiene configuración básica. Agregar:
-- Selección de tamaño de papel
-- Configuración de márgenes
-- Opciones para impresora de rollo vs normal
+2. **Preview Multi-Etiqueta**
+   - Modal/grid mostrando todas las etiquetas
+   - Permitir navegar y verificar antes de imprimir
 
-#### 5. Eliminar Soporte de Base de Datos
-El plan original indicaba eliminar PostgreSQL/MySQL/SQL Server como fuentes de datos. Actualmente aún existen en:
-- `lib/qr_label_system/data_sources/db_connector.ex`
-- `lib/qr_label_system/data_sources.ex`
+### Media Prioridad
 
-## Cómo Ejecutar
+3. **Mejoras en Preview del Editor**
+   - Renderizar QR/barcode reales con datos del preview
+   - Actualmente muestra placeholders
+
+4. **Configuración de Impresión**
+   - Tamaño de papel
+   - Márgenes
+   - Opciones para impresora de rollo
+
+5. **Limpieza de Código**
+   - Eliminar referencias residuales a batches en:
+     - `telemetry.ex`
+     - `audit/log.ex`
+     - Comentarios en `user.ex`
+
+### Baja Prioridad
+
+6. **Eliminar Soporte de BD Externa**
+   - `data_sources/db_connector.ex` ya no se usa
+   - Limpiar código relacionado
+
+---
+
+## Archivos Clave
+
+| Archivo | Descripción |
+|---------|-------------|
+| `assets/js/hooks/canvas_designer.js` | Editor de canvas con Fabric.js, zoom, auto-fit |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | LiveView del editor |
+| `lib/qr_label_system/upload_data_store.ex` | GenServer para datos en memoria |
+| `lib/qr_label_system_web/live/generate_live/` | Flujo de generación |
+| `lib/qr_label_system/designs.ex` | Context de diseños |
+
+---
+
+## Comandos Útiles
 
 ```bash
-# Instalar dependencias
-mix deps.get
-cd assets && npm install && cd ..
-
-# Configurar base de datos
-mix ecto.setup
-
-# Ejecutar servidor
+# Servidor de desarrollo
 mix phx.server
 
-# Abrir en navegador
-open http://localhost:4000
-```
-
-## Cómo Testear
-
-```bash
-# Todos los tests
+# Tests
 mix test
 
-# Solo tests del flujo de generación
-mix test test/qr_label_system_web/live/generate_live_test.exs
+# Consola interactiva
+iex -S mix
 
-# Con cobertura
-mix coveralls.html
+# Ver datos en UploadDataStore
+QrLabelSystem.UploadDataStore.get(user_id)
+
+# Limpiar datos de un usuario
+QrLabelSystem.UploadDataStore.clear(user_id)
 ```
 
-## Datos de Prueba
+---
 
-Se incluyen archivos de prueba en `/priv/`:
-- `test_data.xlsx` - Excel con 10 productos
-- `test_data.csv` - CSV con los mismos datos
-
-Columnas: Producto, SKU, Precio, Descripcion, Cantidad
-
-## Arquitectura
+## Commits Recientes
 
 ```
-Usuario llega a /generate
-         │
-         ├─── "Etiqueta Única" ───► /generate/single
-         │                              │
-         │                              ▼
-         │                    Seleccionar diseño
-         │                              │
-         │                              ▼
-         │                    /generate/single/:id
-         │                    (configurar e imprimir)
-         │
-         └─── "Múltiples" ───► /generate/data
-                                   │
-                                   ▼
-                          Cargar datos (Excel/CSV/Pegar)
-                                   │
-                                   ▼
-                          /generate/design
-                          (seleccionar diseño)
-                                   │
-                                   ▼
-                          Crear Batch con data_snapshot
-                                   │
-                                   ▼
-                          /generate/preview/:batch_id
-                          (vista previa e impresión)
+6f6abb2 refactor(layout): Replace sidebar with horizontal header
+f8be491 feat(generate): Improve data-first workflow with persistent upload storage
+957635f security: Add authorization checks and remove debug code
+7d21d23 security: Remove batch/history storage to prevent data theft
+5fdd103 fix(editor): Multiple editor improvements and fixes
 ```
+
+---
 
 ## Notas Técnicas
 
-### Flash para Pasar Datos Entre Páginas
-Los datos cargados se pasan via `put_flash`:
+### UploadDataStore (GenServer)
+
+Almacena datos cargados en memoria por usuario:
+
 ```elixir
-socket
-|> put_flash(:upload_data, rows)
-|> put_flash(:upload_columns, columns)
-|> push_navigate(to: ~p"/generate/design")
+# Guardar datos
+UploadDataStore.put(user_id, rows, columns)
+
+# Obtener datos
+{rows, columns} = UploadDataStore.get(user_id)
+
+# Limpiar
+UploadDataStore.clear(user_id)
 ```
 
-Y se recuperan con:
-```elixir
-Phoenix.Flash.get(socket.assigns.flash, :upload_data)
-```
+Los datos se mantienen entre navegaciones pero se pierden al reiniciar el servidor.
 
-### Parser de Datos Pegados
-En `data_first.ex`, la función `parse_pasted_data/1`:
-- Divide por líneas (`\r?\n`)
-- Primera línea = headers
-- Divide cada línea por tabs (`\t`)
-- Construye lista de mapas
+### CSS Transform + Fabric.js
 
-### Batch con Data Snapshot
-Al crear un batch, se guarda una copia de los datos:
-```elixir
-%{
-  name: "Lote - #{design.name} - #{timestamp}",
-  design_id: design.id,
-  column_mapping: auto_mapping,
-  data_snapshot: upload_data,  # Copia de los datos
-  total_labels: length(upload_data)
-}
-```
+Fabric.js automáticamente detecta CSS transforms y ajusta coordenadas:
+- Compara `canvas.width` con `getBoundingClientRect().width`
+- Calcula `cssScale` internamente
+- Ajusta coordenadas del mouse en `getPointer()`
 
-## Contacto
+Por eso no necesitamos ajustar manualmente las coordenadas.
 
-Este handoff fue creado el 31 de enero de 2026.
-Para dudas sobre la implementación, revisar los commits recientes o los tests.
+### Tipos de Etiqueta
+
+- `"single"`: Contenido estático, se imprime N copias iguales
+- `"multiple"`: Contenido dinámico desde datos, cada etiqueta diferente
+
+---
+
+*Handoff actualizado: 31 enero 2026*
