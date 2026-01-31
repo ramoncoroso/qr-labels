@@ -7,18 +7,23 @@ defmodule QrLabelSystemWeb.DesignLive.New do
   alias QrLabelSystem.Designs.Design
 
   @impl true
-  def mount(_params, _session, socket) do
-    changeset = Designs.change_design(%Design{})
+  def mount(params, _session, socket) do
+    # Get label type from query params (default to "single")
+    label_type = Map.get(params, "type", "single")
+    label_type = if label_type in ["single", "multiple"], do: label_type, else: "single"
 
-    # Preserve upload data from flash (for data-first flow)
-    upload_data = Phoenix.Flash.get(socket.assigns.flash, :upload_data)
-    upload_columns = Phoenix.Flash.get(socket.assigns.flash, :upload_columns)
+    changeset = Designs.change_design(%Design{label_type: label_type})
+
+    # Get upload data from persistent store (for data-first flow)
+    user_id = socket.assigns.current_user.id
+    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id)
     return_to = Phoenix.Flash.get(socket.assigns.flash, :return_to)
 
     {:ok,
      socket
      |> assign(:page_title, "Nuevo Diseño")
-     |> assign(:design, %Design{})
+     |> assign(:design, %Design{label_type: label_type})
+     |> assign(:label_type, label_type)
      |> assign(:upload_data, upload_data)
      |> assign(:upload_columns, upload_columns)
      |> assign(:return_to, return_to)
@@ -37,25 +42,18 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
   @impl true
   def handle_event("save", %{"design" => design_params}, socket) do
-    design_params = Map.put(design_params, "user_id", socket.assigns.current_user.id)
+    design_params =
+      design_params
+      |> Map.put("user_id", socket.assigns.current_user.id)
+      |> Map.put("label_type", socket.assigns.label_type)
 
     case Designs.create_design(design_params) do
       {:ok, design} ->
-        # Preserve upload data/columns for the editor (data-first flow)
-        socket =
-          socket
-          |> put_flash(:info, "Diseño creado exitosamente")
-
-        socket =
-          if socket.assigns.upload_data do
-            socket
-            |> put_flash(:upload_data, socket.assigns.upload_data)
-            |> put_flash(:upload_columns, socket.assigns.upload_columns)
-          else
-            socket
-          end
-
-        {:noreply, push_navigate(socket, to: ~p"/designs/#{design.id}/edit")}
+        # Data is already in the persistent store, just navigate
+        {:noreply,
+         socket
+         |> put_flash(:info, "Diseño creado exitosamente")
+         |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -74,6 +72,25 @@ defmodule QrLabelSystemWeb.DesignLive.New do
         Nuevo Diseño
         <:subtitle>Define las dimensiones básicas de tu etiqueta</:subtitle>
       </.header>
+
+      <!-- Type indicator -->
+      <div class="mt-4">
+        <%= if @label_type == "single" do %>
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+            <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            Etiqueta Única
+          </span>
+        <% else %>
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+            <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Múltiples Etiquetas
+          </span>
+        <% end %>
+      </div>
 
       <div class="mt-8 max-w-2xl">
         <.simple_form

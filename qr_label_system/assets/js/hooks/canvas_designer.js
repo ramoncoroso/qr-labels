@@ -137,6 +137,15 @@ const CanvasDesigner = {
       clearTimeout(this._saveTimeout)
     }
 
+    if (this._resizeTimeout) {
+      clearTimeout(this._resizeTimeout)
+    }
+
+    // Remove resize handler
+    if (this._resizeHandler) {
+      window.removeEventListener('resize', this._resizeHandler)
+    }
+
     // Clear alignment lines
     this.clearAlignmentLines()
 
@@ -290,6 +299,87 @@ const CanvasDesigner = {
 
     // Final verification - ensure canvas is interactive
     this.verifyCanvasInteractive()
+
+    // Auto-fit to container after a short delay to ensure DOM is ready
+    setTimeout(() => {
+      this.fitToContainer()
+    }, 100)
+  },
+
+  /**
+   * Calculate and apply the optimal zoom to fit the canvas within the container
+   * Uses CSS transform to scale the canvas down visually
+   * Fabric.js automatically handles mouse coordinates for CSS transforms
+   */
+  fitToContainer() {
+    if (!this.canvas || this._isDestroyed) return
+
+    // Calculate available space from viewport minus fixed sidebars
+    // This is more reliable than reading container dimensions which may be affected by content
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+
+    // Fixed dimensions: left sidebar (80px) + layers (224px) + properties (288px) + padding (64px)
+    const fixedHorizontal = 80 + 224 + 288 + 64
+    const fixedVertical = 60 + 80 + 64 // header + toolbar + padding
+
+    const availableWidth = Math.max(300, viewportWidth - fixedHorizontal)
+    const availableHeight = Math.max(200, viewportHeight - fixedVertical)
+
+    // Get canvas dimensions (original, at 100% zoom)
+    const canvasWidth = this.canvas.width
+    const canvasHeight = this.canvas.height
+
+    // Calculate the zoom level needed to fit
+    const scaleX = availableWidth / canvasWidth
+    const scaleY = availableHeight / canvasHeight
+    const fitZoom = Math.min(scaleX, scaleY, 1) // Don't zoom in beyond 100%
+
+    // Apply minimum zoom of 25% and maximum of 100%
+    const finalZoom = Math.max(0.25, Math.min(1, fitZoom))
+
+    console.log('CanvasDesigner: fitToContainer', {
+      viewport: { width: viewportWidth, height: viewportHeight },
+      available: { width: availableWidth, height: availableHeight },
+      canvas: { width: canvasWidth, height: canvasHeight },
+      scales: { x: scaleX, y: scaleY },
+      finalZoom
+    })
+
+    this._currentZoom = finalZoom
+    this.applyZoom(finalZoom)
+
+    // Notify LiveView of the new zoom level
+    this.pushEvent("zoom_changed", { zoom: Math.round(finalZoom * 100) })
+  },
+
+  /**
+   * Apply zoom using CSS transform on the Fabric wrapper
+   * Fabric.js automatically adjusts mouse coordinates for CSS transforms
+   * by comparing canvas.width to getBoundingClientRect().width
+   */
+  applyZoom(zoomLevel) {
+    if (!this.canvas) return
+
+    const canvasWidth = this.canvas.width
+    const canvasHeight = this.canvas.height
+
+    // Apply CSS transform on the Fabric wrapper for visual scaling
+    const fabricWrapper = this.canvas.wrapperEl
+    if (fabricWrapper) {
+      fabricWrapper.style.transform = `scale(${zoomLevel})`
+      fabricWrapper.style.transformOrigin = 'top left'
+    }
+
+    // Set our container (hook element) dimensions so parent flexbox layouts correctly
+    this.el.style.width = `${canvasWidth * zoomLevel}px`
+    this.el.style.height = `${canvasHeight * zoomLevel}px`
+    // Don't set overflow:hidden - let parent handle scrolling for zoom > 100%
+
+    // Keep Fabric zoom at 1 - we use CSS transform for visual scaling
+    // Fabric automatically handles coordinate conversion via cssScale in getPointer()
+    this.canvas.setZoom(1)
+    this.canvas.requestRenderAll()
   },
 
   /**
@@ -660,30 +750,41 @@ const CanvasDesigner = {
           e.preventDefault()
           const delta = e.deltaY > 0 ? -10 : 10
           const currentZoom = this._currentZoom * 100
-          const newZoom = Math.max(50, Math.min(200, currentZoom + delta))
+          const newZoom = Math.max(25, Math.min(200, currentZoom + delta))
           this.pushEvent("update_zoom_from_wheel", { zoom: newZoom })
         }
       }, { passive: false })
     }
 
-    // Zoom handling - use Fabric.js native zoom
-    // Note: For now, we keep zoom simple at 1:1 to ensure interaction works
+    // Zoom handling - use CSS transform for visual scaling
     this.handleEvent("update_zoom", ({ zoom }) => {
       if (!this._isDestroyed && this.canvas) {
-        // Simple zoom - just scale the canvas
         const zoomLevel = zoom / 100
         this._currentZoom = zoomLevel
-        this.canvas.setZoom(zoomLevel)
-
-        // Resize the canvas wrapper to match
-        const wrapper = this.canvas.wrapperEl
-        if (wrapper) {
-          wrapper.style.transform = 'none'
-        }
-
-        this.canvas.requestRenderAll()
+        this.applyZoom(zoomLevel)
       }
     })
+
+    // Fit to view event
+    this.handleEvent("fit_to_view", () => {
+      if (!this._isDestroyed) {
+        this.fitToContainer()
+      }
+    })
+
+    // Handle window resize - re-fit canvas
+    this._resizeHandler = () => {
+      if (!this._isDestroyed && this.canvas) {
+        // Debounce resize
+        if (this._resizeTimeout) {
+          clearTimeout(this._resizeTimeout)
+        }
+        this._resizeTimeout = setTimeout(() => {
+          this.fitToContainer()
+        }, 200)
+      }
+    }
+    window.addEventListener('resize', this._resizeHandler)
   },
 
   loadDesign(design) {
@@ -1094,38 +1195,28 @@ const CanvasDesigner = {
         if (obj.type === 'textbox') {
           obj.set('width', value * PX_PER_MM)
         } else if (obj.type === 'group') {
-          // Scale group (QR/barcode) to new width
-          const currentWidth = obj.getScaledWidth()
-          const newWidth = value * PX_PER_MM
-          const scaleW = newWidth / currentWidth
-          obj.set('scaleX', obj.scaleX * scaleW)
-        } else if (obj.type === 'rect' || obj.type === 'image') {
-          // For rectangles and images, set width directly or scale
-          if (obj.type === 'image') {
-            const currentW = obj.getScaledWidth()
-            const newW = value * PX_PER_MM
-            obj.set('scaleX', (newW / obj.width))
-          } else {
-            obj.set('width', value * PX_PER_MM)
-          }
+          // For groups (QR/barcode): recreate at new size to avoid scale issues
+          this.recreateGroupAtSize(obj, value, data.height)
+          return // recreateGroupAtSize handles save
+        } else if (obj.type === 'rect') {
+          obj.set('width', value * PX_PER_MM)
+        } else if (obj.type === 'image') {
+          const newW = value * PX_PER_MM
+          obj.set('scaleX', newW / obj.width)
+          obj._explicitSizeUpdate = true
         }
         break
       case 'height':
         if (obj.type === 'group') {
-          // Scale group (QR/barcode) to new height
-          const currentHeight = obj.getScaledHeight()
-          const newHeight = value * PX_PER_MM
-          const scaleH = newHeight / currentHeight
-          obj.set('scaleY', obj.scaleY * scaleH)
-        } else if (obj.type === 'rect' || obj.type === 'image') {
-          // For rectangles and images
-          if (obj.type === 'image') {
-            const currentH = obj.getScaledHeight()
-            const newH = value * PX_PER_MM
-            obj.set('scaleY', (newH / obj.height))
-          } else {
-            obj.set('height', value * PX_PER_MM)
-          }
+          // For groups (QR/barcode): recreate at new size
+          this.recreateGroupAtSize(obj, data.width, value)
+          return // recreateGroupAtSize handles save
+        } else if (obj.type === 'rect') {
+          obj.set('height', value * PX_PER_MM)
+        } else if (obj.type === 'image') {
+          const newH = value * PX_PER_MM
+          obj.set('scaleY', newH / obj.height)
+          obj._explicitSizeUpdate = true
         }
         // Height is auto-calculated for textbox
         break
@@ -1201,6 +1292,78 @@ const CanvasDesigner = {
     // Update elementData
     if (textObj.elementData) {
       textObj.elementData.width = newWidth / PX_PER_MM
+    }
+  },
+
+  /**
+   * Recreate a group (QR/barcode) at a new size
+   * This is needed because scaling groups doesn't persist well
+   */
+  recreateGroupAtSize(obj, newWidthMM, newHeightMM) {
+    if (!obj || !obj.elementId) return
+
+    console.log('CanvasDesigner: RECREATE_GROUP_AT_SIZE', {
+      elementId: obj.elementId,
+      oldWidth: obj.elementData?.width,
+      oldHeight: obj.elementData?.height,
+      newWidthMM,
+      newHeightMM
+    })
+
+    const elementId = obj.elementId
+    const elementType = obj.elementType
+    const data = { ...obj.elementData }
+
+    // Update dimensions
+    data.width = newWidthMM
+    data.height = newHeightMM
+
+    // Get current position (convert from canvas coords to mm)
+    const x = (obj.left - this.labelBounds.left) / PX_PER_MM
+    const y = (obj.top - this.labelBounds.top) / PX_PER_MM
+    data.x = x
+    data.y = y
+
+    // Remove old object
+    this.canvas.remove(obj)
+    this.elements.delete(elementId)
+
+    // Create new object at new size
+    const newX = this.labelBounds.left + x * PX_PER_MM
+    const newY = this.labelBounds.top + y * PX_PER_MM
+
+    let newObj
+    if (elementType === 'qr') {
+      newObj = this.createQR(data, newX, newY)
+    } else if (elementType === 'barcode') {
+      newObj = this.createBarcode(data, newX, newY)
+    }
+
+    if (newObj) {
+      newObj.elementId = elementId
+      newObj.elementType = elementType
+      newObj.elementData = data
+
+      // Copy over visibility/lock state
+      newObj.set({
+        visible: obj.visible,
+        selectable: obj.selectable,
+        evented: obj.evented,
+        lockMovementX: obj.lockMovementX,
+        lockMovementY: obj.lockMovementY,
+        cornerColor: '#3b82f6',
+        cornerStyle: 'circle',
+        cornerSize: 8,
+        transparentCorners: false,
+        borderColor: obj.lockMovementX ? '#f59e0b' : '#3b82f6',
+        borderScaleFactor: 2
+      })
+
+      this.elements.set(elementId, newObj)
+      this.canvas.add(newObj)
+      this.canvas.setActiveObject(newObj)
+      this.canvas.renderAll()
+      this.saveElements()
     }
   },
 
@@ -1290,6 +1453,11 @@ const CanvasDesigner = {
     savedElements.forEach(el => this.addElement(el, false))
 
     this.canvas.renderAll()
+
+    // Re-fit to container after resize
+    setTimeout(() => {
+      this.fitToContainer()
+    }, 100)
   },
 
   /**
@@ -1333,11 +1501,55 @@ const CanvasDesigner = {
       let width = data.width
       let height = data.height
 
-      // If element was scaled by user, recalculate dimensions
+      // Handle size calculations based on object type
       const scaleX = obj.scaleX || 1
       const scaleY = obj.scaleY || 1
-      if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
-        // Element was resized - calculate new dimensions
+
+      if (obj.type === 'group') {
+        // For groups (QR/barcode): Get actual visual dimensions
+        const visualWidthMM = Math.round((obj.getScaledWidth() / PX_PER_MM) * 100) / 100
+        const visualHeightMM = Math.round((obj.getScaledHeight() / PX_PER_MM) * 100) / 100
+
+        console.log('CanvasDesigner: SAVE GROUP DEBUG', {
+          id,
+          scaleX,
+          scaleY,
+          dataWidth: data.width,
+          dataHeight: data.height,
+          visualWidthMM,
+          visualHeightMM
+        })
+
+        // Always use the visual dimensions as the source of truth
+        width = visualWidthMM
+        height = visualHeightMM
+
+        // Update elementData to match visual (keep in sync)
+        if (data.width !== width || data.height !== height) {
+          data.width = width
+          data.height = height
+          obj.elementData = data
+          console.log('CanvasDesigner: Updated elementData to match visual')
+        }
+
+        // If scale != 1, we need to recreate the group to normalize
+        if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+          if (!obj._pendingRecreate) {
+            obj._pendingRecreate = { width, height }
+          }
+        }
+
+        console.log('CanvasDesigner: SAVE GROUP RESULT', { id, width, height })
+      } else if (obj._explicitSizeUpdate) {
+        // Size was set explicitly from properties panel
+        delete obj._explicitSizeUpdate
+        // Use data values directly, reset scale for images
+        if (obj.type === 'image') {
+          obj.set({ scaleX: 1, scaleY: 1 })
+          obj.setCoords()
+        }
+      } else if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+        // Element was resized by dragging handles - recalculate dimensions from scale
         width = Math.round((data.width * scaleX) * 100) / 100
         height = Math.round((data.height * scaleY) * 100) / 100
         // Reset scale and update data
@@ -1368,6 +1580,84 @@ const CanvasDesigner = {
     console.log('CanvasDesigner: Elements data:', JSON.stringify(elements, null, 2))
 
     this.pushEvent("element_modified", { elements })
+
+    // After saving, recreate any groups marked for recreation (to normalize scale)
+    this.elements.forEach((obj, id) => {
+      if (obj._pendingRecreate && obj.type === 'group') {
+        const { width, height } = obj._pendingRecreate
+        delete obj._pendingRecreate
+        console.log('CanvasDesigner: Recreating group to normalize scale', { id, width, height })
+        this.recreateGroupWithoutSave(obj, width, height)
+      }
+    })
+  },
+
+  /**
+   * Recreate a group at new dimensions without triggering a save
+   * Used to normalize scale after drag-resize
+   */
+  recreateGroupWithoutSave(obj, newWidthMM, newHeightMM) {
+    if (!obj || !obj.elementId) return
+
+    const elementId = obj.elementId
+    const elementType = obj.elementType
+    const data = { ...obj.elementData }
+
+    // Update dimensions
+    data.width = newWidthMM
+    data.height = newHeightMM
+
+    // Get current position
+    const x = (obj.left - this.labelBounds.left) / PX_PER_MM
+    const y = (obj.top - this.labelBounds.top) / PX_PER_MM
+    data.x = x
+    data.y = y
+
+    // Remove old object
+    this.canvas.remove(obj)
+    this.elements.delete(elementId)
+
+    // Create new object at new size
+    const newX = this.labelBounds.left + x * PX_PER_MM
+    const newY = this.labelBounds.top + y * PX_PER_MM
+
+    let newObj
+    if (elementType === 'qr') {
+      newObj = this.createQR(data, newX, newY)
+    } else if (elementType === 'barcode') {
+      newObj = this.createBarcode(data, newX, newY)
+    }
+
+    if (newObj) {
+      newObj.elementId = elementId
+      newObj.elementType = elementType
+      newObj.elementData = data
+
+      // Copy over visibility/lock state
+      newObj.set({
+        visible: obj.visible,
+        selectable: obj.selectable,
+        evented: obj.evented,
+        lockMovementX: obj.lockMovementX,
+        lockMovementY: obj.lockMovementY,
+        cornerColor: '#3b82f6',
+        cornerStyle: 'circle',
+        cornerSize: 8,
+        transparentCorners: false,
+        borderColor: obj.lockMovementX ? '#f59e0b' : '#3b82f6',
+        borderScaleFactor: 2
+      })
+
+      this.elements.set(elementId, newObj)
+      this.canvas.add(newObj)
+
+      // Restore selection if this was the active object
+      if (this.canvas.getActiveObject() === obj) {
+        this.canvas.setActiveObject(newObj)
+      }
+
+      this.canvas.renderAll()
+    }
   },
 
   // ============================================================================

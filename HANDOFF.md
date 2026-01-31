@@ -15,7 +15,7 @@ Sistema web **production-ready** para generar etiquetas con códigos QR y de bar
 
 ## Estado Actual del Proyecto
 
-**Fecha de última actualización:** 2025-01-29
+**Fecha de última actualización:** 2026-01-31
 
 ### Progreso de Fases
 
@@ -572,27 +572,68 @@ Se implementaron 5 correcciones importantes en el editor de etiquetas:
 
 ### 1. ✅ QR/Barcode: Tamaño ahora se guarda correctamente
 
-**Archivo:** `assets/js/hooks/canvas_designer.js`
+**Archivos:**
+- `assets/js/hooks/canvas_designer.js`
+- `lib/qr_label_system_web/live/design_live/editor.ex`
 
-**Problema:** En `updateSelectedElement()`, los cambios de width/height solo funcionaban para textbox. QR y Barcode (que son `fabric.Group`) no se actualizaban.
+**Problema:** El tamaño del QR/Barcode cambiaba visualmente pero revertía al mover el elemento. Esto era causado por dos problemas:
+1. `elementData` se desincronizaba con el tamaño visual
+2. `@selected_element` en el servidor quedaba desactualizado después de guardar
 
-**Solución:** Se modificó el switch case para manejar grupos escalando proporcionalmente:
+**Solución (Multi-parte):**
+
+**A. Usar el tamaño visual como fuente de verdad** (canvas_designer.js - `saveElementsImmediate`):
+```javascript
+if (obj.type === 'group') {
+  // Siempre usar las dimensiones visuales reales
+  const visualWidthMM = obj.getScaledWidth() / PX_PER_MM
+  const visualHeightMM = obj.getScaledHeight() / PX_PER_MM
+  width = visualWidthMM
+  height = visualHeightMM
+  // Sincronizar elementData con visual
+  if (data.width !== width || data.height !== height) {
+    data.width = width
+    data.height = height
+    obj.elementData = data
+  }
+}
+```
+
+**B. Recrear grupos desde propiedades panel** (canvas_designer.js - `updateSelectedElement`):
 ```javascript
 case 'width':
   if (obj.type === 'group') {
-    const currentWidth = obj.getScaledWidth()
-    const newWidth = value * PX_PER_MM
-    const scaleW = newWidth / currentWidth
-    obj.set('scaleX', obj.scaleX * scaleW)
+    this.recreateGroupAtSize(obj, value, data.height)
+    return // recreateGroupAtSize handles save
   }
-  // ...
-case 'height':
-  if (obj.type === 'group') {
-    const currentHeight = obj.getScaledHeight()
-    const newHeight = value * PX_PER_MM
-    const scaleH = newHeight / currentHeight
-    obj.set('scaleY', obj.scaleY * scaleH)
+```
+
+**C. Sincronizar selected_element con design** (editor.ex - `element_modified` handler):
+```elixir
+# Después de actualizar design, sincronizar selected_element
+updated_selected =
+  if socket.assigns.selected_element do
+    selected_id = Map.get(socket.assigns.selected_element, :id) ||
+                  Map.get(socket.assigns.selected_element, "id")
+    Enum.find(updated_design.elements || [], fn el ->
+      (Map.get(el, :id) || Map.get(el, "id")) == selected_id
+    end)
+  end
+socket
+|> assign(:design, updated_design)
+|> assign(:selected_element, updated_selected)
+```
+
+**D. Normalizar escala después de drag-resize** (canvas_designer.js):
+```javascript
+// Después de guardar, recrear grupos con escala != 1
+this.elements.forEach((obj, id) => {
+  if (obj._pendingRecreate && obj.type === 'group') {
+    const { width, height } = obj._pendingRecreate
+    delete obj._pendingRecreate
+    this.recreateGroupWithoutSave(obj, width, height)
   }
+})
 ```
 
 ### 2. ✅ Layout: Paneles ya no desaparecen
@@ -675,15 +716,20 @@ end
 
 ## Tests Pendientes (Próxima Sesión)
 
-### Test 1: QR/Barcode size
+### Test 1: QR/Barcode size (CRÍTICO)
 ```
 1. Crear diseño nuevo
-2. Añadir elemento QR
+2. Añadir elemento QR (tamaño default 20mm)
 3. En panel de propiedades, cambiar Ancho a 30mm
-4. Guardar diseño
-5. Recargar página
-6. Verificar que QR mantiene tamaño 30mm
+4. Verificar que el QR cambia visualmente de tamaño
+5. Hacer clic en otra parte del canvas (fuera del QR)
+6. Verificar que el QR mantiene el tamaño 30mm
+7. Seleccionar el QR de nuevo y MOVERLO arrastrando
+8. Verificar que el QR SIGUE siendo 30mm después de mover
+9. Guardar diseño y recargar página
+10. Verificar que QR mantiene tamaño 30mm
 ```
+**Nota:** El paso 7-8 es crítico - anteriormente el tamaño revertía al mover.
 
 ### Test 2: Layout
 ```
@@ -739,3 +785,205 @@ end
 | 2025-01-29 | Actualización de HANDOFF con próximos pasos |
 | 2025-01-29 | **IMPLEMENTACIÓN DE FIXES DE SEGURIDAD Y CALIDAD** |
 | 2025-01-31 | **CORRECCIONES DEL EDITOR DE ETIQUETAS** (5 fixes) |
+| 2026-01-31 | **MEJORAS EN FLUJO DE GENERACIÓN Y EDITOR** |
+
+---
+
+## Cambios Implementados (2026-01-31) - Mejoras Completas
+
+### Resumen
+Se implementaron mejoras significativas en el flujo de generación de etiquetas y el editor visual.
+
+### 1. ✅ UploadDataStore - Almacenamiento temporal robusto
+
+**Archivo nuevo:** `lib/qr_label_system/upload_data_store.ex`
+
+**Problema:** Los datos del Excel se perdían al navegar entre páginas porque el flash de Phoenix expira después de una lectura.
+
+**Solución:** GenServer con ETS para almacenamiento temporal en memoria:
+- Datos almacenados por user_id
+- Expiración automática después de 30 minutos
+- Limpieza periódica cada 5 minutos
+- Integrado en Application supervision tree
+
+**Uso:**
+```elixir
+# Guardar datos del upload
+UploadDataStore.put(user_id, data, columns)
+
+# Recuperar datos
+{data, columns} = UploadDataStore.get(user_id)
+
+# Limpiar datos
+UploadDataStore.clear(user_id)
+```
+
+### 2. ✅ Campo label_type en diseños
+
+**Archivo nuevo:** `priv/repo/migrations/20260131174618_add_label_type_to_designs.exs`
+
+**Cambio:** Se agregó campo `label_type` a la tabla `label_designs`:
+- Valores: `"single"` o `"multiple"`
+- Default: `"single"`
+- Índice compuesto con `user_id`
+
+**Propósito:** Distinguir entre diseños para etiqueta única vs diseños para múltiples etiquetas (con columnas vinculadas).
+
+### 3. ✅ Mejoras en el Editor Canvas
+
+**Archivo:** `assets/js/hooks/canvas_designer.js`
+
+**Cambios principales (+362 líneas):**
+
+1. **QR/Barcode mantienen tamaño al mover:**
+   - El tamaño visual es la fuente de verdad
+   - `elementData` se sincroniza automáticamente
+   - Grupos se recrean con escala normalizada
+
+2. **Zoom con rueda del mouse:**
+   - Ctrl/Cmd + scroll sobre el canvas
+   - Rango: 50% - 200%
+   - Actualización en tiempo real del slider
+
+3. **Mejor manejo de grupos:**
+   - `recreateGroupAtSize()` para cambios desde panel de propiedades
+   - `recreateGroupWithoutSave()` para normalización post-drag
+   - Preservación de elementData en todas las operaciones
+
+### 4. ✅ Preview de etiquetas mejorado
+
+**Archivo:** `assets/js/hooks/label_preview.js`
+
+**Cambios:** Mejor renderizado de la previsualización de etiquetas con datos reales.
+
+### 5. ✅ Flujo de generación simplificado
+
+**Archivos modificados:**
+- `lib/qr_label_system_web/live/generate_live/index.ex`
+- `lib/qr_label_system_web/live/generate_live/data_first.ex`
+- `lib/qr_label_system_web/live/generate_live/design_select.ex`
+- `lib/qr_label_system_web/live/generate_live/single_select.ex`
+- `lib/qr_label_system_web/live/design_live/new.ex`
+
+**Mejoras:**
+- UI más limpia y centrada
+- Uso de UploadDataStore para persistir datos entre navegaciones
+- Mejor integración entre flujo data-first y creación de diseños
+- Columnas del Excel ahora disponibles correctamente en el editor
+
+### 6. ✅ Contexto Designs actualizado
+
+**Archivo:** `lib/qr_label_system/designs.ex`
+
+**Nuevo:** Función `list_user_designs_by_type/2` para filtrar diseños por tipo.
+
+---
+
+## Archivos Nuevos Creados (2026-01-31)
+
+```
+lib/qr_label_system/
+└── upload_data_store.ex     # GenServer para datos temporales
+
+priv/repo/migrations/
+└── 20260131174618_add_label_type_to_designs.exs  # Migración label_type
+```
+
+---
+
+## Archivos Modificados (2026-01-31)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system/application.ex` | Agregado UploadDataStore al supervision tree |
+| `lib/qr_label_system/designs.ex` | +12 líneas: list_user_designs_by_type/2 |
+| `assets/js/hooks/canvas_designer.js` | +362 líneas: mejoras en grupos y zoom |
+| `assets/js/hooks/label_preview.js` | +39 líneas: mejor renderizado |
+| `lib/qr_label_system_web/live/design_live/new.ex` | +61 líneas: integración con UploadDataStore |
+| `lib/qr_label_system_web/live/generate_live/data_first.ex` | +17 líneas: uso de UploadDataStore |
+| `lib/qr_label_system_web/live/generate_live/design_select.ex` | Refactorización para UploadDataStore |
+| `lib/qr_label_system_web/live/generate_live/index.ex` | UI mejorada |
+| `lib/qr_label_system_web/live/generate_live/single_select.ex` | Ajustes menores |
+
+---
+
+## Próximos Pasos (Plan de Continuación)
+
+### 🔴 Alta Prioridad
+
+1. **Ejecutar migración pendiente**
+   ```bash
+   cd qr_label_system && mix ecto.migrate
+   ```
+
+2. **Probar flujo completo data-first:**
+   - Subir Excel → Crear diseño → Vincular columnas → Generar etiquetas
+   - Verificar que las columnas persisten a través de todas las navegaciones
+
+3. **Probar tamaño de QR/Barcode:**
+   - Cambiar tamaño desde panel de propiedades
+   - Mover el elemento y verificar que mantiene el tamaño
+   - Guardar y recargar para verificar persistencia
+
+### 🟠 Media Prioridad
+
+4. **Completar flujo de impresión:**
+   - Verificar preview con datos reales
+   - Probar exportación a PDF
+   - Probar impresión directa
+
+5. **Tests automatizados:**
+   - Agregar tests para UploadDataStore
+   - Tests de integración para flujo data-first
+   - Tests para canvas_designer.js (Jest)
+
+### 🟡 Baja Prioridad
+
+6. **Optimizaciones:**
+   - Cache de diseños frecuentes
+   - Lazy loading de datos grandes
+   - Compresión de imágenes en etiquetas
+
+7. **UX:**
+   - Indicadores de progreso más claros
+   - Mensajes de error más descriptivos
+   - Atajos de teclado en el editor
+
+---
+
+## Comandos para Continuar
+
+```bash
+# Ir al directorio del proyecto
+cd /Users/coroso/ia/qr/qr_label_system
+
+# Instalar dependencias si es necesario
+mix deps.get
+
+# Ejecutar migraciones pendientes
+mix ecto.migrate
+
+# Iniciar servidor
+mix phx.server
+
+# Acceder en http://localhost:4000
+```
+
+---
+
+## Notas Técnicas Importantes
+
+### UploadDataStore
+- **Ubicación:** Memoria (ETS)
+- **Expiración:** 30 minutos
+- **Limpieza:** Cada 5 minutos
+- **Identificador:** user_id (entero)
+
+### label_type
+- `"single"`: Diseños para etiqueta única (sin columnas vinculadas)
+- `"multiple"`: Diseños para múltiples etiquetas (con columnas del Excel)
+
+### Grupos en Fabric.js
+- QR y Barcode son grupos (imagen + texto opcional)
+- Al redimensionar, usar `recreateGroupAtSize()` para mantener proporciones
+- El `elementData` debe sincronizarse con el tamaño visual

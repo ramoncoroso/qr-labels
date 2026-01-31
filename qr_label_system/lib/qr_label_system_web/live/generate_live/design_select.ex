@@ -2,18 +2,12 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Designs
-  alias QrLabelSystem.Batches
 
   @impl true
-  def mount(_params, session, socket) do
-    # Get data from flash first, then fallback to session
-    upload_data =
-      Phoenix.Flash.get(socket.assigns.flash, :upload_data) ||
-      Map.get(session, "upload_data")
-
-    upload_columns =
-      Phoenix.Flash.get(socket.assigns.flash, :upload_columns) ||
-      Map.get(session, "upload_columns")
+  def mount(_params, _session, socket) do
+    # Get data from persistent store
+    user_id = socket.assigns.current_user.id
+    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id)
 
     if is_nil(upload_data) or length(upload_data) == 0 do
       {:ok,
@@ -21,7 +15,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
        |> put_flash(:error, "No hay datos cargados. Por favor, carga los datos primero.")
        |> push_navigate(to: ~p"/generate/data")}
     else
-      designs = Designs.list_user_designs(socket.assigns.current_user.id)
+      designs = Designs.list_user_designs_by_type(socket.assigns.current_user.id, "multiple")
 
       {:ok,
        socket
@@ -29,8 +23,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
        |> assign(:designs, designs)
        |> assign(:upload_data, upload_data)
        |> assign(:upload_columns, upload_columns)
-       |> assign(:selected_design_id, nil)
-       |> assign(:creating_batch, false)}
+       |> assign(:selected_design_id, nil)}
     end
   end
 
@@ -50,11 +43,12 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
       if design.user_id != socket.assigns.current_user.id do
         {:noreply, put_flash(socket, :error, "No tienes permiso para usar este diseño")}
       else
-        # Create a batch with the uploaded data
+        # Navigate to editor - data is already in UploadDataStore
+        # User can assign columns and preview labels before generating
         {:noreply,
          socket
-         |> assign(:creating_batch, true)
-         |> create_batch_and_redirect(design)}
+         |> put_flash(:info, "Asigna las columnas a los elementos y previsualiza el resultado")
+         |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
       end
     else
       {:noreply, put_flash(socket, :error, "Selecciona un diseño primero")}
@@ -63,68 +57,16 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
   @impl true
   def handle_event("create_new", _params, socket) do
-    # Store data in session/flash and redirect to design creation
+    # Data is already in the persistent store, just navigate
     {:noreply,
      socket
-     |> put_flash(:upload_data, socket.assigns.upload_data)
-     |> put_flash(:upload_columns, socket.assigns.upload_columns)
      |> put_flash(:return_to, "design_select")
-     |> push_navigate(to: ~p"/designs/new")}
+     |> push_navigate(to: ~p"/designs/new?type=multiple")}
   end
 
   @impl true
   def handle_event("back", _params, socket) do
     {:noreply, push_navigate(socket, to: ~p"/generate/data")}
-  end
-
-  defp create_batch_and_redirect(socket, design) do
-    # Build auto-mapping based on column names matching element bindings
-    column_mapping = build_auto_mapping(design.elements || [], socket.assigns.upload_columns)
-
-    batch_attrs = %{
-      name: "Lote - #{design.name} - #{DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d %H:%M")}",
-      design_id: design.id,
-      user_id: socket.assigns.current_user.id,
-      column_mapping: column_mapping,
-      data_snapshot: socket.assigns.upload_data,
-      total_labels: length(socket.assigns.upload_data),
-      status: "ready"
-    }
-
-    case Batches.create_batch(batch_attrs) do
-      {:ok, batch} ->
-        socket
-        |> put_flash(:info, "Lote creado correctamente")
-        |> push_navigate(to: ~p"/generate/preview/#{batch.id}")
-
-      {:error, _changeset} ->
-        socket
-        |> assign(:creating_batch, false)
-        |> put_flash(:error, "Error al crear el lote de etiquetas")
-    end
-  end
-
-  defp build_auto_mapping(elements, columns) do
-    elements
-    |> Enum.filter(fn el ->
-      binding = Map.get(el, :binding) || Map.get(el, "binding")
-      binding && binding != ""
-    end)
-    |> Enum.reduce(%{}, fn element, acc ->
-      binding = Map.get(element, :binding) || Map.get(element, "binding")
-      element_id = Map.get(element, :id) || Map.get(element, "id")
-
-      # Find matching column (case-insensitive)
-      matching_column = Enum.find(columns, fn col ->
-        String.downcase(col) == String.downcase(binding)
-      end)
-
-      if matching_column do
-        Map.put(acc, element_id, matching_column)
-      else
-        acc
-      end
-    end)
   end
 
   @impl true
@@ -276,21 +218,12 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
           <button
             :if={@selected_design_id}
             phx-click="use_design"
-            disabled={@creating_batch}
-            class={"px-8 py-3 rounded-xl font-medium transition flex items-center space-x-2 #{if @creating_batch, do: "bg-gray-400 cursor-not-allowed", else: "bg-indigo-600 hover:bg-indigo-700"} text-white"}
+            class="px-8 py-3 rounded-xl font-medium transition flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white"
           >
-            <%= if @creating_batch do %>
-              <svg class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <span>Procesando...</span>
-            <% else %>
-              <span>Usar este diseño</span>
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            <% end %>
+            <span>Usar este diseño</span>
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
           </button>
         </div>
       </div>

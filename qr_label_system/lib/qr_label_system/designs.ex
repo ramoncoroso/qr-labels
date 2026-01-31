@@ -32,6 +32,18 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Returns the list of designs for a specific user filtered by label type.
+  Label type can be "single" or "multiple".
+  """
+  def list_user_designs_by_type(user_id, label_type) when label_type in ["single", "multiple"] do
+    Repo.all(
+      from d in Design,
+        where: d.user_id == ^user_id and d.label_type == ^label_type,
+        order_by: [desc: d.updated_at]
+    )
+  end
+
+  @doc """
   Returns the list of template designs (available to all users).
   """
   def list_templates do

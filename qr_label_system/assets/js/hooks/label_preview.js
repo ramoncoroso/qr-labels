@@ -30,17 +30,28 @@ const LabelPreview = {
       return
     }
 
+    // Calculate scale to fit in preview panel (max width ~340px to leave padding)
+    const maxWidth = 340
+    const maxHeight = 400
+    const labelWidthPx = design.width_mm * MM_TO_PX
+    const labelHeightPx = design.height_mm * MM_TO_PX
+
+    // Calculate scale to fit within bounds
+    const scaleX = maxWidth / labelWidthPx
+    const scaleY = maxHeight / labelHeightPx
+    const scale = Math.min(scaleX, scaleY, 2) // Cap at 2x for small labels
+
     // Generate codes for this row
-    const codes = await this.generateCodes(design.elements || [], row, mapping)
+    const codes = await this.generateCodes(design.elements || [], row, mapping, scale)
 
     // Create label element
     const labelDiv = document.createElement('div')
     labelDiv.className = 'relative shadow-lg'
-    labelDiv.style.width = `${design.width_mm * MM_TO_PX * 2}px`
-    labelDiv.style.height = `${design.height_mm * MM_TO_PX * 2}px`
+    labelDiv.style.width = `${design.width_mm * MM_TO_PX * scale}px`
+    labelDiv.style.height = `${design.height_mm * MM_TO_PX * scale}px`
     labelDiv.style.backgroundColor = design.background_color || '#FFFFFF'
-    labelDiv.style.border = `${(design.border_width || 0) * 2}px solid ${design.border_color || '#000000'}`
-    labelDiv.style.borderRadius = `${(design.border_radius || 0) * MM_TO_PX * 2}px`
+    labelDiv.style.border = `${Math.max((design.border_width || 0) * scale, 1)}px solid ${design.border_color || '#000000'}`
+    labelDiv.style.borderRadius = `${(design.border_radius || 0) * MM_TO_PX * scale}px`
     labelDiv.style.overflow = 'hidden'
 
     // Render elements (sorted by z_index, skip invisible)
@@ -49,7 +60,7 @@ const LabelPreview = {
       // Skip invisible elements
       if (element.visible === false) continue
 
-      const elementDiv = this.renderElement(element, row, mapping, codes, 2)
+      const elementDiv = this.renderElement(element, row, mapping, codes, scale)
       if (elementDiv) {
         labelDiv.appendChild(elementDiv)
       }
@@ -58,7 +69,7 @@ const LabelPreview = {
     this.el.appendChild(labelDiv)
   },
 
-  async generateCodes(elements, row, mapping) {
+  async generateCodes(elements, row, mapping, scale) {
     const codes = {}
 
     for (const element of elements) {
@@ -70,19 +81,19 @@ const LabelPreview = {
       if (!value) continue
 
       if (element.type === 'qr') {
-        codes[element.id] = await this.generateQR(String(value), element)
+        codes[element.id] = await this.generateQR(String(value), element, scale)
       } else if (element.type === 'barcode') {
-        codes[element.id] = this.generateBarcode(String(value), element)
+        codes[element.id] = this.generateBarcode(String(value), element, scale)
       }
     }
 
     return codes
   },
 
-  async generateQR(content, config) {
+  async generateQR(content, config, scale) {
     try {
       return await QRCode.toDataURL(content, {
-        width: Math.round((config.width || 20) * MM_TO_PX * 2),
+        width: Math.round((config.width || 20) * MM_TO_PX * scale),
         margin: 0,
         errorCorrectionLevel: config.qr_error_level || 'M'
       })
@@ -92,13 +103,13 @@ const LabelPreview = {
     }
   },
 
-  generateBarcode(content, config) {
+  generateBarcode(content, config, scale) {
     try {
       const canvas = document.createElement('canvas')
       JsBarcode(canvas, content, {
         format: config.barcode_format || 'CODE128',
-        width: 2,
-        height: Math.round((config.height || 15) * MM_TO_PX * 2),
+        width: Math.max(1, Math.round(scale)),
+        height: Math.round((config.height || 15) * MM_TO_PX * scale),
         displayValue: config.barcode_show_text !== false,
         margin: 0
       })

@@ -12,6 +12,7 @@ defmodule QrLabelSystem.Application do
       {Phoenix.PubSub, name: QrLabelSystem.PubSub},
       {Finch, name: QrLabelSystem.Finch},
       QrLabelSystem.Cache,
+      QrLabelSystem.UploadDataStore,
       {Oban, Application.fetch_env!(:qr_label_system, Oban)},
       QrLabelSystemWeb.Endpoint
     ]

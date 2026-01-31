@@ -111,11 +111,18 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   @impl true
   def handle_event("continue", _params, socket) do
     if socket.assigns.upload_data && length(socket.assigns.upload_data) > 0 do
-      {:noreply,
-       socket
-       |> put_flash(:upload_data, socket.assigns.upload_data)
-       |> put_flash(:upload_columns, socket.assigns.upload_columns)
-       |> push_navigate(to: ~p"/generate/design")}
+      # Store data in persistent store for the workflow
+      user_id = socket.assigns.current_user.id
+      IO.inspect({user_id, length(socket.assigns.upload_data), socket.assigns.upload_columns},
+        label: "DataFirst: Storing data for user")
+
+      QrLabelSystem.UploadDataStore.put(
+        user_id,
+        socket.assigns.upload_data,
+        socket.assigns.upload_columns
+      )
+
+      {:noreply, push_navigate(socket, to: ~p"/generate/design")}
     else
       {:noreply, put_flash(socket, :error, "No hay datos cargados")}
     end

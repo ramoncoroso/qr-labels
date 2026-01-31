@@ -5,7 +5,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
 
   @impl true
   def mount(_params, _session, socket) do
-    designs = Designs.list_user_designs(socket.assigns.current_user.id)
+    designs = Designs.list_user_designs_by_type(socket.assigns.current_user.id, "single")
 
     {:ok,
      socket
@@ -23,7 +23,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
     {:noreply,
      socket
      |> put_flash(:return_to, "single_select")
-     |> push_navigate(to: ~p"/designs/new")}
+     |> push_navigate(to: ~p"/designs/new?type=single")}
   end
 
   @impl true

@@ -121,9 +121,8 @@ defmodule QrLabelSystemWeb.GenerateLive.Index do
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <!-- Single flow -->
-            <div>
-              <h4 class="font-medium text-blue-600 mb-4 flex items-center">
-                <span class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold mr-2">1</span>
+            <div class="flex flex-col items-center">
+              <h4 class="font-medium text-blue-600 mb-4">
                 Etiqueta Única
               </h4>
               <ol class="space-y-3 text-sm text-gray-600">
@@ -143,9 +142,8 @@ defmodule QrLabelSystemWeb.GenerateLive.Index do
             </div>
 
             <!-- Multiple flow -->
-            <div>
-              <h4 class="font-medium text-purple-600 mb-4 flex items-center">
-                <span class="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-xs font-bold mr-2">2</span>
+            <div class="flex flex-col items-center">
+              <h4 class="font-medium text-purple-600 mb-4">
                 Múltiples Etiquetas
               </h4>
               <ol class="space-y-3 text-sm text-gray-600">
