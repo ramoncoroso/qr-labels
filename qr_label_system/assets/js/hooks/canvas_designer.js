@@ -308,25 +308,26 @@ const CanvasDesigner = {
 
   /**
    * Calculate and apply the optimal zoom to fit the canvas within the container
-   * Uses CSS transform to scale the canvas down visually
-   * Fabric.js automatically handles mouse coordinates for CSS transforms
    */
   fitToContainer() {
     if (!this.canvas || this._isDestroyed) return
 
-    // Calculate available space from viewport minus fixed sidebars
-    // This is more reliable than reading container dimensions which may be affected by content
+    // Calculate available space: viewport minus fixed sidebars
+    // Left sidebar: 80px, Layers: 224px (w-56), Properties: 288px (w-72)
+    // Plus padding (64px) and header (60px)
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
 
-    // Fixed dimensions: left sidebar (80px) + layers (224px) + properties (288px) + padding (64px)
-    const fixedHorizontal = 80 + 224 + 288 + 64
-    const fixedVertical = 60 + 80 + 64 // header + toolbar + padding
+    const sidebarLeft = 80
+    const sidebarLayers = 224
+    const sidebarProperties = 288
+    const padding = 64
+    const headerAndToolbar = 140
 
-    const availableWidth = Math.max(300, viewportWidth - fixedHorizontal)
-    const availableHeight = Math.max(200, viewportHeight - fixedVertical)
+    const availableWidth = viewportWidth - sidebarLeft - sidebarLayers - sidebarProperties - padding
+    const availableHeight = viewportHeight - headerAndToolbar - padding
 
-    // Get canvas dimensions (original, at 100% zoom)
+    // Get canvas dimensions (original size)
     const canvasWidth = this.canvas.width
     const canvasHeight = this.canvas.height
 
@@ -335,8 +336,8 @@ const CanvasDesigner = {
     const scaleY = availableHeight / canvasHeight
     const fitZoom = Math.min(scaleX, scaleY, 1) // Don't zoom in beyond 100%
 
-    // Apply minimum zoom of 25% and maximum of 100%
-    const finalZoom = Math.max(0.25, Math.min(1, fitZoom))
+    // Apply minimum zoom of 10% and maximum of 100%
+    const finalZoom = Math.max(0.1, Math.min(1, fitZoom))
 
     console.log('CanvasDesigner: fitToContainer', {
       viewport: { width: viewportWidth, height: viewportHeight },
@@ -354,30 +355,36 @@ const CanvasDesigner = {
   },
 
   /**
-   * Apply zoom using CSS transform on the Fabric wrapper
-   * Fabric.js automatically adjusts mouse coordinates for CSS transforms
-   * by comparing canvas.width to getBoundingClientRect().width
+   * Apply zoom using CSS transform
+   * This scales the entire canvas element visually while maintaining coordinate system
    */
   applyZoom(zoomLevel) {
     if (!this.canvas) return
 
     const canvasWidth = this.canvas.width
     const canvasHeight = this.canvas.height
+    const scaledWidth = Math.round(canvasWidth * zoomLevel)
+    const scaledHeight = Math.round(canvasHeight * zoomLevel)
 
-    // Apply CSS transform on the Fabric wrapper for visual scaling
+    // Set our container to the scaled dimensions and position relative
+    this.el.style.width = `${scaledWidth}px`
+    this.el.style.height = `${scaledHeight}px`
+    this.el.style.position = 'relative'
+    this.el.style.overflow = 'hidden'
+
+    // Position the Fabric wrapper absolutely so it doesn't affect layout
+    // The transform will scale it to fit within this.el
     const fabricWrapper = this.canvas.wrapperEl
     if (fabricWrapper) {
+      fabricWrapper.style.position = 'absolute'
+      fabricWrapper.style.top = '0'
+      fabricWrapper.style.left = '0'
       fabricWrapper.style.transform = `scale(${zoomLevel})`
       fabricWrapper.style.transformOrigin = 'top left'
     }
 
-    // Set our container (hook element) dimensions so parent flexbox layouts correctly
-    this.el.style.width = `${canvasWidth * zoomLevel}px`
-    this.el.style.height = `${canvasHeight * zoomLevel}px`
-    // Don't set overflow:hidden - let parent handle scrolling for zoom > 100%
-
-    // Keep Fabric zoom at 1 - we use CSS transform for visual scaling
-    // Fabric automatically handles coordinate conversion via cssScale in getPointer()
+    // Keep Fabric zoom at 1 - CSS transform handles visual scaling
+    // Fabric automatically adjusts mouse coordinates via cssScale in getPointer
     this.canvas.setZoom(1)
     this.canvas.requestRenderAll()
   },

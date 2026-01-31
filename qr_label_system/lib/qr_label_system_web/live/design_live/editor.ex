@@ -1008,7 +1008,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
-          <div class="relative">
+          <div class="relative max-w-full max-h-full overflow-hidden">
             <div
               id="canvas-container"
               phx-hook="CanvasDesigner"
@@ -1023,7 +1023,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               data-grid-snap-enabled={@grid_snap_enabled}
               data-grid-size={@grid_size}
               data-snap-threshold={@snap_threshold}
-              class="rounded-lg bg-slate-200 min-h-[200px] min-w-[300px] inline-block"
+              class="rounded-lg bg-slate-200"
             >
               <canvas id="label-canvas"></canvas>
             </div>

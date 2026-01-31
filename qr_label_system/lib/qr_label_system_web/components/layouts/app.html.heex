@@ -1,74 +1,68 @@
-<div class="min-h-screen flex">
-  <!-- Sidebar -->
+<div class="min-h-screen flex flex-col">
+  <!-- Header -->
   <%= if @current_user do %>
-    <aside class="w-64 bg-slate-900 text-white flex flex-col">
-      <!-- Logo -->
-      <div class="p-4 border-b border-slate-700">
+    <header class="bg-slate-900 text-white">
+      <div class="flex items-center justify-between px-4 py-3">
+        <!-- Logo (izquierda) -->
         <.link navigate={~p"/generate"} class="flex items-center space-x-2 hover:opacity-80 transition">
           <svg class="h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
           </svg>
           <span class="text-lg font-bold">QR Label System</span>
         </.link>
-      </div>
 
-      <!-- Generate Button -->
-      <div class="p-4">
-        <.link navigate={~p"/generate"} class="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-lg font-medium transition w-full">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          <span>Generar Etiquetas</span>
-        </.link>
-      </div>
-
-      <!-- Navigation -->
-      <nav class="flex-1 px-4 space-y-1">
-        <.link navigate={~p"/designs"} class="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-          </svg>
-          <span>Diseños</span>
-        </.link>
-      </nav>
-
-      <!-- User Section -->
-      <div class="p-4 border-t border-slate-700">
-        <div class="flex items-center space-x-3 mb-3">
-          <div class="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center">
-            <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        <!-- Navegación (centro) -->
+        <nav class="flex items-center space-x-2">
+          <.link navigate={~p"/generate"} class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-white truncate">
-              <%= @current_user.email %>
-            </p>
-          </div>
-        </div>
-        <div class="flex space-x-2">
-          <.link href={~p"/users/settings"} class="flex-1 text-center text-xs text-slate-400 hover:text-white py-1.5 rounded hover:bg-slate-800 transition">
-            Configuración
+            <span>Generar</span>
           </.link>
-          <.link href={~p"/users/log_out"} method="delete" class="flex-1 text-center text-xs text-slate-400 hover:text-white py-1.5 rounded hover:bg-slate-800 transition">
-            Salir
+          <.link navigate={~p"/designs"} class="flex items-center space-x-2 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+            </svg>
+            <span>Diseños</span>
           </.link>
+        </nav>
+
+        <!-- Usuario (derecha) -->
+        <div class="relative group">
+          <button class="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-slate-800 transition">
+            <div class="w-7 h-7 bg-slate-700 rounded-full flex items-center justify-center">
+              <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <span class="text-sm text-slate-300 max-w-[150px] truncate"><%= @current_user.email %></span>
+            <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <!-- Dropdown menu -->
+          <div class="invisible group-hover:visible group-focus-within:visible opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg py-1 z-50 transition-all duration-150">
+            <.link href={~p"/users/settings"} class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
+              Configuración
+            </.link>
+            <.link href={~p"/users/log_out"} method="delete" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
+              Salir
+            </.link>
+          </div>
         </div>
       </div>
-    </aside>
+    </header>
   <% end %>
 
-  <!-- Main Content -->
-  <div class="flex-1 flex flex-col bg-slate-50">
-    <main class="flex-1 p-6 overflow-auto">
-      <.flash_group flash={@flash} />
-      <%= @inner_content %>
-    </main>
+  <!-- Main Content (100% ancho) -->
+  <main class="flex-1 bg-slate-50 p-6 overflow-auto">
+    <.flash_group flash={@flash} />
+    <%= @inner_content %>
+  </main>
 
-    <footer class="bg-white border-t border-slate-200 py-4">
-      <p class="text-center text-sm text-slate-500">
-        QR Label System - Sistema de Generación de Etiquetas
-      </p>
-    </footer>
-  </div>
+  <footer class="bg-white border-t border-slate-200 py-4">
+    <p class="text-center text-sm text-slate-500">
+      QR Label System - Sistema de Generación de Etiquetas
+    </p>
+  </footer>
 </div>
