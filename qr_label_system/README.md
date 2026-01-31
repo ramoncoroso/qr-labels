@@ -1,20 +1,62 @@
 # QR Label System
 
-Sistema web para diseñar y generar etiquetas personalizadas con códigos QR y de barras.
+Sistema web de produccion para disenar y generar etiquetas personalizadas con codigos QR y de barras. Cada fila de datos produce una etiqueta unica con codigos unicos.
 
-## Características
+## Caracteristicas Principales
 
-- Editor visual de etiquetas con drag & drop (Fabric.js)
-- Dimensiones personalizables (cualquier tamaño en mm)
-- Soporte para códigos QR y múltiples formatos de código de barras
-- Importación de datos desde Excel/CSV
-- Conexión a bases de datos externas (PostgreSQL, MySQL, SQL Server)
-- Generación de códigos QR/barras en el navegador (client-side)
-- Cada fila de datos = una etiqueta única con códigos únicos
-- Exportación a PDF
-- Impresión directa compatible con cualquier impresora
-- Sistema de autenticación con roles
-- Logs de auditoría
+### Editor Visual
+- Editor drag & drop basado en Fabric.js
+- Dimensiones personalizables (0-500mm)
+- Elementos: texto, QR, codigo de barras, lineas, rectangulos, imagenes
+- Propiedades editables: posicion, tamano, rotacion, colores, fuentes
+- Sistema de capas con z-index
+- Snap a grid y alineacion inteligente
+- Zoom con rueda del mouse (Ctrl + scroll)
+- Undo/Redo
+
+### Tipos de Elementos
+| Elemento | Descripcion |
+|----------|-------------|
+| Texto | Fuente, tamano, peso, color, alineacion |
+| QR | Correccion de errores L/M/Q/H |
+| Barcode | CODE128, CODE39, EAN-13, EAN-8, UPC-A, ITF-14, pharmacode |
+| Linea | Grosor y color configurables |
+| Rectangulo | Relleno, borde, radio de esquinas |
+| Imagen | Soporte para imagenes base64 (max 2MB) |
+
+### Fuentes de Datos
+- Importacion de Excel (.xlsx, .xls) y CSV
+- Conexion a bases de datos externas (PostgreSQL, MySQL, SQL Server)
+- Consultas SQL personalizadas
+- Almacenamiento seguro de credenciales (encriptacion con Cloak)
+
+### Generacion de Etiquetas
+- **Modo simple**: Etiqueta unica estatica
+- **Modo multiple**: Una etiqueta por fila de datos
+- Binding de columnas a elementos del diseno
+- Generacion de QR/barcode en el navegador (client-side)
+- Exportacion a PDF
+- Impresion directa
+
+### Seguridad
+- Autenticacion con email/password o magic link
+- Roles: admin, operator, viewer
+- RBAC (Role-Based Access Control)
+- Rate limiting (login, API, uploads)
+- Logs de auditoria completos
+- Encriptacion de credenciales de BD
+
+## Stack Tecnologico
+
+| Capa | Tecnologia |
+|------|------------|
+| Backend | Elixir 1.14+, Phoenix 1.7, LiveView 0.20 |
+| Base de datos | PostgreSQL 14+ con Ecto ORM |
+| Frontend | TailwindCSS 3.3, Fabric.js 5.3 |
+| Codigos | qrcode.js 1.5, JsBarcode 3.11 |
+| PDF | jsPDF 2.5 |
+| Excel | Xlsxir (server), xlsx (client) |
+| Infraestructura | Docker, Nginx |
 
 ## Requisitos
 
@@ -23,97 +65,237 @@ Sistema web para diseñar y generar etiquetas personalizadas con códigos QR y d
 - PostgreSQL 14+
 - Node.js 18+
 
-## Instalación
+## Instalacion
 
-1. Instalar dependencias de Elixir:
+### 1. Clonar el repositorio
+
 ```bash
-mix deps.get
+git clone <repository-url>
+cd qr_label_system
 ```
 
-2. Instalar dependencias de JavaScript:
+### 2. Instalar dependencias
+
 ```bash
+# Dependencias de Elixir
+mix deps.get
+
+# Dependencias de JavaScript
 cd assets && npm install && cd ..
 ```
 
-3. Configurar la base de datos en `config/dev.exs`
+### 3. Configurar base de datos
 
-4. Crear y migrar la base de datos:
+Editar `config/dev.exs` con las credenciales de PostgreSQL:
+
+```elixir
+config :qr_label_system, QrLabelSystem.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "qr_label_system_dev"
+```
+
+### 4. Crear y migrar base de datos
+
 ```bash
 mix ecto.setup
 ```
 
-5. Iniciar el servidor:
+### 5. Iniciar servidor
+
 ```bash
 mix phx.server
 ```
 
-Acceder a [`localhost:4000`](http://localhost:4000) en el navegador.
+Acceder a [localhost:4000](http://localhost:4000)
 
-## Credenciales por defecto (desarrollo)
+## Credenciales por Defecto (Desarrollo)
 
-- Email: admin@example.com
-- Password: admin123456
+| Campo | Valor |
+|-------|-------|
+| Email | admin@example.com |
+| Password | admin123456 |
 
-## Estructura del proyecto
+## Estructura del Proyecto
 
 ```
-lib/
-├── qr_label_system/           # Lógica de negocio
-│   ├── accounts/              # Usuarios y autenticación
-│   ├── designs/               # Diseños de etiquetas
-│   ├── data_sources/          # Fuentes de datos (Excel, BD)
-│   ├── batches/               # Lotes de etiquetas
-│   └── audit/                 # Logs de auditoría
+qr_label_system/
+├── lib/
+│   ├── qr_label_system/              # Logica de negocio
+│   │   ├── accounts/                 # Usuarios y autenticacion
+│   │   │   ├── user.ex               # Schema de usuario
+│   │   │   └── user_token.ex         # Tokens de sesion
+│   │   ├── designs/                  # Disenos de etiquetas
+│   │   │   ├── design.ex             # Schema de diseno
+│   │   │   └── element.ex            # Schema embebido de elementos
+│   │   ├── data_sources/             # Fuentes de datos
+│   │   │   ├── data_source.ex        # Schema
+│   │   │   ├── excel_parser.ex       # Parser de Excel/CSV
+│   │   │   └── db_connector.ex       # Conexion a BD externas
+│   │   ├── audit/                    # Logs de auditoria
+│   │   ├── cache.ex                  # Cache ETS
+│   │   ├── vault.ex                  # Encriptacion Cloak
+│   │   └── upload_data_store.ex      # Almacen temporal de datos
+│   │
+│   └── qr_label_system_web/          # Capa web
+│       ├── router.ex                 # Rutas
+│       ├── plugs/                    # Middleware
+│       │   ├── rbac.ex               # Control de acceso
+│       │   ├── rate_limiter.ex       # Rate limiting
+│       │   └── api_auth.ex           # Auth API
+│       ├── components/               # Componentes UI
+│       └── live/                     # LiveViews
+│           ├── design_live/          # Editor de disenos
+│           │   ├── index.ex          # Lista
+│           │   ├── editor.ex         # Editor visual
+│           │   └── show.ex           # Detalle
+│           ├── data_source_live/     # Fuentes de datos
+│           ├── generate_live/        # Flujo de generacion
+│           └── admin/                # Panel admin
 │
-└── qr_label_system_web/       # Capa web
-    ├── components/            # Componentes reutilizables
-    ├── controllers/           # Controladores
-    └── live/                  # LiveViews
-        ├── design_live/       # Editor de diseños
-        ├── data_source_live/  # Gestión de fuentes
-        ├── batch_live/        # Gestión de lotes
-        └── generate_live/     # Flujo de generación
-
-assets/
-├── js/
-│   └── hooks/                 # LiveView Hooks
-│       ├── canvas_designer.js # Editor visual
-│       ├── code_generator.js  # Generación QR/barras
-│       ├── print_engine.js    # Impresión y PDF
-│       └── excel_reader.js    # Lectura de Excel
-└── css/
-    └── app.css               # Estilos (Tailwind)
+├── assets/
+│   ├── js/
+│   │   ├── app.js                    # Entry point
+│   │   └── hooks/                    # LiveView Hooks
+│   │       ├── canvas_designer.js    # Editor Fabric.js (2400+ lineas)
+│   │       ├── draggable_elements.js # Drag & drop al canvas
+│   │       ├── code_generator.js     # Generacion QR/barcode
+│   │       ├── print_engine.js       # PDF e impresion
+│   │       ├── excel_reader.js       # Lectura Excel client-side
+│   │       ├── label_preview.js      # Preview de etiquetas
+│   │       ├── keyboard_shortcuts.js # Atajos de teclado
+│   │       ├── sortable_layers.js    # Ordenamiento de capas
+│   │       ├── auto_hide_flash.js    # Auto-hide mensajes
+│   │       ├── auto_upload_submit.js # Auto-submit uploads
+│   │       └── single_label_print.js # Impresion individual
+│   └── css/
+│       └── app.css                   # Tailwind CSS
+│
+├── priv/
+│   ├── repo/migrations/              # Migraciones de BD
+│   └── static/                       # Assets estaticos
+│
+├── config/                           # Configuracion
+│   ├── config.exs                    # Base
+│   ├── dev.exs                       # Desarrollo
+│   ├── prod.exs                      # Produccion
+│   └── runtime.exs                   # Runtime (env vars)
+│
+├── test/                             # Tests
+├── docker/                           # Docker config
+└── mix.exs                           # Proyecto Mix
 ```
 
-## Flujo de trabajo
+## Flujo de Trabajo
 
-1. **Crear diseño**: Define dimensiones y agrega elementos (QR, barras, texto, etc.)
-2. **Importar datos**: Sube Excel/CSV o conecta a base de datos externa
-3. **Mapear columnas**: Vincula elementos del diseño a columnas de datos
-4. **Generar lote**: Crea un lote con N etiquetas (una por fila de datos)
-5. **Imprimir/Exportar**: Imprime directamente o exporta a PDF
+### Etiqueta Simple (Estatica)
 
-## Tecnologías
+1. Ir a **Generar** > **Etiqueta simple**
+2. Seleccionar o crear diseno
+3. Modificar contenido si es necesario
+4. Imprimir o exportar PDF
 
-- **Backend**: Elixir, Phoenix Framework, Phoenix LiveView
-- **Base de datos**: PostgreSQL con Ecto
-- **Frontend**: Tailwind CSS, Fabric.js
-- **Generación de códigos**: qrcode.js, JsBarcode (client-side)
-- **PDF**: jsPDF
-- **Excel**: Xlsxir (server), xlsx (client)
+### Etiquetas Multiples (Desde Datos)
 
-## Producción
+1. Ir a **Generar** > **Multiples etiquetas**
+2. Subir archivo Excel/CSV o seleccionar fuente de datos
+3. Seleccionar o crear diseno
+4. Mapear columnas a elementos del diseno
+5. Generar lote (una etiqueta por fila)
+6. Imprimir o exportar PDF
 
-Para desplegar en producción:
+## API
+
+El sistema expone endpoints de health check:
+
+```bash
+# Health check
+GET /api/health
+
+# Health check detallado (requiere auth)
+GET /api/health/detailed
+```
+
+## Produccion
+
+### Compilar Release
 
 ```bash
 # Compilar assets
 cd assets && npm run deploy && cd ..
 mix phx.digest
 
-# Compilar release
+# Crear release
 MIX_ENV=prod mix release
 ```
+
+### Variables de Entorno
+
+```bash
+DATABASE_URL=ecto://user:pass@host/db
+SECRET_KEY_BASE=<64+ chars>
+PHX_HOST=example.com
+PORT=4000
+```
+
+### Docker
+
+```bash
+cd docker
+docker-compose up -d
+```
+
+## Tests
+
+```bash
+# Todos los tests
+mix test
+
+# Tests con coverage
+mix test --cover
+
+# Tests especificos
+mix test test/qr_label_system/accounts_test.exs
+```
+
+## Comandos Utiles
+
+```bash
+# Servidor de desarrollo
+mix phx.server
+
+# Consola interactiva
+iex -S mix
+
+# Crear migracion
+mix ecto.gen.migration nombre_migracion
+
+# Ejecutar migraciones
+mix ecto.migrate
+
+# Rollback migracion
+mix ecto.rollback
+
+# Reset base de datos
+mix ecto.reset
+
+# Formatear codigo
+mix format
+```
+
+## Documentacion Adicional
+
+- **HANDOFF.md**: Historial de cambios y estado actual del proyecto
+- **priv/static/openapi.yaml**: Especificacion OpenAPI
+
+## Contribuir
+
+1. Fork del repositorio
+2. Crear branch (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit cambios (`git commit -m 'feat: descripcion'`)
+4. Push al branch (`git push origin feature/nueva-funcionalidad`)
+5. Crear Pull Request
 
 ## Licencia
 
