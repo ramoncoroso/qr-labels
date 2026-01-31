@@ -1,544 +1,109 @@
-# QR Label System - Documento de Handoff
+# Handoff: Sistema de Generación de Etiquetas QR
 
-**Fecha**: 30 Enero 2026
-**Version**: 1.3.0
-**Estado**: En desarrollo activo - Editor visual con propiedades de texto completas
+## Resumen del Proyecto
 
----
+Sistema web para crear y generar etiquetas con códigos QR, códigos de barras y texto dinámico. Construido con **Elixir/Phoenix LiveView**.
 
-## CHANGELOG v1.3.0 (Sesión Actual - 30 Enero 2026)
+## Lo Que Se Implementó
 
-### Correcciones Críticas del Editor
+### Rediseño del Flujo de Generación de Etiquetas
 
-**Problema resuelto:** Las propiedades de elementos (fuente, negrita, alineación, rotación) no se aplicaban al canvas.
+Se implementó un nuevo flujo con dos modos de operación:
 
-#### Causa raíz identificada:
-1. Los `<select>` con `phx-change` y `phx-value-field` no enviaban el campo correctamente
-2. Los elementos nuevos no se guardaban en BD inmediatamente, impidiendo su selección
-3. La búsqueda de elementos fallaba con keys mixtas (atom/string)
+#### 1. Modo Etiqueta Única (`/generate/single`)
+- Seleccionar o crear un diseño
+- Configurar cantidad (1-100 copias)
+- Imprimir directamente o descargar PDF
+- Contenido estático definido en el diseño
 
-#### Soluciones implementadas:
+#### 2. Modo Múltiples Etiquetas (`/generate/data`) - **DATOS PRIMERO**
+- Cargar datos antes de elegir diseño
+- 3 métodos de carga:
+  - **Excel** (.xlsx)
+  - **CSV** (.csv)
+  - **Pegar desde Excel** (copiar/pegar datos tabulares)
+- Vista previa de columnas y datos
+- Seleccionar diseño existente o crear nuevo
+- Vinculación automática de columnas a elementos
 
-**1. Formularios para selects** - Envueltos en `<form>` con hidden input para el campo:
-```html
-<form phx-change="update_element" class="mt-1">
-  <input type="hidden" name="field" value="font_family" />
-  <select name="value" class="...">
-    <option value="Arial">Arial</option>
-    ...
-  </select>
-</form>
-```
-
-**2. Guardado inmediato de elementos nuevos:**
-```elixir
-def handle_event("add_element", %{"type" => type}, socket) do
-  element = create_default_element(type)
-  current_elements = socket.assigns.design.elements || []
-  new_elements = current_elements ++ [element]
-
-  case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
-    {:ok, updated_design} ->
-      {:noreply, socket
-       |> assign(:design, updated_design)
-       |> assign(:selected_element, element)  # Ya seleccionable
-       |> push_event("add_element", %{element: element})}
-    ...
-  end
-end
-```
-
-**3. Búsqueda de elementos con keys mixtas:**
-```elixir
-element = Enum.find(elements, fn el ->
-  el_id = Map.get(el, :id) || Map.get(el, "id")
-  el_id == id
-end)
-```
-
-**4. Cambios en tiempo real** - Inputs cambiados de `phx-blur` a `phx-change` con debounce:
-```html
-<input
-  type="number"
-  name="value"
-  phx-change="update_element"
-  phx-debounce="150"
-  phx-value-field="font_size"
-/>
-```
-
-### Selector de Fuentes Compatible con Zebra
-
-Nuevo selector con fuentes seguras para impresoras térmicas:
-- Arial, Helvetica, Verdana (sans-serif)
-- Courier New (monospace - ideal para códigos)
-- Times New Roman, Georgia (serif)
-- Genéricas: sans-serif, serif, monospace
-
-### Limpieza de Código
-
-- ✅ Removidos `IO.inspect` y `IO.puts` de debug
-- ✅ Corregida indentación inconsistente en inputs
-- ✅ Catch-all handler simplificado para seguridad
-
-### Archivos Modificados en v1.3.0:
-
-| Archivo | Cambios |
-|---------|---------|
-| `lib/qr_label_system_web/live/design_live/editor.ex` | Forms para selects, guardado inmediato, debounce, selector fuentes |
-| `assets/js/hooks/canvas_designer.js` | Handlers para font_family, font_weight, text_align |
-
----
-
-## CHANGELOG v1.2.0 (Sesión Anterior)
-
-### Editor Visual de Etiquetas (Canvas Designer)
-
-**Archivo:** `assets/js/hooks/canvas_designer.js`
-
-#### Funcionalidades:
-- Canvas interactivo con Fabric.js completamente reescrito
-- Reglas con marcas en milímetros (cada 5mm, etiquetas cada 10mm)
-- Zoom nativo de Fabric.js (50% - 200%)
-- Soporte para elementos: QR, Código de barras, Texto, Línea, Rectángulo, Imagen
-- Arrastrar, redimensionar y rotar elementos
-- Controles visuales estilizados (círculos azules)
-- Protección del canvas contra DOM morphing de LiveView
-
-#### Mejoras de Seguridad y Rendimiento:
-- **Debouncing** en guardado (300ms) para evitar llamadas excesivas al servidor
-- **Validación de dimensiones** con límites (10-500mm)
-- **Sanitización de colores** (regex para validar hex)
-- **Cleanup en `destroyed()`** para prevenir memory leaks
-- **Flag `_isDestroyed`** para evitar operaciones en componentes desmontados
-- **Protección DOM** via `onBeforeElUpdated` en app.js
-
-```javascript
-// Constantes clave
-const PX_PER_MM = 3.78           // Conversión mm a px (96 DPI)
-const MAX_CANVAS_SIZE_MM = 500   // Límite máximo
-const MIN_CANVAS_SIZE_MM = 10    // Límite mínimo
-const SAVE_DEBOUNCE_MS = 300     // Debounce para save
-```
-
-### LiveView del Editor
-
-**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
-
-#### Seguridad Implementada:
-- **Whitelist de tipos de elemento:** `@valid_element_types`
-- **Whitelist de campos actualizables:** `@allowed_element_fields`
-- **Verificación de propiedad** del diseño en `mount/3`
-- **Catch-all silencioso** para campos no permitidos
-
-```elixir
-@valid_element_types ~w(qr barcode text line rectangle image)
-@allowed_element_fields ~w(x y width height rotation binding qr_error_level
-  barcode_format barcode_show_text font_size font_family font_weight
-  text_align text_content color background_color border_width border_color
-  z_index visible locked name image_data image_filename)
-```
-
----
-
-## Plan para Continuar
-
-### Prioridad Alta (Próximas sesiones)
-
-1. **Limpiar console.logs de JavaScript** (35+ statements en canvas_designer.js)
-   - Opción A: Remover todos para producción
-   - Opción B: Envolver en flag DEBUG condicional
-
-2. **Renderizado Real de QR y Códigos de Barras**
-   - Integrar `eqrcode` para generación QR
-   - Integrar `barlix` para códigos de barras
-   - Mostrar códigos reales en lugar de placeholders en el canvas
-
-3. **Importación de Datos Completa**
-   - Completar parser de Excel (base existe con `xlsxir`)
-   - Agregar soporte CSV
-   - UI de mapeo de columnas a bindings de elementos
-
-4. **Generación de PDF para Impresión**
-   - Evaluar `chromic_pdf` vs `pdf_generator`
-   - Layout de múltiples etiquetas por página
-   - Configuración de márgenes y espaciado
-
-### Prioridad Media
-
-5. **Mejoras del Editor**
-   - Snap to grid (parcialmente implementado)
-   - Guías de alineación (implementado)
-   - Copiar/pegar elementos
-   - Capas (z-index) - UI existe
-   - Bloquear elementos - UI existe
-
-6. **Vista Previa en Tiempo Real**
-   - Renderizar etiqueta con datos reales del data source
-   - Navegación entre registros de datos
-
-### Prioridad Baja
-
-7. **Optimizaciones**
-   - Caching de diseños renderizados
-   - Lazy loading de lotes grandes
-   - Compresión de imágenes subidas
-
----
-
-## 1. Resumen Ejecutivo
-
-QR Label System es una aplicacion web desarrollada en Elixir/Phoenix LiveView para el diseno y generacion de etiquetas personalizadas con codigos QR y de barras. Permite importar datos desde Excel/CSV o bases de datos externas, mapearlos a disenos de etiquetas, y generar/imprimir lotes de etiquetas unicas.
-
-### Stack Tecnologico
-
-| Componente | Tecnologia | Version |
-|------------|------------|---------|
-| Backend | Elixir | ~> 1.14 |
-| Framework | Phoenix | ~> 1.7.10 |
-| UI en tiempo real | Phoenix LiveView | ~> 0.20.1 |
-| Base de datos | PostgreSQL | 14+ |
-| ORM | Ecto | ~> 3.10 |
-| Frontend | Tailwind CSS, Fabric.js | - |
-| Autenticacion | bcrypt_elixir | ~> 3.0 |
-| Encriptacion | Cloak Ecto | ~> 1.2 |
-| Rate Limiting | Hammer | ~> 6.1 |
-| Background Jobs | Oban | ~> 2.17 |
-
----
-
-## 2. Arquitectura del Sistema
+### Archivos Creados
 
 ```
-qr_label_system/
-├── lib/
-│   ├── qr_label_system/              # Logica de negocio (Context modules)
-│   │   ├── accounts/                 # Usuarios, autenticacion, roles
-│   │   │   ├── user.ex               # Schema de usuario con roles
-│   │   │   └── user_token.ex         # Tokens de sesion/API
-│   │   ├── designs/                  # Disenos de etiquetas
-│   │   │   └── label_design.ex       # Schema con elementos JSON
-│   │   ├── data_sources/             # Fuentes de datos
-│   │   │   └── data_source.ex        # Excel, CSV, conexiones BD
-│   │   ├── batches/                  # Lotes de etiquetas
-│   │   │   └── label_batch.ex        # Lotes generados
-│   │   ├── audit/                    # Sistema de auditoria
-│   │   │   └── audit_log.ex          # Logs de acciones
-│   │   └── security/                 # Modulos de seguridad
-│   │       └── file_sanitizer.ex     # Sanitizacion de archivos
-│   │
-│   └── qr_label_system_web/          # Capa web
-│       ├── plugs/                    # Plugs de seguridad
-│       │   ├── api_auth.ex           # Autenticacion API Bearer
-│       │   ├── rate_limiter.ex       # Rate limiting con IP
-│       │   └── rbac.ex               # Control de acceso por rol
-│       ├── controllers/
-│       │   ├── api/                  # Controladores API
-│       │   └── health_controller.ex  # Health check
-│       ├── live/                     # LiveViews
-│       │   ├── design_live/          # Editor de disenos
-│       │   ├── data_source_live/     # Gestion de fuentes
-│       │   ├── batch_live/           # Gestion de lotes
-│       │   └── generate_live/        # Flujo de generacion
-│       ├── components/               # Componentes reutilizables
-│       │   ├── core_components.ex
-│       │   ├── pagination.ex         # Componente de paginacion
-│       │   └── batch_helpers.ex      # Helpers de lotes
-│       ├── router.ex                 # Rutas con pipelines de seguridad
-│       └── endpoint.ex               # Endpoint con headers de seguridad
-│
-├── config/
-│   ├── config.exs                    # Configuracion base
-│   ├── dev.exs                       # Configuracion desarrollo
-│   ├── test.exs                      # Configuracion tests
-│   ├── prod.exs                      # Configuracion produccion
-│   └── runtime.exs                   # Configuracion en runtime (secretos)
-│
-├── priv/
-│   └── repo/
-│       ├── migrations/               # Migraciones de BD
-│       └── seeds.exs                 # Datos iniciales
-│
-├── assets/
-│   ├── js/
-│   │   ├── app.js                    # Punto de entrada JS
-│   │   └── hooks/                    # LiveView Hooks
-│   │       ├── canvas_designer.js    # Editor visual Fabric.js
-│   │       ├── code_generator.js     # QR/barcode generation
-│   │       ├── print_engine.js       # Impresion y PDF
-│   │       └── excel_reader.js       # Lectura Excel client-side
-│   └── css/
-│       └── app.css                   # Tailwind CSS
-│
-└── test/                             # Tests
-    ├── qr_label_system/
-    │   └── security/
-    │       └── file_sanitizer_test.exs
-    └── qr_label_system_web/
-        └── plugs/
-            ├── api_auth_test.exs
-            └── rate_limiter_test.exs
+lib/qr_label_system_web/live/generate_live/
+├── index.ex          # Selector de modo (único vs múltiples)
+├── data_first.ex     # Carga de datos (Excel/CSV/pegar)
+├── design_select.ex  # Selección de diseño tras cargar datos
+├── single_select.ex  # Selección de diseño para etiqueta única
+└── single_label.ex   # Configuración e impresión de etiqueta única
+
+assets/js/hooks/
+└── single_label_print.js  # Hook para impresión/PDF de etiquetas únicas
+
+test/
+├── qr_label_system_web/live/generate_live_test.exs  # 10 tests nuevos
+└── support/fixtures/designs_fixtures.ex             # Fixtures para tests
 ```
 
----
-
-## 3. Sistema de Roles y Permisos (RBAC)
-
-### Roles Definidos
-
-| Rol | Descripcion | Permisos |
-|-----|-------------|----------|
-| `admin` | Administrador completo | Todo: usuarios, configuracion, datos, auditoria |
-| `operator` | Operador de etiquetas | Crear/editar disenos, importar datos, generar lotes |
-| `viewer` | Solo lectura | Ver disenos y lotes existentes |
-
-### Implementacion
-
-```elixir
-# lib/qr_label_system_web/plugs/rbac.ex
-
-# Pipelines disponibles:
-# :admin_only    - Solo administradores
-# :operator_only - Operadores y administradores
-# :viewer_only   - Cualquier usuario autenticado
-```
-
-### Rutas Protegidas
-
-```elixir
-# router.ex
-
-# Rutas web protegidas por rol
-scope "/", QrLabelSystemWeb do
-  pipe_through [:browser, :require_authenticated_user]
-  # Rutas para usuarios autenticados
-end
-
-scope "/admin", QrLabelSystemWeb do
-  pipe_through [:browser, :require_authenticated_user, :admin_only]
-  # Solo administradores
-end
-
-# API protegida
-scope "/api", QrLabelSystemWeb.API do
-  pipe_through [:api_auth, :operator_only]
-  # Requiere Bearer token + rol operator o admin
-end
-```
-
----
-
-## 4. Seguridad Implementada
-
-### 4.1 Autenticacion API (Bearer Token)
-
-**Archivo**: `lib/qr_label_system_web/plugs/api_auth.ex`
-
-```elixir
-# Uso en rutas:
-pipe_through [:api_auth]
-
-# Header requerido:
-Authorization: Bearer <base64_url_encoded_token>
-```
-
-**Caracteristicas**:
-- Solo acepta tokens codificados en Base64 URL (sin fallback a raw tokens)
-- Validacion de formato de header
-- Tokens expiran con la sesion del usuario
-- Logging de intentos fallidos
-
-### 4.2 Rate Limiting
-
-**Archivo**: `lib/qr_label_system_web/plugs/rate_limiter.ex`
-
-**Configuracion**:
-```elixir
-# Variables de entorno
-TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-```
-
-**Caracteristicas**:
-- Usa Hammer con backend ETS
-- Extraccion segura de IP cliente (solo de proxies confiables)
-- Soporte para rangos CIDR
-- Limites configurables por accion
-
-### 4.3 Sanitizacion de Archivos
-
-**Archivo**: `lib/qr_label_system/security/file_sanitizer.ex`
-
-**Protecciones**:
-- Prevencion de path traversal (`../`, `..\\`)
-- Decodificacion iterativa de URL encoding (hasta 5 niveles)
-- Validacion de extensiones permitidas
-- Validacion de MIME types
-- Truncado de nombres largos (255 caracteres)
-
-### 4.4 Headers de Seguridad
-
-**Archivo**: `lib/qr_label_system_web/endpoint.ex`
-
-Headers configurados:
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: SAMEORIGIN`
-- `X-XSS-Protection: 1; mode=block`
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy: geolocation=(), microphone=(), camera=()`
-- `Strict-Transport-Security` (solo en produccion)
-
-### 4.5 Configuracion de Sesiones
-
-**Archivo**: `config/runtime.exs`
-
-```elixir
-# Variables de entorno requeridas en produccion:
-SESSION_SIGNING_SALT=<string_aleatorio_32+_caracteres>
-SESSION_ENCRYPTION_SALT=<string_aleatorio_32+_caracteres>
-SECRET_KEY_BASE=<string_aleatorio_64+_caracteres>
-```
-
----
-
-## 5. Variables de Entorno
-
-### Produccion (Requeridas)
-
-| Variable | Descripcion | Ejemplo |
-|----------|-------------|---------|
-| `SECRET_KEY_BASE` | Clave secreta Phoenix (64+ chars) | `mix phx.gen.secret` |
-| `DATABASE_URL` | URL de PostgreSQL | `postgres://user:pass@host/db` |
-| `SESSION_SIGNING_SALT` | Salt para firmar sesiones (32+ chars) | String aleatorio |
-| `SESSION_ENCRYPTION_SALT` | Salt para encriptar sesiones (32+ chars) | String aleatorio |
-| `PHX_HOST` | Host de la aplicacion | `app.example.com` |
-| `PORT` | Puerto del servidor | `4000` |
-| `CLOAK_KEY` | Clave de encriptacion Cloak (Base64) | Ver documentacion Cloak |
-
-### Produccion (Opcionales)
-
-| Variable | Descripcion | Default |
-|----------|-------------|---------|
-| `TRUSTED_PROXIES` | IPs/CIDRs de proxies confiables | `""` (ninguno) |
-| `POOL_SIZE` | Tamano del pool de conexiones BD | `10` |
-
-### Desarrollo
-
-No requiere variables de entorno. Los valores estan en `config/dev.exs`.
-
----
-
-## 6. Base de Datos
-
-### Migraciones
-
-```
-20240101000001_create_users.exs           # Usuarios con roles
-20240101000002_create_users_tokens.exs    # Tokens de sesion/API
-20240101000003_create_label_designs.exs   # Disenos de etiquetas
-20240101000004_create_data_sources.exs    # Fuentes de datos
-20240101000005_create_label_batches.exs   # Lotes generados
-20240101000006_create_audit_logs.exs      # Logs de auditoria
-20240101000007_add_audit_logs_indexes.exs # Indices para auditoria
-20240101000008_add_soft_delete_columns.exs # Columnas soft delete
-20240101000009_add_advanced_audit_logs_indexes.exs # Indices avanzados (GIN, compuestos)
-```
-
-### Esquemas Principales
-
-```elixir
-# User
-%User{
-  email: string,
-  hashed_password: string,
-  role: :admin | :operator | :viewer,
-  confirmed_at: datetime
-}
-
-# LabelDesign
-%LabelDesign{
-  name: string,
-  width_mm: decimal,
-  height_mm: decimal,
-  elements: json,  # [{type, position, properties}]
-  user_id: references(:users)
-}
-
-# DataSource
-%DataSource{
-  name: string,
-  type: :excel | :csv | :postgres | :mysql | :sqlserver,
-  config: encrypted_map,  # Cloak encrypted
-  user_id: references(:users)
-}
-
-# LabelBatch
-%LabelBatch{
-  name: string,
-  status: :pending | :processing | :completed | :failed,
-  label_count: integer,
-  design_id: references(:label_designs),
-  data_source_id: references(:data_sources),
-  user_id: references(:users)
-}
-```
-
----
-
-## 7. API REST
-
-### Endpoints
-
-```
-GET    /api/health              # Health check (sin auth)
-GET    /api/designs             # Listar disenos
-GET    /api/designs/:id         # Obtener diseno
-POST   /api/designs             # Crear diseno
-PUT    /api/designs/:id         # Actualizar diseno
-DELETE /api/designs/:id         # Eliminar diseno
-
-GET    /api/batches             # Listar lotes
-GET    /api/batches/:id         # Obtener lote
-POST   /api/batches             # Crear lote
-GET    /api/batches/:id/labels  # Obtener etiquetas del lote
-```
-
-### Autenticacion
-
-```bash
-# Obtener token (usar token de sesion existente o crear via UI)
-curl -X GET https://app.example.com/api/designs \
-  -H "Authorization: Bearer $(echo -n 'session_token' | base64)"
-```
-
----
-
-## 8. Testing
-
-### Ejecutar Tests
-
-```bash
-# Todos los tests
-mix test
-
-# Con coverage
-mix coveralls.html
-
-# Tests especificos
-mix test test/qr_label_system_web/plugs/api_auth_test.exs
-mix test test/qr_label_system/security/file_sanitizer_test.exs
-```
-
-### Tests de Seguridad Existentes
-
-- `api_auth_test.exs` - Autenticacion Bearer token (9 tests)
-- `rate_limiter_test.exs` - Rate limiting y extraccion IP (11 tests)
-- `file_sanitizer_test.exs` - Sanitizacion de nombres de archivo
-
----
-
-## 9. Despliegue
-
-### Desarrollo
+### Archivos Modificados
+
+- `router.ex` - 4 nuevas rutas
+- `design_live/editor.ex` - Dropdown de columnas + panel de columnas disponibles
+- `hooks/index.js` - Registro del nuevo hook
+- Tests de autenticación - Actualizado redirect a `/generate`
+
+### Rutas Disponibles
+
+| Ruta | Descripción |
+|------|-------------|
+| `/generate` | Selector de modo |
+| `/generate/single` | Selección de diseño (modo único) |
+| `/generate/single/:id` | Impresión de etiqueta única |
+| `/generate/data` | Carga de datos (modo múltiples) |
+| `/generate/design` | Selección de diseño tras cargar datos |
+| `/generate/design/:id` | (existente) Fuente de datos |
+| `/generate/map/:design_id/:source_id` | (existente) Mapeo de columnas |
+| `/generate/preview/:batch_id` | (existente) Vista previa del lote |
+
+## Estado Actual
+
+### Funcionando ✅
+- Selector de modo en `/generate`
+- Flujo de etiqueta única completo
+- Carga de datos (Excel, CSV, pegar)
+- Vista previa de datos cargados
+- Dropdown de columnas en el editor
+- Panel de columnas disponibles en sidebar
+- Todos los tests pasan (175 tests)
+
+### Pendiente / Para Continuar 🔄
+
+#### 1. Integración del Editor con Datos
+El editor actualmente carga columnas del flash, pero el flujo completo necesita:
+- Permitir crear nuevo diseño desde `/generate/design` y mantener los datos
+- Al guardar diseño, redirigir de vuelta al flujo de generación
+
+#### 2. Mejorar el Mapeo Automático
+En `design_select.ex`, la función `build_auto_mapping/2` hace mapeo case-insensitive. Considerar:
+- Mostrar al usuario qué columnas se mapearon automáticamente
+- Permitir corrección manual antes de crear el lote
+
+#### 3. Vista Previa en Tiempo Real
+En el editor, cuando hay columnas disponibles:
+- Mostrar preview con datos reales del primer registro
+- Permitir navegar entre registros para previsualizar
+
+#### 4. Configuración de Impresión
+El `SingleLabel` tiene configuración básica. Agregar:
+- Selección de tamaño de papel
+- Configuración de márgenes
+- Opciones para impresora de rollo vs normal
+
+#### 5. Eliminar Soporte de Base de Datos
+El plan original indicaba eliminar PostgreSQL/MySQL/SQL Server como fuentes de datos. Actualmente aún existen en:
+- `lib/qr_label_system/data_sources/db_connector.ex`
+- `lib/qr_label_system/data_sources.ex`
+
+## Cómo Ejecutar
 
 ```bash
 # Instalar dependencias
@@ -548,312 +113,101 @@ cd assets && npm install && cd ..
 # Configurar base de datos
 mix ecto.setup
 
-# Iniciar servidor
+# Ejecutar servidor
 mix phx.server
-# o
-iex -S mix phx.server
+
+# Abrir en navegador
+open http://localhost:4000
 ```
 
-### Produccion
+## Cómo Testear
 
 ```bash
-# 1. Configurar variables de entorno
-export SECRET_KEY_BASE=$(mix phx.gen.secret)
-export DATABASE_URL="postgres://user:pass@localhost/qr_label_prod"
-export SESSION_SIGNING_SALT=$(openssl rand -base64 32)
-export SESSION_ENCRYPTION_SALT=$(openssl rand -base64 32)
-export PHX_HOST="app.example.com"
+# Todos los tests
+mix test
 
-# 2. Compilar assets
-cd assets && npm run deploy && cd ..
-mix phx.digest
+# Solo tests del flujo de generación
+mix test test/qr_label_system_web/live/generate_live_test.exs
 
-# 3. Crear release
-MIX_ENV=prod mix release
-
-# 4. Ejecutar migraciones
-_build/prod/rel/qr_label_system/bin/qr_label_system eval "QrLabelSystem.Release.migrate"
-
-# 5. Iniciar aplicacion
-_build/prod/rel/qr_label_system/bin/qr_label_system start
+# Con cobertura
+mix coveralls.html
 ```
 
-### Docker (Recomendado)
+## Datos de Prueba
 
-```dockerfile
-# Dockerfile ejemplo incluido en el proyecto
-docker build -t qr_label_system .
-docker run -p 4000:4000 \
-  -e SECRET_KEY_BASE=... \
-  -e DATABASE_URL=... \
-  -e SESSION_SIGNING_SALT=... \
-  -e SESSION_ENCRYPTION_SALT=... \
-  qr_label_system
+Se incluyen archivos de prueba en `/priv/`:
+- `test_data.xlsx` - Excel con 10 productos
+- `test_data.csv` - CSV con los mismos datos
+
+Columnas: Producto, SKU, Precio, Descripcion, Cantidad
+
+## Arquitectura
+
+```
+Usuario llega a /generate
+         │
+         ├─── "Etiqueta Única" ───► /generate/single
+         │                              │
+         │                              ▼
+         │                    Seleccionar diseño
+         │                              │
+         │                              ▼
+         │                    /generate/single/:id
+         │                    (configurar e imprimir)
+         │
+         └─── "Múltiples" ───► /generate/data
+                                   │
+                                   ▼
+                          Cargar datos (Excel/CSV/Pegar)
+                                   │
+                                   ▼
+                          /generate/design
+                          (seleccionar diseño)
+                                   │
+                                   ▼
+                          Crear Batch con data_snapshot
+                                   │
+                                   ▼
+                          /generate/preview/:batch_id
+                          (vista previa e impresión)
 ```
 
----
+## Notas Técnicas
 
-## 10. Mejoras de Rendimiento y UX (v1.1.0)
-
-### 10.1 Sistema de Cache para Disenos
-
-**Archivo**: `lib/qr_label_system/designs.ex`
-
-El contexto de Designs ahora integra cache ETS para reducir consultas a BD:
-
+### Flash para Pasar Datos Entre Páginas
+Los datos cargados se pasan via `put_flash`:
 ```elixir
-# Funciones con cache
-get_design!(id)    # Cache hit o consulta BD + cache
-get_design(id)     # Cache hit o consulta BD + cache
-update_design/2    # Invalida cache + actualiza
-delete_design/1    # Invalida cache + elimina
+socket
+|> put_flash(:upload_data, rows)
+|> put_flash(:upload_columns, columns)
+|> push_navigate(to: ~p"/generate/design")
 ```
 
-**Configuracion**:
-- TTL: 5 minutos (`@cache_ttl 300_000`)
-- Namespace: `:designs`
-- Invalidacion automatica en updates/deletes
-
-### 10.2 Indices Avanzados para Audit Logs
-
-**Migracion**: `20240101000009_add_advanced_audit_logs_indexes.exs`
-
-Indices agregados para optimizar consultas de dashboard:
-- GIN index en `metadata` (JSONB) para busquedas en campos dinamicos
-- Indice compuesto `(user_id, action, inserted_at)` para filtros de dashboard
-- Indice compuesto `(resource_type, resource_id, inserted_at)` para historial
-- Indice `(ip_address, inserted_at)` para auditorias de seguridad
-
-### 10.3 Editor Visual Mejorado
-
-**Archivo**: `lib/qr_label_system_web/live/design_live/editor.ex`
-
-#### Undo/Redo
-- Historial de hasta 50 estados en memoria
-- Operaciones undo/redo sin guardar en BD (optimizacion)
-- Indicador visual de cambios sin guardar
-- Persistencia solo en "Guardar" explicito
-
-#### Preview en Tiempo Real
-- Panel lateral con vista previa de etiqueta
-- Datos de ejemplo editables
-- Renderizado de QR/barcodes en tiempo real
-- Toggle con boton o Ctrl+P
-
-#### Atajos de Teclado
-
-**Archivo**: `assets/js/hooks/keyboard_shortcuts.js`
-
-| Atajo | Accion |
-|-------|--------|
-| Ctrl+Z | Deshacer |
-| Ctrl+Y / Ctrl+Shift+Z | Rehacer |
-| Ctrl+S | Guardar |
-| Ctrl+P | Toggle Preview |
-| Delete/Backspace | Eliminar elemento |
-| Escape | Deseleccionar |
-| Q, B, T, L, R, I | Agregar QR, Barcode, Texto, Linea, Rectangulo, Imagen |
-
-### 10.4 Sistema de Monitoreo
-
-#### Health Checks Detallados
-
-**Archivo**: `lib/qr_label_system_web/controllers/api/health_controller.ex`
-
-Endpoints:
-```
-GET /api/health           # Check basico (DB, app)
-GET /api/health/detailed  # Check completo con metricas
-GET /api/metrics          # Metricas Prometheus
-```
-
-Checks incluidos en `/api/health/detailed`:
-- **Database**: latencia, pool size, conexiones
-- **Cache**: entradas, memoria por namespace
-- **Memory**: total, procesos, binarios, % uso
-- **Processes**: conteo, limite, run queue
-- **Oban**: estado del job processor
-
-#### Metricas Prometheus
-
-Formato compatible con scraping de Prometheus:
-```
-qr_label_system_up
-qr_label_system_uptime_seconds
-erlang_memory_bytes{type="total|processes|binary|ets|atom"}
-erlang_process_count
-erlang_run_queue_length
-qr_label_system_cache_entries
-qr_label_system_cache_memory_bytes
-```
-
-### 10.5 Logs Estructurados
-
-**Archivo**: `lib/qr_label_system/logger/structured_logger.ex`
-
-Utilidades para logging consistente en JSON:
-
+Y se recuperan con:
 ```elixir
-alias QrLabelSystem.Logger.StructuredLogger, as: Log
-
-Log.info("batch.created", %{batch_id: 123, label_count: 100}, user_id: 456)
-Log.error("database.connection_failed", %{error: "timeout"})
+Phoenix.Flash.get(socket.assigns.flash, :upload_data)
 ```
 
-Caracteristicas:
-- Formato JSON para integracion con ELK/Splunk
-- Redaccion automatica de datos sensibles (password, token, secret, api_key, etc.)
-- Metadata consistente (timestamp, level, event, request_id, user_id)
+### Parser de Datos Pegados
+En `data_first.ex`, la función `parse_pasted_data/1`:
+- Divide por líneas (`\r?\n`)
+- Primera línea = headers
+- Divide cada línea por tabs (`\t`)
+- Construye lista de mapas
 
----
-
-## 11. Historial de Cambios de Seguridad
-
-### Commit (pendiente) - Mejoras de Rendimiento y UX (Actual)
-
-**SEGURIDAD ADICIONAL**:
-1. Sanitizacion de busqueda LIKE - Escapado de `%`, `_`, `\` para prevenir pattern injection
-2. Validacion de tipos de elemento - Lista blanca de tipos validos en editor
-3. Ocultacion de errores internos - Health checks no exponen detalles de excepciones
-4. Redaccion de logs - Datos sensibles automaticamente redactados
-
-### Commit 68850fb - Hardening de Seguridad
-
-**CRITICOS RESUELTOS**:
-1. ~~Token encoding bypass~~ - Eliminado fallback a tokens raw en `api_auth.ex`
-2. ~~IP spoofing via X-Forwarded-For~~ - Verificacion de proxies confiables
-3. ~~Session salts hardcodeados~~ - Movidos a variables de entorno
-
-**ALTA PRIORIDAD RESUELTOS**:
-4. ~~RBAC faltante en API~~ - Agregado `:operator_only` pipeline
-5. ~~Headers de seguridad faltantes~~ - Agregados en `endpoint.ex`
-
-**MEDIA PRIORIDAD RESUELTOS**:
-6. ~~Double encoding bypass~~ - Decodificacion iterativa en `file_sanitizer.ex`
-7. ~~Hammer backend no configurado~~ - Configurado ETS en `runtime.exs`
-8. ~~Limite de archivos faltante~~ - 10MB en `Plug.Parsers`
-
-### Commit 60443bc - Implementacion Inicial de Seguridad
-
-- Creacion de plugs de seguridad (api_auth, rbac, rate_limiter)
-- Modulo file_sanitizer
-- Optimizacion de queries N+1
-- Componentes de paginacion
-
----
-
-## 12. Tareas Pendientes
-
-### Alta Prioridad
-
-- [ ] Limpiar console.logs en canvas_designer.js (35+ statements)
-- [ ] Implementar rotacion automatica de tokens
-- [ ] Agregar Content Security Policy (CSP) headers
-- [ ] Implementar CSRF para API (double-submit cookie)
-- [ ] Agregar tests de integracion E2E
-- [ ] Tests para nuevas funcionalidades (undo/redo, preview, health checks)
-
-### Media Prioridad
-
-- [ ] Implementar rate limiting por usuario ademas de por IP
-- [x] ~~Agregar metricas de Prometheus/Telemetry~~ (Completado v1.1.0)
-- [x] ~~Implementar cache de disenos frecuentes~~ (Completado v1.1.0)
-- [x] ~~Propiedades de texto (fuente, negrita, alineación)~~ (Completado v1.3.0)
-- [x] ~~Selector de fuentes compatible con Zebra~~ (Completado v1.3.0)
-- [ ] Agregar soft-delete a entidades principales
-- [ ] Generacion de codigos QR/barcode en servidor para lotes grandes (>10,000)
-- [ ] Datos de preview editables por usuario
-
-### Baja Prioridad
-
-- [ ] Internacionalizacion completa (i18n) - codigo mezclado espanol/ingles
-- [ ] Documentacion de API con OpenAPI/Swagger
-- [x] ~~Dashboard de administracion mejorado~~ (Rutas agregadas v1.1.0)
-- [ ] Exportacion de logs de auditoria
-- [ ] CI/CD pipeline (GitHub Actions)
-- [ ] Backup automatico de base de datos
-
----
-
-## 13. Como Continuar el Desarrollo
-
-### Proximos Pasos Recomendados
-
-1. **Ejecutar migraciones pendientes**:
-   ```bash
-   mix ecto.migrate
-   ```
-
-2. **Verificar compilacion**:
-   ```bash
-   mix compile --warnings-as-errors
-   ```
-
-3. **Ejecutar tests existentes**:
-   ```bash
-   mix test
-   ```
-
-4. **Agregar tests para nuevas funcionalidades**:
-   - `test/qr_label_system/designs_cache_test.exs` - Tests de cache
-   - `test/qr_label_system_web/live/design_live/editor_test.exs` - Tests undo/redo
-   - `test/qr_label_system_web/controllers/api/health_controller_test.exs` - Tests health
-
-5. **Habilitar logs estructurados** (opcional):
-   Agregar a `config/config.exs`:
-   ```elixir
-   config :logger, :console,
-     format: {QrLabelSystem.Logger.StructuredLogger, :format},
-     metadata: [:request_id, :user_id, :event]
-   ```
-
-### Archivos Nuevos/Modificados en v1.1.0
-
-**Nuevos**:
-- `lib/qr_label_system/logger/structured_logger.ex`
-- `assets/js/hooks/keyboard_shortcuts.js`
-- `priv/repo/migrations/20240101000009_add_advanced_audit_logs_indexes.exs`
-
-**Modificados**:
-- `lib/qr_label_system/application.ex` - Cache en supervision tree
-- `lib/qr_label_system/designs.ex` - Integracion cache + sanitizacion busqueda
-- `lib/qr_label_system_web/live/design_live/editor.ex` - Undo/redo, preview, shortcuts
-- `lib/qr_label_system_web/controllers/api/health_controller.ex` - Health detallado, metricas
-- `lib/qr_label_system_web/router.ex` - Rutas health, admin dashboard
-- `assets/js/hooks/index.js` - Hook KeyboardShortcuts
-
----
-
-## 14. Contactos y Recursos
-
-### Documentacion
-
-- [Phoenix Framework](https://hexdocs.pm/phoenix)
-- [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view)
-- [Ecto](https://hexdocs.pm/ecto)
-- [Hammer Rate Limiter](https://hexdocs.pm/hammer)
-- [Cloak Encryption](https://hexdocs.pm/cloak_ecto)
-
-### Comandos Utiles
-
-```bash
-# Generar secreto
-mix phx.gen.secret
-
-# Consola interactiva con app cargada
-iex -S mix
-
-# Ver rutas
-mix phx.routes
-
-# Analisis estatico
-mix credo --strict
-mix dialyzer
-
-# Formatear codigo
-mix format
+### Batch con Data Snapshot
+Al crear un batch, se guarda una copia de los datos:
+```elixir
+%{
+  name: "Lote - #{design.name} - #{timestamp}",
+  design_id: design.id,
+  column_mapping: auto_mapping,
+  data_snapshot: upload_data,  # Copia de los datos
+  total_labels: length(upload_data)
+}
 ```
 
----
+## Contacto
 
-*Documento actualizado: 30 Enero 2026 - Version 1.3.0*
+Este handoff fue creado el 31 de enero de 2026.
+Para dudas sobre la implementación, revisar los commits recientes o los tests.

@@ -1,0 +1,11 @@
+Producto,SKU,Precio,Descripcion,Cantidad
+Laptop HP 15,SKU-001,$899.99,Laptop 15 pulgadas 8GB RAM,25
+Monitor Dell 24,SKU-002,$299.99,Monitor LED 24 pulgadas,50
+Teclado Logitech,SKU-003,$49.99,Teclado inalámbrico,100
+Mouse Razer,SKU-004,$79.99,Mouse gaming RGB,75
+Webcam Logitech,SKU-005,$129.99,Webcam HD 1080p,30
+Auriculares Sony,SKU-006,$199.99,Auriculares Bluetooth,45
+SSD Samsung 1TB,SKU-007,$109.99,Disco SSD NVMe,60
+RAM Corsair 16GB,SKU-008,$69.99,Memoria DDR4 3200MHz,80
+Fuente EVGA 650W,SKU-009,$89.99,Fuente certificada 80+,35
+Cable HDMI 2m,SKU-010,$14.99,Cable HDMI 2.0 4K,200
