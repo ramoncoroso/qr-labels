@@ -46,6 +46,17 @@ const CanvasDesigner = {
       console.log('CanvasDesigner: pushing canvas_ready event...')
       this.pushEvent("canvas_ready", {})
       console.log('CanvasDesigner: initialization complete')
+
+      // Save immediately before page unload to prevent data loss
+      this._beforeUnloadHandler = () => {
+        if (this._saveTimeout) {
+          clearTimeout(this._saveTimeout)
+          this._saveTimeout = null
+          // Force immediate save synchronously before page closes
+          this.saveElementsImmediate()
+        }
+      }
+      window.addEventListener('beforeunload', this._beforeUnloadHandler)
     } catch (error) {
       console.error('CanvasDesigner initialization failed:', error)
       console.error('Stack trace:', error.stack)
@@ -144,6 +155,11 @@ const CanvasDesigner = {
     // Remove resize handler
     if (this._resizeHandler) {
       window.removeEventListener('resize', this._resizeHandler)
+    }
+
+    // Remove beforeunload handler
+    if (this._beforeUnloadHandler) {
+      window.removeEventListener('beforeunload', this._beforeUnloadHandler)
     }
 
     // Clear alignment lines
@@ -810,6 +826,16 @@ const CanvasDesigner = {
       currentElementCount: this.elements?.size || 0
     })
     console.trace('CanvasDesigner: loadDesign stack trace')
+
+    // Debug: check for image elements
+    const imageElements = (design?.elements || []).filter(el => el.type === 'image')
+    imageElements.forEach(el => {
+      console.log('CanvasDesigner: loadDesign image element:', {
+        id: el.id,
+        hasImageData: !!el.image_data,
+        imageDataLength: el.image_data ? el.image_data.length : 0
+      })
+    })
 
     // Remove existing elements
     this.elements.forEach((obj) => this.canvas.remove(obj))
@@ -1613,7 +1639,8 @@ const CanvasDesigner = {
         obj.elementData = data
       }
 
-      elements.push({
+      // Build element object with all required fields
+      const elementObj = {
         ...data,
         id: id,
         type: obj.elementType,
@@ -1626,11 +1653,24 @@ const CanvasDesigner = {
         locked: obj.lockMovementX === true,
         z_index: data.z_index || 0,
         name: data.name
-      })
+      }
+
+      // CRITICAL: Explicitly include image data for image elements
+      // This prevents image_data from being lost during save
+      if (obj.elementType === 'image') {
+        elementObj.image_data = data.image_data || null
+        elementObj.image_filename = data.image_filename || null
+        console.log('CanvasDesigner: Saving image element', {
+          id: id,
+          hasImageData: !!elementObj.image_data,
+          imageDataLength: elementObj.image_data ? elementObj.image_data.length : 0
+        })
+      }
+
+      elements.push(elementObj)
     })
 
     console.log('CanvasDesigner: Sending element_modified event with', elements.length, 'elements')
-    console.log('CanvasDesigner: Elements data:', JSON.stringify(elements, null, 2))
 
     this.pushEvent("element_modified", { elements })
 
@@ -1718,8 +1758,21 @@ const CanvasDesigner = {
   // ============================================================================
 
   updateElementImage(elementId, imageData, imageFilename) {
-    const obj = this.elements.get(elementId)
-    if (!obj) return
+    console.log('CanvasDesigner: updateElementImage called', { elementId, hasData: !!imageData })
+
+    // Try to find element by ID (handle both number and string keys)
+    let obj = this.elements.get(elementId)
+    if (!obj) {
+      obj = this.elements.get(String(elementId))
+    }
+    if (!obj) {
+      obj = this.elements.get(Number(elementId))
+    }
+
+    if (!obj) {
+      console.error('CanvasDesigner: Element not found for image update', elementId)
+      return
+    }
 
     const data = obj.elementData || {}
     data.image_data = imageData
@@ -1757,13 +1810,30 @@ const CanvasDesigner = {
       img.elementType = 'image'
       img.elementData = data
 
+      console.log('CanvasDesigner: Image loaded, updating canvas. elementData:', {
+        id: elementId,
+        hasImageData: !!data.image_data,
+        imageDataLength: data.image_data ? data.image_data.length : 0
+      })
+
       this.canvas.remove(obj)
       this.elements.set(elementId, img)
       this.canvas.add(img)
       this.applyZIndexOrdering()
       this.canvas.setActiveObject(img)
       this.canvas.renderAll()
-      this.saveElements()
+
+      // Important: Save with a delay to ensure image is properly set
+      // Use immediate save (not debounced) to prevent race conditions
+      setTimeout(() => {
+        console.log('CanvasDesigner: Saving after image update, verifying data:', {
+          elementId,
+          hasImageData: !!data.image_data,
+          imageDataLength: data.image_data ? data.image_data.length : 0
+        })
+        // Use immediate save instead of debounced to ensure image data is saved
+        this.saveElementsImmediate()
+      }, 100)
     }, { crossOrigin: 'anonymous' })
   },
 
@@ -2357,31 +2427,9 @@ const CanvasDesigner = {
   setupDragAndDrop() {
     const container = this.el
 
-    // Allow drop on canvas container (dragstart is handled by DraggableElements hook)
-    container.addEventListener('dragover', (e) => {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
-      container.classList.add('ring-2', 'ring-blue-400')
-    })
-
-    container.addEventListener('dragleave', (e) => {
-      // Only remove if leaving the container entirely
-      if (!container.contains(e.relatedTarget)) {
-        container.classList.remove('ring-2', 'ring-blue-400')
-      }
-    })
-
-    container.addEventListener('drop', (e) => {
-      e.preventDefault()
-      container.classList.remove('ring-2', 'ring-blue-400')
-
-      const elementType = e.dataTransfer.getData('element-type')
-      if (!elementType) return
-
-      // Calculate drop position relative to canvas
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const y = e.clientY - rect.top
+    // Listen for custom element-drop event from DraggableElements hook
+    container.addEventListener('element-drop', (e) => {
+      const { type, x, y } = e.detail
 
       // Convert to mm (accounting for zoom and label position)
       const zoom = this._currentZoom || 1
@@ -2390,7 +2438,7 @@ const CanvasDesigner = {
 
       // Send event to LiveView with position
       this.pushEvent("add_element_at", {
-        type: elementType,
+        type: type,
         x: Math.max(0, Math.round(xMm * 10) / 10),
         y: Math.max(0, Math.round(yMm * 10) / 10)
       })

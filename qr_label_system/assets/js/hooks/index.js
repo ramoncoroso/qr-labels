@@ -8,6 +8,7 @@ import SortableLayers from "./sortable_layers"
 import SingleLabelPrint from "./single_label_print"
 import DraggableElements from "./draggable_elements"
 import AutoHideFlash from "./auto_hide_flash"
+import AutoUploadSubmit from "./auto_upload_submit"
 
 const Hooks = {
   CanvasDesigner,
@@ -19,7 +20,8 @@ const Hooks = {
   SortableLayers,
   SingleLabelPrint,
   DraggableElements,
-  AutoHideFlash
+  AutoHideFlash,
+  AutoUploadSubmit
 }
 
 export default Hooks

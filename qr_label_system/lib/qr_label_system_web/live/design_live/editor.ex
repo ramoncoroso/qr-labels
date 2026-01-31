@@ -45,6 +45,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:history, [])
        |> assign(:history_index, -1)
        |> assign(:has_unsaved_changes, false)
+       |> assign(:pending_save_flash, false)
        |> assign(:zoom, 100)
        |> assign(:snap_enabled, true)
        |> assign(:grid_snap_enabled, false)
@@ -158,8 +159,34 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     # Update design with modified elements from canvas
     design = socket.assigns.design
 
+    # DEBUG: Log image elements specifically
+    image_elements = Enum.filter(elements_json, fn el ->
+      type = Map.get(el, "type") || Map.get(el, :type)
+      type == "image"
+    end)
+
+    if length(image_elements) > 0 do
+      IO.puts("\n[IMAGE DEBUG] Saving #{length(image_elements)} image elements:")
+      Enum.each(image_elements, fn el ->
+        id = Map.get(el, "id") || Map.get(el, :id)
+        image_data = Map.get(el, "image_data") || Map.get(el, :image_data)
+        image_filename = Map.get(el, "image_filename") || Map.get(el, :image_filename)
+        data_length = if image_data, do: String.length(image_data), else: 0
+        IO.puts("  Image #{id}: filename=#{image_filename}, data_length=#{data_length}")
+      end)
+    end
+
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
+        # Verify image data was saved correctly
+        saved_images = Enum.filter(updated_design.elements || [], fn el -> el.type == "image" end)
+        Enum.each(saved_images, fn el ->
+          if el.image_data do
+            IO.puts("[IMAGE OK] Image #{el.id} saved with #{String.length(el.image_data)} bytes")
+          else
+            IO.puts("[IMAGE WARNING] Image #{el.id} saved WITHOUT image_data!")
+          end
+        end)
         # Sync selected_element with updated design to prevent stale data
         updated_selected =
           if socket.assigns.selected_element do
@@ -172,14 +199,33 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             nil
           end
 
+        # Check if this save was triggered by the "Guardar" button
+        show_flash = Map.get(socket.assigns, :pending_save_flash, false)
+
+        socket =
+          socket
+          |> push_to_history(design)
+          |> assign(:design, updated_design)
+          |> assign(:selected_element, updated_selected)
+          |> assign(:pending_save_flash, false)
+
+        socket = if show_flash do
+          socket
+          |> assign(:has_unsaved_changes, false)
+          |> put_flash(:info, "Diseño guardado")
+        else
+          socket
+        end
+
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        IO.puts("[SAVE ERROR] Failed to save design #{design.id}")
+        IO.inspect(changeset.errors, label: "Changeset errors")
         {:noreply,
          socket
-         |> push_to_history(design)
-         |> assign(:design, updated_design)
-         |> assign(:selected_element, updated_selected)}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Error al guardar cambios")}
+         |> assign(:pending_save_flash, false)
+         |> put_flash(:error, "Error al guardar cambios")}
     end
   end
 
@@ -327,27 +373,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("save_design", _params, socket) do
-    # Convert Element structs to maps to avoid Ecto.CastError
-    elements_as_maps = Enum.map(socket.assigns.design.elements || [], fn el ->
-      case el do
-        %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
-        map when is_map(map) -> map
-      end
-    end)
-
-    # Persist current design state to database
-    case Designs.update_design(socket.assigns.design, %{elements: elements_as_maps}) do
-      {:ok, saved_design} ->
-        {:noreply,
-         socket
-         |> assign(:design, saved_design)
-         |> assign(:has_unsaved_changes, false)
-         |> put_flash(:info, "Diseño guardado")
-         |> push_event("save_to_server", %{})}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Error al guardar el diseño")}
-    end
+    # Request canvas to send its current state immediately
+    # This triggers element_modified which will persist to database
+    # We set a flag to show success flash after the save completes
+    {:noreply,
+     socket
+     |> assign(:pending_save_flash, true)
+     |> push_event("save_to_server", %{})}
   end
 
   # ============================================================================
@@ -409,24 +441,31 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("upload_element_image", %{"element_id" => element_id}, socket) do
+    IO.puts("[DEBUG] upload_element_image called with element_id: #{inspect(element_id)}")
+
     uploaded_files =
       consume_uploaded_entries(socket, :element_image, fn %{path: path}, entry ->
         # Read file and convert to base64
         {:ok, binary} = File.read(path)
         base64 = Base.encode64(binary)
         mime_type = entry.client_type || "image/png"
+        IO.puts("[DEBUG] Processed file: #{entry.client_name}, type: #{mime_type}")
         {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
       end)
 
+    IO.puts("[DEBUG] uploaded_files count: #{length(uploaded_files)}")
+
     case uploaded_files do
       [%{data: image_data, filename: filename}] ->
+        IO.puts("[DEBUG] Pushing update_element_image event for element: #{element_id}")
         {:noreply,
          socket
          |> push_event("update_element_image", %{
            element_id: element_id,
            image_data: image_data,
            image_filename: filename
-         })}
+         })
+         |> put_flash(:info, "Imagen subida correctamente")}
 
       _ ->
         {:noreply, put_flash(socket, :error, "Error al subir la imagen")}
@@ -966,8 +1005,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div class="space-y-2">
               <button
                 type="button"
-                phx-click="add_element"
-                phx-value-type="text"
                 data-element-type="text"
                 class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
@@ -979,8 +1016,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
               <button
                 type="button"
-                phx-click="add_element"
-                phx-value-type="qr"
                 data-element-type="qr"
                 class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
@@ -992,8 +1027,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
               <button
                 type="button"
-                phx-click="add_element"
-                phx-value-type="barcode"
                 data-element-type="barcode"
                 class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
@@ -1005,8 +1038,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
               <button
                 type="button"
-                phx-click="add_element"
-                phx-value-type="rectangle"
                 data-element-type="rectangle"
                 class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
@@ -1018,8 +1049,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
               <button
                 type="button"
-                phx-click="add_element"
-                phx-value-type="line"
                 data-element-type="line"
                 class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
@@ -1031,8 +1060,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
               <button
                 type="button"
-                phx-click="add_element"
-                phx-value-type="image"
                 data-element-type="image"
                 class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
               >
@@ -1753,7 +1780,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </div>
               <% end %>
 
-              <form id={"upload-form-#{@element.id}"} phx-change="validate_image_upload" phx-submit="upload_element_image" class="mt-2">
+              <form id={"upload-form-#{@element.id}"} phx-change="validate_image_upload" phx-submit="upload_element_image" phx-hook="AutoUploadSubmit" class="mt-2">
                 <input type="hidden" name="element_id" value={@element.id} />
                 <.live_file_input upload={@uploads.element_image} class="hidden" />
                 <label

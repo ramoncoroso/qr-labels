@@ -132,7 +132,15 @@ defmodule QrLabelSystem.Designs.Design do
       background_color: element.background_color,
       border_width: element.border_width,
       border_color: element.border_color,
-      image_url: element.image_url
+      image_url: element.image_url,
+      # Layer management fields - CRITICAL for persistence
+      z_index: element.z_index,
+      visible: element.visible,
+      locked: element.locked,
+      name: element.name,
+      # Image data fields
+      image_data: element.image_data,
+      image_filename: element.image_filename
     }
   end
 end
