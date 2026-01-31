@@ -10,18 +10,35 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
     design = Designs.get_design!(design_id)
     user_id = socket.assigns.current_user.id
 
+    # Security: Verify user owns this design
+    if design.user_id != user_id do
+      {:ok,
+       socket
+       |> put_flash(:error, "No tienes permiso para acceder a este diseño")
+       |> push_navigate(to: ~p"/designs")}
+    else
+      mount_authorized(socket, design, source_id, user_id)
+    end
+  end
+
+  defp mount_authorized(socket, design, source_id, user_id) do
     {data_source, data, columns} =
       if source_id == "upload" do
         # Get data from UploadDataStore (uploaded file)
         {upload_data, upload_columns} = UploadDataStore.get(user_id)
         {nil, upload_data || [], upload_columns || []}
       else
-        # Load from saved data source
+        # Load from saved data source with ownership verification
         source = DataSources.get_data_source!(source_id)
 
-        case DataSources.get_data(source, nil) do
-          {:ok, %{headers: cols, rows: rows}} -> {source, rows, cols}
-          {:error, _} -> {source, [], []}
+        # Security: Verify user owns this data source
+        if source.user_id != user_id do
+          {nil, [], []}
+        else
+          case DataSources.get_data(source, nil) do
+            {:ok, %{headers: cols, rows: rows}} -> {source, rows, cols}
+            {:error, _} -> {source, [], []}
+          end
         end
       end
 

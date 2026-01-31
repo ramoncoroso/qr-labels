@@ -17,8 +17,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Load available columns from persistent store (from data-first flow)
       user_id = socket.assigns.current_user.id
       {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id)
-      IO.inspect({user_id, upload_data != nil, available_columns},
-        label: "Editor: Loading data for user")
 
       # Ensure we have lists (not nil)
       upload_data = upload_data || []
