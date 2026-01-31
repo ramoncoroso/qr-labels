@@ -6,107 +6,106 @@ Sistema web para crear y generar etiquetas con códigos QR, códigos de barras y
 
 ---
 
-## Sesión Actual (31 enero 2026) - Parte 3
+## Sesión Actual (31 enero 2026) - Parte 4
 
 ### Lo Que Se Implementó
 
-#### 1. Corrección de Acceso a Campos de Elementos
+#### 1. Migración de Sidebar a Header Horizontal
 
-**Problema:** Al crear elementos rectangle, line o image, aparecía error:
+**Cambio:** Reemplazada la barra lateral izquierda (256px) por un header horizontal para maximizar el espacio de contenido.
+
+**Estructura:**
 ```
-** (KeyError) key :binding not found in: %{...}
-```
-
-**Causa:** El template accedía directamente a `@element.binding` pero cuando los elementos vienen de vuelta del JavaScript canvas, son mapas planos que pueden no tener todas las claves.
-
-**Solución:** Cambiar accesos directos a `Map.get/2`:
-```elixir
-# Antes (fallaba):
-value={@element.binding || ""}
-
-# Después (funciona):
-value={Map.get(@element, :binding) || ""}
+┌──────────────────────────────────────────────────────────────────────┐
+│ [Logo] QR Label System     [+ Generar]  [Diseños]        [User ▼]   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Archivos modificados:**
-- `lib/qr_label_system_web/live/design_live/editor.ex` líneas 1554, 1565
+**Archivos:** `lib/qr_label_system_web/components/layouts/app.html.heex`
 
-#### 2. Panel de Propiedades Específico por Tipo de Elemento
+#### 2. Sistema de Backup/Restore de Diseños
 
-**Problema:** Rectangle y line no tenían propiedades editables en el panel derecho.
+**Funcionalidad:**
+- Botón "Exportar todo" - descarga JSON con todos los diseños del usuario
+- Botón "Importar" - carga archivo JSON de backup
+- Eliminado el botón de exportar individual de cada diseño
 
-**Solución:** Añadidos paneles específicos:
-- **Línea**: Color
-- **Rectángulo**: Color de fondo, color de borde, ancho de borde
-- **Imagen**: Ya tenía uploader de imagen
+**Archivos:**
+- `lib/qr_label_system/designs.ex` - funciones `export_all_designs_to_json/1` e `import_designs_from_json/2`
+- `lib/qr_label_system_web/live/design_live/index.ex` - UI y eventos
 
-```elixir
-<% "line" -> %>
-  <div class="border-t pt-4 space-y-3">
-    <div>
-      <label>Color</label>
-      <input type="color" value={Map.get(@element, :color) || "#000000"} ... />
-    </div>
-  </div>
+#### 3. Mejoras en Lista de Diseños (/designs)
 
-<% "rectangle" -> %>
-  <div class="border-t pt-4 space-y-3">
-    <div><label>Color de fondo</label><input type="color" .../></div>
-    <div><label>Color de borde</label><input type="color" .../></div>
-    <div><label>Ancho de borde (mm)</label><input type="number" .../></div>
-  </div>
-```
+- Botones más grandes (w-10 h-10)
+- Botón "Vista previa" añadido
+- Redirección de "Nuevo Diseño" a `/generate`
+- Layout de `/designs/new` actualizado para coincidir con el flujo de generación
 
-#### 3. Configuración de Drag and Drop (EN PROGRESO)
+#### 4. Mensajes Flash Mejorados
 
-**Estado:** El módulo JavaScript carga pero el hook `mounted()` no se ejecuta.
+**Cambios:**
+- Posición centrada en la pantalla a la altura del toolbar
+- Texto más grande y en negrita
+- Auto-hide después de 3 segundos con fade-out
+- Hook `AutoHideFlash` en `assets/js/hooks/auto_hide_flash.js`
 
-**Configuración actual:**
-- Hook `DraggableElements` en `assets/js/hooks/draggable_elements.js`
-- Registrado en `assets/js/hooks/index.js`
-- Toolbar con `id="element-toolbar" phx-hook="DraggableElements"`
-- Botones con `class="draggable-element" data-element-type="xxx"`
-- Canvas tiene `setupDragAndDrop()` para recibir drops
+**Archivos:** `lib/qr_label_system_web/components/core_components.ex`
 
-**Problema a resolver:**
-- El console.log de nivel módulo aparece ("DraggableElements module loaded!")
-- Pero `mounted()` nunca se llama
-- Posible causa: conflicto con cómo LiveView maneja el hook en ese elemento específico
+#### 5. Traducciones a Español
 
-**Para depurar:**
-1. Verificar en DevTools → Elements que el div tiene `id="element-toolbar"` y `phx-hook="DraggableElements"`
-2. Verificar que no hay errores de JavaScript en la consola
-3. Probar mover el hook a un elemento más simple para aislar el problema
+- "Preview" → "Vista previa" en el editor
+
+#### 6. Fix: Actualización de Propiedades de Elementos
+
+**Problema:** Al cambiar propiedades en el panel (ej. contenido de texto), no se actualizaba el canvas.
+
+**Causa:** El canvas perdía la selección cuando el usuario hacía clic en los inputs del panel de propiedades.
+
+**Solución:**
+1. El servidor ahora envía el ID del elemento junto con el evento `update_element_property`
+2. El canvas busca el elemento por ID en lugar de depender de `getActiveObject()`
+3. Input de "Contenido" envuelto en form para que `phx-change` funcione correctamente
+
+**Archivos:**
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+- `assets/js/hooks/canvas_designer.js` - función `updateElementById()`
+
+#### 7. Fix: Redimensionamiento de Texto
+
+**Problema:** Al redimensionar un texto en el canvas y hacer clic en otro lugar, volvía al tamaño anterior.
+
+**Causa:** Para textboxes, Fabric.js modifica `width` directamente (no usa scale), pero el código guardaba el ancho viejo de `elementData`.
+
+**Solución:** Caso específico en `saveElementsImmediate()` que lee dimensiones actuales del objeto textbox.
 
 ---
 
-## Sesión Anterior (31 enero 2026) - Parte 2
+## Arquitectura Actual
 
-### Lo Que Se Implementó
+### Flujo de Actualización de Propiedades
 
-#### 1. Mejora de Visibilidad del Botón "Volver a selección de modo"
+```
+[Panel de Propiedades]
+    ↓ phx-change="update_element" (field, value)
+[Servidor Phoenix]
+    ↓ push_event("update_element_property", {id, field, value})
+[Hook CanvasDesigner]
+    ↓ updateElementById(id, field, value)
+[Fabric.js Object]
+    ↓ obj.set(property, value)
+[Canvas Render]
+```
 
-**Archivos:** `single_select.ex`, `data_first.ex`
+### Archivos Clave
 
-#### 2. Botón de Renombrar Movido al Editor
-
-**Archivos:** `index.ex`, `editor.ex`
-
-#### 3. Simplificación de Controles de Ajuste (Grid)
-
-Eliminado "Imán", solo queda "Rejilla" con función `alignAllElementsToGrid()`.
-
-#### 4. Nombres Secuenciales para Elementos
-
-"Código QR 1", "Código QR 2", etc.
-
-#### 5. Offset de Posición para Nuevos Elementos
-
-5mm de offset por elemento del mismo tipo.
-
-#### 6. Campo `binding: nil` en todos los elementos
-
-Añadido a rectangle, line, image en `create_default_element/2`.
+| Archivo | Descripción |
+|---------|-------------|
+| `components/layouts/app.html.heex` | Layout con header horizontal |
+| `assets/js/hooks/canvas_designer.js` | Editor de canvas con Fabric.js |
+| `assets/js/hooks/auto_hide_flash.js` | Auto-hide para mensajes flash |
+| `lib/qr_label_system/designs.ex` | Contexto con backup/restore |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | LiveView del editor |
+| `lib/qr_label_system_web/live/design_live/index.ex` | Lista de diseños |
 
 ---
 
@@ -119,31 +118,18 @@ Añadido a rectangle, line, image en `create_default_element/2`.
    - Usar los datos de `UploadDataStore`
    - Aplicar bindings de columnas a elementos
 
-2. **Arreglar Drag and Drop** (si se desea esta funcionalidad)
-   - El hook DraggableElements no monta correctamente
-   - Mientras tanto, el CLICK funciona perfectamente para añadir elementos
+2. **Preview Multi-Etiqueta**
+   - Mostrar cómo se verá cada etiqueta con datos reales
 
 ### Media Prioridad
 
-3. **Preview Multi-Etiqueta**
-4. **Mejoras en Preview del Editor** (QR/barcode reales)
-5. **Configuración de Impresión**
+3. **Mejoras en Preview del Editor** (QR/barcode reales en lugar de placeholders)
+4. **Configuración de Impresión** (tamaño de página, márgenes, etiquetas por página)
 
 ### Baja Prioridad
 
-6. **Limpieza de Código** (referencias a batches)
-7. **Eliminar Soporte de BD Externa**
-
----
-
-## Archivos Clave
-
-| Archivo | Descripción |
-|---------|-------------|
-| `assets/js/hooks/canvas_designer.js` | Editor de canvas con Fabric.js |
-| `assets/js/hooks/draggable_elements.js` | Hook para drag (no funciona aún) |
-| `lib/qr_label_system_web/live/design_live/editor.ex` | LiveView del editor |
-| `lib/qr_label_system/upload_data_store.ex` | GenServer para datos en memoria |
+5. **Limpieza de Código** (referencias a batches obsoletas)
+6. **Drag and Drop** (hook DraggableElements no monta - click funciona como alternativa)
 
 ---
 
@@ -151,7 +137,7 @@ Añadido a rectangle, line, image en `create_default_element/2`.
 
 ```bash
 # Servidor de desarrollo
-mix phx.server
+cd qr_label_system && mix phx.server
 
 # Tests
 mix test
@@ -164,10 +150,15 @@ iex -S mix
 
 ## Bugs Conocidos y Soluciones
 
-### KeyError: key :binding not found
+### Propiedades no se actualizan en canvas
 
-**Síntoma:** Error al crear/seleccionar elementos.
-**Solución:** Usar `Map.get(@element, :field)` en lugar de `@element.field` en templates.
+**Síntoma:** Cambiar valores en el panel de propiedades no afecta el canvas.
+**Solución:** Verificar que el input esté dentro de un `<form>` con `phx-change`.
+
+### Textbox vuelve a tamaño original
+
+**Síntoma:** Al redimensionar texto y hacer clic fuera, vuelve al tamaño anterior.
+**Solución:** Ya arreglado - el código ahora lee dimensiones actuales del textbox.
 
 ### Hook DraggableElements no monta
 
@@ -176,4 +167,4 @@ iex -S mix
 
 ---
 
-*Handoff actualizado: 31 enero 2026 (sesión 3)*
+*Handoff actualizado: 31 enero 2026 (sesión 4)*

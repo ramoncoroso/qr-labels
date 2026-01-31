@@ -632,7 +632,6 @@ const CanvasDesigner = {
     })
 
     this.handleEvent("update_element_property", ({ id, field, value }) => {
-      console.log('CanvasDesigner: Received update_element_property event', { id, field, value })
       if (field && !this._isDestroyed) {
         this.updateElementById(id, field, value)
       }
@@ -1190,9 +1189,6 @@ const CanvasDesigner = {
    * Update element by ID (used when properties panel changes values)
    */
   updateElementById(id, field, value) {
-    console.log('CanvasDesigner: updateElementById called', { id, field, value })
-    console.log('CanvasDesigner: elements Map keys:', Array.from(this.elements.keys()))
-
     // Find element by ID instead of relying on active selection
     let obj = null
     if (id) {
@@ -1206,11 +1202,7 @@ const CanvasDesigner = {
       obj = this.canvas.getActiveObject()
     }
 
-    if (!obj?.elementId) {
-      console.log('CanvasDesigner: updateElementById - element not found', { id, field })
-      return
-    }
-    console.log('CanvasDesigner: updateElementById - found element', { elementId: obj.elementId, type: obj.type })
+    if (!obj?.elementId) return
     this.updateSelectedElement(field, value, obj)
   },
 
@@ -1274,14 +1266,12 @@ const CanvasDesigner = {
         break
       case 'text_content':
         if (obj.type === 'textbox') {
-          console.log('CanvasDesigner: Setting text content to:', value)
           obj.set('text', value || '')
           // Force text recalculation
           obj.initDimensions()
           obj.setCoords()
           // Auto-fit width to content if text is short
           this.autoFitTextWidth(obj)
-          console.log('CanvasDesigner: Text updated, new text:', obj.text)
         }
         break
       case 'font_size':
