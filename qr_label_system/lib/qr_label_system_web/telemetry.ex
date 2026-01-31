@@ -79,25 +79,6 @@ defmodule QrLabelSystemWeb.Telemetry do
   end
 
   defp periodic_measurements do
-    [
-      {__MODULE__, :dispatch_batch_stats, []}
-    ]
-  end
-
-  @doc """
-  Dispatches batch generation statistics.
-  """
-  def dispatch_batch_stats do
-    stats = QrLabelSystem.Batches.get_generation_stats()
-
-    :telemetry.execute(
-      [:qr_label_system, :batches],
-      %{
-        total_batches: stats.total_batches || 0,
-        total_labels: stats.total_labels || 0,
-        total_printed: stats.total_printed || 0
-      },
-      %{}
-    )
+    []
   end
 end

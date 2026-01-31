@@ -24,7 +24,11 @@ defmodule QrLabelSystem do
   - `Accounts` - Gestión de usuarios y autenticación
   - `Designs` - Diseños de etiquetas
   - `DataSources` - Fuentes de datos (Excel, BD externas)
-  - `Batches` - Configuraciones de impresión
   - `Audit` - Registro de actividad
+
+  ## Seguridad
+
+  Los datos de impresión se procesan en memoria y no se persisten en la base de datos.
+  Esto evita posibles robos de datos sensibles almacenados.
   """
 end

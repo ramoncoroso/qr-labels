@@ -14,7 +14,7 @@ defmodule QrLabelSystem.Logger.StructuredLogger do
 
       alias QrLabelSystem.Logger.StructuredLogger, as: Log
 
-      Log.info("batch.created", %{batch_id: 123, label_count: 100}, user_id: 456)
+      Log.info("design.created", %{design_id: 123, element_count: 5}, user_id: 456)
       Log.error("database.connection_failed", %{error: "timeout"})
 
   ## Configuration

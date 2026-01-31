@@ -4,7 +4,7 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
   """
   use QrLabelSystemWeb, :live_view
 
-  alias QrLabelSystem.{Accounts, Repo}
+  alias QrLabelSystem.Repo
   alias QrLabelSystem.Accounts.User
 
   import Ecto.Query
@@ -28,7 +28,6 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
     socket
     |> assign(:user_stats, get_user_stats())
     |> assign(:design_stats, get_design_stats())
-    |> assign(:batch_stats, get_batch_stats())
     |> assign(:recent_activity, get_recent_activity())
     |> assign(:system_stats, get_system_stats())
   end
@@ -65,18 +64,6 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
       total: 0,
       active: 0,
       deleted: 0
-    }
-  end
-
-  defp get_batch_stats do
-    # Placeholder - would query actual batch stats
-    %{
-      total: 0,
-      pending: 0,
-      processing: 0,
-      completed: 0,
-      failed: 0,
-      labels_generated: 0
     }
   end
 
@@ -122,7 +109,7 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
       </.header>
 
       <!-- Stats Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <!-- Users Card -->
         <.stat_card
           title={gettext("Users")}
@@ -148,48 +135,27 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
           </div>
         </.stat_card>
 
-        <!-- Batches Card -->
+        <!-- Security Info Card -->
         <.stat_card
-          title={gettext("Batches")}
-          value={@batch_stats.total}
-          icon="hero-squares-2x2"
+          title={gettext("Data Security")}
+          value="OK"
+          icon="hero-shield-check"
           color="green"
         >
           <div class="text-xs text-gray-500 mt-2">
-            <%= @batch_stats.completed %> <%= gettext("completed") %>
+            <%= gettext("No print data stored") %>
           </div>
         </.stat_card>
-
-        <!-- Labels Card -->
-        <.stat_card
-          title={gettext("Labels Generated")}
-          value={format_number(@batch_stats.labels_generated)}
-          icon="hero-qr-code"
-          color="orange"
-        />
       </div>
 
-      <!-- User Roles & Batch Status -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- User Roles -->
-        <.card title={gettext("Users by Role")}>
-          <div class="space-y-4">
-            <.role_bar label={gettext("Admin")} count={@user_stats.admins} total={@user_stats.total} color="red" />
-            <.role_bar label={gettext("Operator")} count={@user_stats.operators} total={@user_stats.total} color="blue" />
-            <.role_bar label={gettext("Viewer")} count={@user_stats.viewers} total={@user_stats.total} color="gray" />
-          </div>
-        </.card>
-
-        <!-- Batch Status -->
-        <.card title={gettext("Batch Status")}>
-          <div class="space-y-4">
-            <.status_bar label={gettext("Pending")} count={@batch_stats.pending} color="yellow" />
-            <.status_bar label={gettext("Processing")} count={@batch_stats.processing} color="blue" />
-            <.status_bar label={gettext("Completed")} count={@batch_stats.completed} color="green" />
-            <.status_bar label={gettext("Failed")} count={@batch_stats.failed} color="red" />
-          </div>
-        </.card>
-      </div>
+      <!-- User Roles -->
+      <.card title={gettext("Users by Role")}>
+        <div class="space-y-4">
+          <.role_bar label={gettext("Admin")} count={@user_stats.admins} total={@user_stats.total} color="red" />
+          <.role_bar label={gettext("Operator")} count={@user_stats.operators} total={@user_stats.total} color="blue" />
+          <.role_bar label={gettext("Viewer")} count={@user_stats.viewers} total={@user_stats.total} color="gray" />
+        </div>
+      </.card>
 
       <!-- System Health -->
       <.card title={gettext("System Health")}>
@@ -304,32 +270,4 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
     """
   end
 
-  defp status_bar(assigns) do
-    color_classes = %{
-      "yellow" => "bg-yellow-500",
-      "blue" => "bg-blue-500",
-      "green" => "bg-green-500",
-      "red" => "bg-red-500"
-    }
-
-    assigns = assign(assigns, :color_class, Map.get(color_classes, assigns.color, "bg-gray-500"))
-
-    ~H"""
-    <div class="flex items-center">
-      <span class={"w-3 h-3 rounded-full #{@color_class} mr-3"}></span>
-      <span class="text-gray-600 flex-1"><%= @label %></span>
-      <span class="font-semibold"><%= @count %></span>
-    </div>
-    """
-  end
-
-  defp format_number(n) when n >= 1_000_000 do
-    "#{Float.round(n / 1_000_000, 1)}M"
-  end
-
-  defp format_number(n) when n >= 1_000 do
-    "#{Float.round(n / 1_000, 1)}K"
-  end
-
-  defp format_number(n), do: to_string(n)
 end

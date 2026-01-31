@@ -31,11 +31,13 @@ defmodule QrLabelSystem.Designs.Design do
     # Template flag for reusable designs
     field :is_template, :boolean, default: false
 
+    # Label type: "single" for static labels, "multiple" for data-bound labels
+    field :label_type, :string, default: "single"
+
     # Elements on the label
     embeds_many :elements, Element, on_replace: :delete
 
     belongs_to :user, QrLabelSystem.Accounts.User
-    has_many :batches, QrLabelSystem.Batches.Batch
 
     timestamps(type: :utc_datetime)
   end
@@ -49,7 +51,7 @@ defmodule QrLabelSystem.Designs.Design do
       :name, :description,
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
-      :is_template, :user_id
+      :is_template, :label_type, :user_id
     ])
     |> cast_embed(:elements, with: &Element.changeset/2)
     |> validate_required([:name, :width_mm, :height_mm])
@@ -66,7 +68,7 @@ defmodule QrLabelSystem.Designs.Design do
   """
   def duplicate_changeset(design, attrs) do
     %__MODULE__{}
-    |> cast(attrs, [:name, :user_id])
+    |> cast(attrs, [:name, :user_id, :label_type])
     |> put_change(:description, design.description)
     |> put_change(:width_mm, design.width_mm)
     |> put_change(:height_mm, design.height_mm)
@@ -75,6 +77,7 @@ defmodule QrLabelSystem.Designs.Design do
     |> put_change(:border_color, design.border_color)
     |> put_change(:border_radius, design.border_radius)
     |> put_change(:is_template, false)
+    |> put_change(:label_type, design.label_type)
     |> put_embed(:elements, design.elements)
     |> validate_required([:name, :width_mm, :height_mm])
   end

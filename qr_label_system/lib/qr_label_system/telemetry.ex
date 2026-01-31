@@ -6,7 +6,7 @@ defmodule QrLabelSystem.Telemetry do
   - HTTP request duration and counts
   - Database query performance
   - Phoenix LiveView events
-  - Business metrics (batches, labels, designs)
+  - Business metrics (designs, files)
   - Authentication events
   - Rate limiting events
 
@@ -21,9 +21,9 @@ defmodule QrLabelSystem.Telemetry do
   Emit custom events using:
 
       :telemetry.execute(
-        [:qr_label_system, :batch, :generated],
-        %{label_count: 100},
-        %{batch_id: 123, user_id: 456}
+        [:qr_label_system, :design, :created],
+        %{count: 1},
+        %{user_id: 456}
       )
   """
 
@@ -140,16 +140,6 @@ defmodule QrLabelSystem.Telemetry do
       ),
 
       # Business Metrics
-      counter("qr_label_system.batch.created",
-        tags: [:user_role],
-        description: "Batches created"
-      ),
-      counter("qr_label_system.batch.generated",
-        description: "Batches generated"
-      ),
-      summary("qr_label_system.batch.labels_count",
-        description: "Labels per batch"
-      ),
       counter("qr_label_system.design.created",
         description: "Designs created"
       ),
@@ -239,17 +229,6 @@ defmodule QrLabelSystem.Telemetry do
     :telemetry.execute(
       [:qr_label_system, :auth, event_type],
       %{count: 1},
-      metadata
-    )
-  end
-
-  @doc """
-  Emit a custom telemetry event for batch operations.
-  """
-  def emit_batch_event(event_type, measurements, metadata \\ %{}) do
-    :telemetry.execute(
-      [:qr_label_system, :batch, event_type],
-      measurements,
       metadata
     )
   end

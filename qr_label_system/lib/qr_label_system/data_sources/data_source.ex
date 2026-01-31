@@ -40,7 +40,6 @@ defmodule QrLabelSystem.DataSources.DataSource do
     field :test_error, :string
 
     belongs_to :user, QrLabelSystem.Accounts.User
-    has_many :batches, QrLabelSystem.Batches.Batch
 
     timestamps(type: :utc_datetime)
   end

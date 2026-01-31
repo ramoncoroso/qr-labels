@@ -20,7 +20,6 @@ defmodule QrLabelSystem.Accounts.User do
     field :confirmed_at, :naive_datetime
 
     has_many :designs, QrLabelSystem.Designs.Design
-    has_many :batches, QrLabelSystem.Batches.Batch
 
     timestamps(type: :utc_datetime)
   end

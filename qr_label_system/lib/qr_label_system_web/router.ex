@@ -127,12 +127,6 @@ defmodule QrLabelSystemWeb.Router do
       live "/data-sources/:id", DataSourceLive.Show, :show
       live "/data-sources/:id/edit", DataSourceLive.Edit, :edit
 
-      # Batches
-      live "/batches", BatchLive.Index, :index
-      live "/batches/new", BatchLive.New, :new
-      live "/batches/:id", BatchLive.Show, :show
-      live "/batches/:id/print", BatchLive.Print, :print
-
       # Generation workflow
       live "/generate", GenerateLive.Index, :index
       live "/generate/single", GenerateLive.SingleSelect, :single_select
@@ -141,7 +135,6 @@ defmodule QrLabelSystemWeb.Router do
       live "/generate/design", GenerateLive.DesignSelect, :design_select
       live "/generate/design/:design_id", GenerateLive.DataSource, :data_source
       live "/generate/map/:design_id/:source_id", GenerateLive.Mapping, :mapping
-      live "/generate/preview/:batch_id", GenerateLive.Preview, :preview
     end
   end
 

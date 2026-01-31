@@ -29,7 +29,6 @@ defmodule QrLabelSystem.Cache do
 
   - `:designs` - Label design configurations
   - `:users` - User data
-  - `:batches` - Batch metadata
   - `:stats` - Computed statistics
   """
 
@@ -38,7 +37,7 @@ defmodule QrLabelSystem.Cache do
 
   @default_ttl 300_000  # 5 minutes
   @cleanup_interval 60_000  # 1 minute
-  @namespaces [:designs, :users, :batches, :stats]
+  @namespaces [:designs, :users, :stats]
 
   # Client API
 

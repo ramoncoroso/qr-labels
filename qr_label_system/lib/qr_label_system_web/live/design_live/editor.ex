@@ -5,7 +5,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   alias QrLabelSystem.Designs.Design
 
   @impl true
-  def mount(%{"id" => id}, session, socket) do
+  def mount(%{"id" => id}, _session, socket) do
     design = Designs.get_design!(id)
 
     if design.user_id != socket.assigns.current_user.id do
@@ -14,16 +14,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> put_flash(:error, "No tienes permiso para editar este diseño")
        |> push_navigate(to: ~p"/designs")}
     else
-      # Load available columns from flash first (from data-first flow), fallback to session
-      available_columns =
-        Phoenix.Flash.get(socket.assigns.flash, :upload_columns) ||
-        Map.get(session, "upload_columns") ||
-        []
+      # Load available columns from persistent store (from data-first flow)
+      user_id = socket.assigns.current_user.id
+      {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id)
+      IO.inspect({user_id, upload_data != nil, available_columns},
+        label: "Editor: Loading data for user")
 
-      upload_data =
-        Phoenix.Flash.get(socket.assigns.flash, :upload_data) ||
-        Map.get(session, "upload_data") ||
-        []
+      # Ensure we have lists (not nil)
+      upload_data = upload_data || []
+      available_columns = available_columns || []
 
       # Build preview data from first row if we have data
       preview_data = case upload_data do
@@ -39,10 +38,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:selected_elements, [])
        |> assign(:clipboard, [])
        |> assign(:available_columns, available_columns)
+       |> assign(:upload_data, upload_data)
        |> assign(:show_properties, true)
        |> assign(:show_preview, false)
        |> assign(:show_layers, true)
        |> assign(:preview_data, preview_data)
+       |> assign(:preview_row_index, 0)
        |> assign(:history, [])
        |> assign(:history_index, -1)
        |> assign(:has_unsaved_changes, false)
@@ -71,8 +72,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     element = create_default_element(type)
 
     # Add element to design immediately so it can be selected
+    # Convert existing elements to maps to avoid Ecto.CastError when mixing structs and maps
     current_elements = socket.assigns.design.elements || []
-    new_elements = current_elements ++ [element]
+    current_elements_as_maps = Enum.map(current_elements, fn el ->
+      case el do
+        %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
+        map when is_map(map) -> map
+      end
+    end)
+    new_elements = current_elements_as_maps ++ [element]
 
     case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
       {:ok, updated_design} ->
@@ -117,10 +125,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
+        # Sync selected_element with updated design to prevent stale data
+        updated_selected =
+          if socket.assigns.selected_element do
+            selected_id = Map.get(socket.assigns.selected_element, :id) ||
+                         Map.get(socket.assigns.selected_element, "id")
+            Enum.find(updated_design.elements || [], fn el ->
+              (Map.get(el, :id) || Map.get(el, "id")) == selected_id
+            end)
+          else
+            nil
+          end
+
         {:noreply,
          socket
          |> push_to_history(design)
-         |> assign(:design, updated_design)}
+         |> assign(:design, updated_design)
+         |> assign(:selected_element, updated_selected)}
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Error al guardar cambios")}
@@ -218,7 +239,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("zoom_out", _params, socket) do
-    new_zoom = max(socket.assigns.zoom - 25, 50)
+    new_zoom = max(socket.assigns.zoom - 25, 25)
     {:noreply,
      socket
      |> assign(:zoom, new_zoom)
@@ -235,7 +256,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("update_zoom_from_wheel", %{"zoom" => zoom}, socket) do
-    new_zoom = max(50, min(200, round(zoom)))
+    new_zoom = max(25, min(200, round(zoom)))
     {:noreply,
      socket
      |> assign(:zoom, new_zoom)
@@ -243,9 +264,29 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("zoom_changed", %{"zoom" => zoom}, socket) do
+    # Sync zoom state from canvas (e.g., after auto-fit)
+    new_zoom = max(25, min(200, round(zoom)))
+    {:noreply, assign(socket, :zoom, new_zoom)}
+  end
+
+  @impl true
+  def handle_event("fit_to_view", _params, socket) do
+    {:noreply, push_event(socket, "fit_to_view", %{})}
+  end
+
+  @impl true
   def handle_event("save_design", _params, socket) do
+    # Convert Element structs to maps to avoid Ecto.CastError
+    elements_as_maps = Enum.map(socket.assigns.design.elements || [], fn el ->
+      case el do
+        %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
+        map when is_map(map) -> map
+      end
+    end)
+
     # Persist current design state to database
-    case Designs.update_design(socket.assigns.design, %{elements: socket.assigns.design.elements}) do
+    case Designs.update_design(socket.assigns.design, %{elements: elements_as_maps}) do
       {:ok, saved_design} ->
         {:noreply,
          socket
@@ -483,6 +524,45 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   def handle_event("update_grid_size", _params, socket), do: {:noreply, socket}
 
   # ============================================================================
+  # Preview Row Navigation Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("preview_prev_row", _params, socket) do
+    upload_data = socket.assigns.upload_data
+    current_index = socket.assigns.preview_row_index
+
+    if current_index > 0 do
+      new_index = current_index - 1
+      new_preview_data = Enum.at(upload_data, new_index)
+      {:noreply,
+       socket
+       |> assign(:preview_row_index, new_index)
+       |> assign(:preview_data, new_preview_data)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("preview_next_row", _params, socket) do
+    upload_data = socket.assigns.upload_data
+    current_index = socket.assigns.preview_row_index
+    max_index = length(upload_data) - 1
+
+    if current_index < max_index do
+      new_index = current_index + 1
+      new_preview_data = Enum.at(upload_data, new_index)
+      {:noreply,
+       socket
+       |> assign(:preview_row_index, new_index)
+       |> assign(:preview_data, new_preview_data)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # ============================================================================
   # Helper Functions
   # ============================================================================
 
@@ -691,6 +771,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
 
         <div class="flex items-center space-x-2">
+          <!-- Preview Toggle -->
+          <button
+            phx-click="toggle_preview"
+            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_preview, do: "bg-indigo-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <span>Preview</span>
+          </button>
+
           <button
             phx-click="save_design"
             class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 font-medium"
@@ -834,6 +926,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                </svg>
+              </button>
+              <div class="w-px h-4 bg-gray-300 mx-1"></div>
+              <button
+                phx-click="fit_to_view"
+                class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
+                title="Ajustar a la vista"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                 </svg>
               </button>
             </div>
@@ -1092,25 +1194,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <h3 class="font-semibold text-gray-900 mb-4">Propiedades de Etiqueta</h3>
               <.label_properties design={@design} />
 
-              <div class="mt-6 pt-4 border-t">
-                <h4 class="text-sm font-medium text-gray-700 mb-3">Vista previa</h4>
-                <button
-                  phx-click="toggle_preview"
-                  class={"w-full px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition #{if @show_preview, do: "bg-blue-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                  <span><%= if @show_preview, do: "Ocultar", else: "Mostrar" %> vista previa</span>
-                </button>
-              </div>
+              <!-- Data loaded indicator -->
+              <%= if length(@upload_data) > 0 do %>
+                <div class="mt-6 pt-4 border-t">
+                  <div class="bg-indigo-50 rounded-lg p-3">
+                    <div class="flex items-center space-x-2 text-indigo-700 mb-2">
+                      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                      </svg>
+                      <span class="font-medium"><%= length(@upload_data) %> registros</span>
+                    </div>
+                    <p class="text-xs text-indigo-600">
+                      Datos Excel cargados. Asigna columnas a los elementos y usa Preview para ver el resultado.
+                    </p>
+                  </div>
+                </div>
+              <% end %>
             <% end %>
           </div>
         </div>
 
         <!-- Preview Panel (overlay) -->
-        <div :if={@show_preview} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 overflow-auto p-4 shadow-lg z-20">
+        <div :if={@show_preview} class="absolute right-72 top-16 bottom-0 w-96 bg-gray-50 border-l border-gray-200 overflow-auto p-4 shadow-lg z-20">
           <div class="flex items-center justify-between mb-4">
             <h3 class="font-semibold text-gray-900">Vista Previa</h3>
             <button phx-click="toggle_preview" class="text-gray-400 hover:text-gray-600">
@@ -1120,13 +1225,50 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </button>
           </div>
 
+          <!-- Row Navigation (when multiple rows available) -->
+          <%= if length(@upload_data) > 1 do %>
+            <div class="bg-indigo-50 rounded-lg p-3 mb-4">
+              <div class="flex items-center justify-between">
+                <button
+                  phx-click="preview_prev_row"
+                  disabled={@preview_row_index == 0}
+                  class={"p-2 rounded-lg transition #{if @preview_row_index == 0, do: "text-gray-300 cursor-not-allowed", else: "text-indigo-600 hover:bg-indigo-100"}"}
+                >
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div class="text-center">
+                  <span class="text-lg font-bold text-indigo-700"><%= @preview_row_index + 1 %></span>
+                  <span class="text-sm text-indigo-600"> de <%= length(@upload_data) %></span>
+                  <p class="text-xs text-indigo-500">etiquetas</p>
+                </div>
+                <button
+                  phx-click="preview_next_row"
+                  disabled={@preview_row_index >= length(@upload_data) - 1}
+                  class={"p-2 rounded-lg transition #{if @preview_row_index >= length(@upload_data) - 1, do: "text-gray-300 cursor-not-allowed", else: "text-indigo-600 hover:bg-indigo-100"}"}
+                >
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          <% end %>
+
           <div class="bg-white rounded-lg shadow p-3 mb-4">
-            <h4 class="text-xs font-medium text-gray-500 mb-2">DATOS DE EJEMPLO</h4>
-            <div class="space-y-1 text-sm">
+            <h4 class="text-xs font-medium text-gray-500 mb-2">
+              <%= if length(@upload_data) > 0 do %>
+                DATOS DE FILA <%= @preview_row_index + 1 %>
+              <% else %>
+                DATOS DE EJEMPLO
+              <% end %>
+            </h4>
+            <div class="space-y-1 text-sm max-h-40 overflow-y-auto">
               <%= for {key, value} <- @preview_data do %>
-                <div class="flex justify-between">
-                  <span class="text-gray-500"><%= key %></span>
-                  <span class="font-mono text-gray-900"><%= value %></span>
+                <div class="flex justify-between gap-2">
+                  <span class="text-gray-500 truncate"><%= key %></span>
+                  <span class="font-mono text-gray-900 truncate text-right"><%= value %></span>
                 </div>
               <% end %>
             </div>
@@ -1143,6 +1285,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             >
             </div>
           </div>
+
+          <!-- Summary when data is loaded -->
+          <%= if length(@upload_data) > 0 do %>
+            <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
+              <div class="flex items-center space-x-2 text-green-700">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="font-medium"><%= length(@upload_data) %> registros cargados</span>
+              </div>
+              <p class="mt-1 text-xs text-green-600">
+                Usa las flechas para navegar entre etiquetas
+              </p>
+            </div>
+          <% end %>
         </div>
       </div>
     </div>

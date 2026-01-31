@@ -3,24 +3,24 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.DataSources
-  alias QrLabelSystem.Batches
+  alias QrLabelSystem.UploadDataStore
 
   @impl true
   def mount(%{"design_id" => design_id, "source_id" => source_id}, _session, socket) do
     design = Designs.get_design!(design_id)
+    user_id = socket.assigns.current_user.id
 
     {data_source, data, columns} =
       if source_id == "upload" do
-        # Get data from flash (uploaded file)
-        data = Phoenix.Flash.get(socket.assigns.flash, :upload_data) || []
-        columns = Phoenix.Flash.get(socket.assigns.flash, :upload_columns) || []
-        {nil, data, columns}
+        # Get data from UploadDataStore (uploaded file)
+        {upload_data, upload_columns} = UploadDataStore.get(user_id)
+        {nil, upload_data || [], upload_columns || []}
       else
         # Load from saved data source
         source = DataSources.get_data_source!(source_id)
 
-        case DataSources.get_data_from_source(source) do
-          {:ok, %{columns: cols, rows: rows}} -> {source, rows, cols}
+        case DataSources.get_data(source, nil) do
+          {:ok, %{headers: cols, rows: rows}} -> {source, rows, cols}
           {:error, _} -> {source, [], []}
         end
       end
@@ -45,7 +45,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
      |> assign(:columns, columns)
      |> assign(:bindable_elements, bindable_elements)
      |> assign(:mapping, initial_mapping)
-     |> assign(:creating, false)}
+     |> assign(:saving, false)}
   end
 
   @impl true
@@ -56,30 +56,36 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
   end
 
   @impl true
-  def handle_event("create_batch", _params, socket) do
-    socket = assign(socket, :creating, true)
+  def handle_event("go_to_editor", _params, socket) do
+    socket = assign(socket, :saving, true)
+    design = socket.assigns.design
 
-    batch_params = %{
-      design_id: socket.assigns.design.id,
-      data_source_id: if(socket.assigns.data_source, do: socket.assigns.data_source.id, else: nil),
-      column_mapping: socket.assigns.mapping,
-      data_snapshot: socket.assigns.data,
-      total_labels: length(socket.assigns.data),
-      user_id: socket.assigns.current_user.id
-    }
+    # Update design element bindings based on mapping
+    updated_elements =
+      (design.elements || [])
+      |> Enum.map(fn el ->
+        binding = Map.get(socket.assigns.mapping, el.id)
+        if binding do
+          Map.put(el, :binding, binding)
+        else
+          el
+        end
+      end)
 
-    case Batches.create_batch(batch_params) do
-      {:ok, batch} ->
+    # Save design with updated bindings
+    case Designs.update_design(design, %{elements: updated_elements}) do
+      {:ok, _updated_design} ->
+        # Data is already in UploadDataStore, redirect to editor
         {:noreply,
          socket
-         |> put_flash(:info, "Configuración de impresión creada exitosamente")
-         |> push_navigate(to: ~p"/generate/preview/#{batch.id}")}
+         |> put_flash(:info, "Campos vinculados. Ahora puedes ver la vista previa y generar PDF.")
+         |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
 
       {:error, _changeset} ->
         {:noreply,
          socket
-         |> assign(:creating, false)
-         |> put_flash(:error, "Error al crear la configuración")}
+         |> assign(:saving, false)
+         |> put_flash(:error, "Error al guardar los bindings")}
     end
   end
 
@@ -121,7 +127,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
             <div class="w-16 h-0.5 bg-gray-300"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">4</div>
-              <span class="ml-2 text-sm text-gray-500">Imprimir</span>
+              <span class="ml-2 text-sm text-gray-500">Editor / Imprimir</span>
             </div>
           </div>
         </div>
@@ -187,12 +193,15 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
 
             <div class="mt-6 pt-4 border-t">
               <button
-                phx-click="create_batch"
-                disabled={@creating || length(@data) == 0}
+                phx-click="go_to_editor"
+                disabled={@saving || length(@data) == 0}
                 class="w-full bg-indigo-600 text-white px-4 py-3 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
               >
-                <%= if @creating, do: "Creando...", else: "Configurar Impresión (#{length(@data)} etiquetas)" %>
+                <%= if @saving, do: "Guardando...", else: "Ir al Editor (#{length(@data)} registros)" %>
               </button>
+              <p class="text-xs text-gray-500 text-center mt-2">
+                Los datos se procesan en memoria y no se guardan en el servidor
+              </p>
             </div>
           </div>
 
