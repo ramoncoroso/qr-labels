@@ -27,22 +27,24 @@ defmodule QrLabelSystemWeb.UserConfirmationLiveTest do
       {:ok, view, _html} = live(conn, ~p"/users/confirm/#{token}")
 
       view
-      |> form("form")
+      |> form("#confirmation_form")
       |> render_submit()
 
-      # Should show success or redirect
-      assert_redirect(view, "/") or render(view) =~ "confirmed"
+      # Should redirect after confirmation
+      flash = assert_redirect(view, "/")
+      assert flash["info"] =~ "confirmado" or flash["info"] =~ "confirmed"
     end
 
     test "does not confirm with invalid token", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/users/confirm/invalid-token")
 
       view
-      |> form("form")
+      |> form("#confirmation_form")
       |> render_submit()
 
-      html = render(view)
-      assert html =~ "invalid" or html =~ "error" or html =~ "inválido"
+      # Should redirect with error flash
+      flash = assert_redirect(view, "/")
+      assert flash["error"] =~ "inválido" or flash["error"] =~ "invalid" or flash["error"] =~ "expirado"
     end
   end
 end

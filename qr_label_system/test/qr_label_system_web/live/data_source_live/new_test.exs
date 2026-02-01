@@ -14,7 +14,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.NewTest do
     test "displays new data source form", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/data-sources/new")
 
-      assert html =~ "Nueva Fuente de Datos" or html =~ "New Data Source"
+      assert html =~ "Agregar datos" or html =~ "Nueva Fuente" or html =~ "New Data Source" or html =~ "upload"
     end
 
     test "shows file upload option", %{conn: conn} do

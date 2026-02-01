@@ -92,7 +92,7 @@ defmodule QrLabelSystemWeb.AuthIntegrationTest do
       # Try to access protected pages
       protected_paths = [
         ~p"/designs",
-        ~p"/batches",
+        ~p"/data-sources",
         ~p"/users/settings"
       ]
 

@@ -79,6 +79,7 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
 
       case result do
         {:error, {:redirect, _}} -> assert true
+        {:error, {:live_redirect, _}} -> assert true
         {:ok, view, _html} ->
           # If allowed, should be read-only or redirected
           html = render(view)

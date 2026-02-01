@@ -31,14 +31,15 @@ defmodule QrLabelSystemWeb.Admin.UsersLiveTest do
     end
 
     test "filters by role", %{conn: conn} do
-      operator = operator_fixture()
+      _operator = operator_fixture()
       _viewer = viewer_fixture()
 
       {:ok, view, _html} = live(conn, ~p"/admin/users")
 
-      html = view
-        |> element("select[name=role]")
-        |> render_change(%{role: "operator"})
+      # Use the form with phx-change instead of the select directly
+      view
+      |> form("form[phx-change=filter_role]", %{role: "operator"})
+      |> render_change()
 
       # Should still show operator (filter via patch)
       assert view |> render() =~ "operator"
@@ -50,7 +51,7 @@ defmodule QrLabelSystemWeb.Admin.UsersLiveTest do
       {:ok, view, _html} = live(conn, ~p"/admin/users")
 
       html = view
-        |> form("form", %{search: "searchable"})
+        |> form("form[phx-submit=search]", %{search: "searchable"})
         |> render_submit()
 
       # Search triggers push_patch
@@ -100,9 +101,9 @@ defmodule QrLabelSystemWeb.Admin.UsersLiveTest do
       |> element("button[phx-click=edit_user][phx-value-id=#{user.id}]")
       |> render_click()
 
-      # Update role
+      # Update role - use the modal form with phx-submit=update_role
       view
-      |> form("form", %{user: %{role: "operator"}})
+      |> form("form[phx-submit=update_role]", %{user: %{role: "operator"}})
       |> render_submit()
 
       html = render(view)

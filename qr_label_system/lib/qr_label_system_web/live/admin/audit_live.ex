@@ -312,10 +312,10 @@ defmodule QrLabelSystemWeb.Admin.AuditLive do
                   <%= log.ip_address || "-" %>
                 </td>
                 <td class="px-4 py-3 text-sm">
-                  <%= if log.changes do %>
+                  <%= if log.metadata && map_size(log.metadata) > 0 do %>
                     <button
                       class="text-blue-600 hover:text-blue-800"
-                      title={Jason.encode!(log.changes, pretty: true)}
+                      title={Jason.encode!(log.metadata, pretty: true)}
                     >
                       <%= gettext("View changes") %>
                     </button>

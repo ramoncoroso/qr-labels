@@ -905,6 +905,7 @@ const CanvasDesigner = {
       QRCode.toDataURL(content, {
         width: size,
         margin: 1,
+        errorCorrectionLevel: element.qr_error_level || 'M',
         color: {
           dark: element.color || '#000000',
           light: element.background_color || '#ffffff'
@@ -1030,7 +1031,7 @@ const CanvasDesigner = {
           format: format,
           width: 2,
           height: h * 0.7, // Leave room for text
-          displayValue: element.show_text !== false,
+          displayValue: element.barcode_show_text !== false,
           fontSize: Math.max(10, h * 0.15),
           margin: 5,
           background: element.background_color || '#ffffff',
@@ -1278,7 +1279,9 @@ const CanvasDesigner = {
 
   createLine(element, x, y) {
     const w = (element.width || 50) * PX_PER_MM
-    const h = Math.max((element.height || 0.5) * PX_PER_MM, 2)
+    // Use border_width for line thickness (fallback to height for backwards compatibility)
+    const thickness = element.border_width || element.height || 0.5
+    const h = Math.max(thickness * PX_PER_MM, 2)
 
     return new fabric.Rect({
       left: x,
@@ -1291,14 +1294,24 @@ const CanvasDesigner = {
   },
 
   createRect(element, x, y) {
+    const width = (element.width || 30) * PX_PER_MM
+    const height = (element.height || 20) * PX_PER_MM
+
+    // border_radius is a percentage (0-100) for rounded corners
+    const roundness = (element.border_radius || 0) / 100
+    const maxRadius = Math.min(width, height) / 2
+    const radius = roundness * maxRadius
+
     return new fabric.Rect({
       left: x,
       top: y,
-      width: (element.width || 30) * PX_PER_MM,
-      height: (element.height || 20) * PX_PER_MM,
+      width: width,
+      height: height,
       fill: element.background_color || 'transparent',
       stroke: element.border_color || '#000000',
       strokeWidth: (element.border_width || 0.5) * PX_PER_MM,
+      rx: radius,
+      ry: radius,
       angle: element.rotation || 0
     })
   },
@@ -1512,6 +1525,12 @@ const CanvasDesigner = {
         obj.set('angle', value)
         break
       case 'color':
+        // For QR and barcode, changing color requires regenerating
+        if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
+          obj.elementData = data
+          this.recreateCodeElement(obj, data.binding || data.text_content)
+          return // recreateCodeElement handles save
+        }
         obj.set('fill', value)
         break
       case 'text_content':
@@ -1554,17 +1573,28 @@ const CanvasDesigner = {
         }
         break
       case 'background_color':
+        // For QR and barcode, changing background_color requires regenerating
+        if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
+          obj.elementData = data
+          this.recreateCodeElement(obj, data.binding || data.text_content)
+          return // recreateCodeElement handles save
+        }
         obj.set('fill', value)
         break
       case 'border_color':
         obj.set('stroke', value)
         break
       case 'border_width':
-        obj.set('strokeWidth', value * PX_PER_MM)
+        if (obj.elementType === 'line') {
+          // For lines, border_width controls the line thickness (height of the rect)
+          obj.set('height', Math.max(value * PX_PER_MM, 2))
+        } else {
+          obj.set('strokeWidth', value * PX_PER_MM)
+        }
         break
       case 'border_radius':
-        // For circle elements, update the rx/ry based on roundness percentage
-        if (obj.elementType === 'circle' && obj.type === 'rect') {
+        // For circle and rectangle elements, update the rx/ry based on roundness percentage
+        if ((obj.elementType === 'circle' || obj.elementType === 'rectangle') && obj.type === 'rect') {
           const roundness = value / 100
           const maxRadius = Math.min(obj.width, obj.height) / 2
           obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
@@ -1578,11 +1608,27 @@ const CanvasDesigner = {
           return // recreateCodeElement handles save
         }
         break
+      case 'qr_error_level':
+        // Changing QR error level requires regenerating the QR code
+        if (obj.elementType === 'qr') {
+          obj.elementData = data
+          this.recreateCodeElement(obj, data.binding || data.text_content)
+          return // recreateCodeElement handles save
+        }
+        break
+      case 'barcode_show_text':
+        // Changing barcode show_text requires regenerating the barcode
+        if (obj.elementType === 'barcode') {
+          obj.elementData = data
+          this.recreateCodeElement(obj, data.binding || data.text_content)
+          return // recreateCodeElement handles save
+        }
+        break
       case 'barcode_format':
         // Changing barcode format requires regenerating the barcode
         if (obj.elementType === 'barcode') {
           obj.elementData = data  // Update elementData before recreating (includes new format)
-          this.recreateCodeElement(obj, data.binding)
+          this.recreateCodeElement(obj, data.binding || data.text_content)
           return // recreateCodeElement handles save
         }
         break

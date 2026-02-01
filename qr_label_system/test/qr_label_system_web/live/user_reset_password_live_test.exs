@@ -12,8 +12,13 @@ defmodule QrLabelSystemWeb.UserResetPasswordLiveTest do
       %{user: user}
     end
 
-    test "renders reset password page", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/users/reset_password/some-token")
+    test "renders reset password page", %{conn: conn, user: user} do
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_reset_password_instructions(user, url)
+        end)
+
+      {:ok, _view, html} = live(conn, ~p"/users/reset_password/#{token}")
 
       assert html =~ "Reset" or html =~ "Restablecer" or html =~ "password" or html =~ "contraseña"
     end

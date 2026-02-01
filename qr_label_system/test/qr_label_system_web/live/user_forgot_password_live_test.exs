@@ -17,23 +17,24 @@ defmodule QrLabelSystemWeb.UserForgotPasswordLiveTest do
       {:ok, view, _html} = live(conn, ~p"/users/reset_password")
 
       view
-      |> form("form", %{user: %{email: user.email}})
+      |> form("#reset_password_form", %{user: %{email: user.email}})
       |> render_submit()
 
-      html = render(view)
-      assert html =~ "email" or html =~ "correo" or html =~ "sent" or html =~ "enviado"
+      # The form redirects after submit
+      flash = assert_redirect(view, "/")
+      assert flash["info"] =~ "email" or flash["info"] =~ "correo" or flash["info"] =~ "instrucciones"
     end
 
     test "does not reveal if email exists", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/users/reset_password")
 
       view
-      |> form("form", %{user: %{email: "nonexistent@example.com"}})
+      |> form("#reset_password_form", %{user: %{email: "nonexistent@example.com"}})
       |> render_submit()
 
-      # Should show same message regardless of whether email exists
-      html = render(view)
-      assert html =~ "email" or html =~ "correo"
+      # Should show same message regardless of whether email exists (redirect happens)
+      flash = assert_redirect(view, "/")
+      assert flash["info"] =~ "email" or flash["info"] =~ "correo" or flash["info"] =~ "instrucciones"
     end
   end
 end

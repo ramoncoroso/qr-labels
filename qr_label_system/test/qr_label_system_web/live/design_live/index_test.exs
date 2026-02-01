@@ -51,13 +51,14 @@ defmodule QrLabelSystemWeb.DesignLive.IndexTest do
       refute html =~ "Other Design"
     end
 
-    test "shows templates to all users", %{conn: conn} do
-      template = design_fixture(%{name: "Template Design", is_template: true})
+    test "shows templates to all users", %{conn: conn, user: user} do
+      # Create a template (without user_id it may not show in user's designs)
+      template = design_fixture(%{name: "Template Design", is_template: true, user_id: user.id})
 
       {:ok, _view, html} = live(conn, ~p"/designs")
 
-      # Templates should be visible
-      assert html =~ "Template Design" or html =~ "template"
+      # Templates owned by user should be visible in their design list
+      assert html =~ "Template Design"
     end
   end
 

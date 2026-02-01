@@ -1693,6 +1693,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </select>
               </form>
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color del código</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :color) || "#000000"}
+                phx-change="update_element"
+                phx-value-field="color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :background_color) || "#ffffff"}
+                phx-change="update_element"
+                phx-value-field="background_color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
           </div>
 
         <% "barcode" -> %>
@@ -1759,6 +1781,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 />
                 <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
               </form>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color del código</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :color) || "#000000"}
+                phx-change="update_element"
+                phx-value-field="color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :background_color) || "#ffffff"}
+                phx-change="update_element"
+                phx-value-field="background_color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
             </div>
           </div>
 
@@ -1923,6 +1967,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 class="mt-1 block w-full h-9 rounded-md border-gray-300"
               />
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Grosor (mm)</label>
+              <input
+                type="number"
+                name="value"
+                value={Map.get(@element, :border_width) || 0.5}
+                step="0.1"
+                min="0.1"
+                phx-blur="update_element"
+                phx-value-field="border_width"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </div>
           </div>
 
         <% "rectangle" -> %>
@@ -1961,6 +2018,26 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 phx-value-field="border_width"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Radio de borde</label>
+              <div
+                id={"border-radius-slider-rect-#{Map.get(@element, :id) || Map.get(@element, "id")}"}
+                phx-hook="BorderRadiusSlider"
+                phx-update="ignore"
+                data-element-id={Map.get(@element, :id) || Map.get(@element, "id")}
+                data-value={Map.get(@element, :border_radius) || 0}
+                class="flex items-center space-x-2 mt-1"
+              >
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <span class="text-sm text-gray-600 w-10 text-right"></span>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">0% = esquinas rectas, 100% = máximo redondeo</p>
             </div>
           </div>
 

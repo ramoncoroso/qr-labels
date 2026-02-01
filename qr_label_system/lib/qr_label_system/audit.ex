@@ -95,7 +95,7 @@ defmodule QrLabelSystem.Audit do
     Repo.all(
       from l in Log,
         where: l.user_id == ^user_id,
-        order_by: [desc: l.inserted_at],
+        order_by: [desc: l.inserted_at, desc: l.id],
         limit: ^limit
     )
   end

@@ -271,6 +271,7 @@ defmodule QrLabelSystem.AuditTest do
       log2 = audit_log_fixture(%{user_id: user.id})
 
       logs = Audit.logs_for_user(user.id)
+      # log2 has higher id, so it should come first (desc order by inserted_at, then id)
       assert hd(logs).id == log2.id
       assert List.last(logs).id == log1.id
     end

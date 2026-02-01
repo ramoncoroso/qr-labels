@@ -18,7 +18,8 @@ defmodule QrLabelSystemWeb.DataSourceLive.IndexTest do
       {:ok, _view, html} = live(conn, ~p"/data-sources")
 
       assert html =~ "My Excel Data"
-      assert html =~ data_source.type
+      # Type is displayed as a formatted label (e.g., "excel" -> "Excel")
+      assert html =~ String.capitalize(data_source.type)
     end
 
     test "shows empty state when no data sources", %{conn: conn} do

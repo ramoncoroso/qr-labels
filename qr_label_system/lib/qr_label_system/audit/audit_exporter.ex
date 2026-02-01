@@ -42,7 +42,7 @@ defmodule QrLabelSystem.Audit.AuditExporter do
     "User Email",
     "IP Address",
     "User Agent",
-    "Changes",
+    "Metadata",
     "Timestamp"
   ]
 
@@ -241,7 +241,7 @@ defmodule QrLabelSystem.Audit.AuditExporter do
       escape_csv(get_user_email(log)),
       escape_csv(log.ip_address),
       escape_csv(log.user_agent),
-      escape_csv(encode_changes(log.changes)),
+      escape_csv(encode_metadata(log.metadata)),
       format_timestamp(log.inserted_at)
     ]
     |> Enum.join(",")
@@ -275,7 +275,7 @@ defmodule QrLabelSystem.Audit.AuditExporter do
       user_email: get_user_email(log),
       ip_address: log.ip_address,
       user_agent: log.user_agent,
-      changes: log.changes,
+      metadata: log.metadata,
       timestamp: format_timestamp(log.inserted_at)
     }
   end
@@ -285,11 +285,11 @@ defmodule QrLabelSystem.Audit.AuditExporter do
   defp get_user_email(%{user: %{email: email}}), do: email
   defp get_user_email(_), do: nil
 
-  defp encode_changes(nil), do: ""
-  defp encode_changes(changes) when is_map(changes) do
-    Jason.encode!(changes)
+  defp encode_metadata(nil), do: ""
+  defp encode_metadata(metadata) when is_map(metadata) do
+    Jason.encode!(metadata)
   end
-  defp encode_changes(changes), do: to_string(changes)
+  defp encode_metadata(metadata), do: to_string(metadata)
 
   defp format_timestamp(nil), do: ""
   defp format_timestamp(datetime) do
