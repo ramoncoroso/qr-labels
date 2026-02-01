@@ -29,8 +29,6 @@ defmodule QrLabelSystemWeb.DesignLive.EditorDebug do
      |> assign(:has_unsaved_changes, false)
      |> assign(:zoom, 100)
      |> assign(:snap_enabled, true)
-     |> assign(:grid_snap_enabled, false)
-     |> assign(:grid_size, 5)
      |> assign(:snap_threshold, 5)
      |> allow_upload(:element_image,
        accept: ~w(.png .jpg .jpeg .gif .svg),

@@ -264,6 +264,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           socket
           |> push_event("update_element_property", %{id: element_id, field: field, value: value})
 
+        # For barcode_format, don't update selected_element to avoid losing focus
+        # The canvas will recreate the barcode and save, which syncs the element
+        field == "barcode_format" ->
+          socket
+          |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+
         true ->
           socket
           |> assign(:selected_element, updated_element)
@@ -660,7 +666,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   # ============================================================================
-  # Snap and Grid Handlers
+  # Snap Handlers
   # ============================================================================
 
   @impl true
@@ -669,54 +675,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply,
      socket
      |> assign(:snap_enabled, new_value)
-     |> push_event("update_snap_settings", %{snap_enabled: new_value, grid_snap_enabled: socket.assigns.grid_snap_enabled, grid_size: socket.assigns.grid_size})}
+     |> push_event("update_snap_settings", %{snap_enabled: new_value})}
   end
-
-  @impl true
-  def handle_event("toggle_grid_snap", _params, socket) do
-    new_value = !socket.assigns.grid_snap_enabled
-    {:noreply,
-     socket
-     |> assign(:grid_snap_enabled, new_value)
-     |> push_event("update_snap_settings", %{snap_enabled: socket.assigns.snap_enabled, grid_snap_enabled: new_value, grid_size: socket.assigns.grid_size})}
-  end
-
-  @impl true
-  def handle_event("align_to_grid", _params, socket) do
-    new_value = !socket.assigns.grid_snap_enabled
-    grid_size = socket.assigns.grid_size
-
-    socket = socket
-      |> assign(:grid_snap_enabled, new_value)
-      |> push_event("update_snap_settings", %{
-        snap_enabled: socket.assigns.snap_enabled,
-        grid_snap_enabled: new_value,
-        grid_size: grid_size
-      })
-
-    # If enabling grid, also align existing elements
-    if new_value do
-      {:noreply, push_event(socket, "align_all_to_grid", %{grid_size: grid_size})}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  @valid_grid_sizes [2, 5, 10]
-  @impl true
-  def handle_event("update_grid_size", %{"size" => size}, socket) do
-    size_int = String.to_integer(size)
-    if size_int in @valid_grid_sizes do
-      {:noreply,
-       socket
-       |> assign(:grid_size, size_int)
-       |> push_event("update_snap_settings", %{snap_enabled: socket.assigns.snap_enabled, grid_snap_enabled: socket.assigns.grid_snap_enabled, grid_size: size_int})}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  def handle_event("update_grid_size", _params, socket), do: {:noreply, socket}
 
   # ============================================================================
   # Preview Row Navigation Handlers
@@ -1295,8 +1255,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               data-border-color={@design.border_color || "#000000"}
               data-border-radius={@design.border_radius || 0}
               data-snap-enabled={@snap_enabled}
-              data-grid-snap-enabled={@grid_snap_enabled}
-              data-grid-size={@grid_size}
               data-snap-threshold={@snap_threshold}
               class="rounded-lg bg-slate-200"
             >
@@ -1768,25 +1726,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <% end %>
             <div>
               <label class="block text-sm font-medium text-gray-700">Formato</label>
-              <form phx-change="update_element" class="mt-1">
-                <input type="hidden" name="field" value="barcode_format" />
-                <select
-                  name="value"
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                >
-                  <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC"}, {"ITF14", "ITF-14"}] do %>
-                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                    <option
-                      value={value}
-                      selected={@element.barcode_format == value}
-                      disabled={not compatible}
-                      class={if not compatible, do: "text-gray-400", else: ""}
-                    >
-                      <%= label %><%= if not compatible, do: " (incompatible)", else: "" %>
-                    </option>
-                  <% end %>
-                </select>
-              </form>
+              <select
+                name="value"
+                phx-change="update_element"
+                phx-value-field="barcode_format"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              >
+                <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC"}, {"ITF14", "ITF-14"}] do %>
+                  <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                  <option
+                    value={value}
+                    selected={@element.barcode_format == value}
+                    disabled={not compatible}
+                    class={if not compatible, do: "text-gray-400", else: ""}
+                  >
+                    <%= label %><%= if not compatible, do: " (incompatible)", else: "" %>
+                  </option>
+                <% end %>
+              </select>
             </div>
             <div class="flex items-center">
               <form phx-change="update_element">

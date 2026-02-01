@@ -36,8 +36,6 @@ const CanvasDesigner = {
 
     // Snap settings
     this.snapEnabled = this.el.dataset.snapEnabled === 'true'
-    this.gridSnapEnabled = this.el.dataset.gridSnapEnabled === 'true'
-    this.gridSize = parseFloat(this.el.dataset.gridSize) || 5
     this.snapThreshold = parseFloat(this.el.dataset.snapThreshold) || 5
 
     try {
@@ -76,17 +74,9 @@ const CanvasDesigner = {
 
     // Update snap settings from data attributes if they changed
     const newSnapEnabled = this.el.dataset.snapEnabled === 'true'
-    const newGridSnapEnabled = this.el.dataset.gridSnapEnabled === 'true'
-    const newGridSize = parseFloat(this.el.dataset.gridSize) || 5
 
     if (this.snapEnabled !== newSnapEnabled) {
       this.snapEnabled = newSnapEnabled
-    }
-    if (this.gridSnapEnabled !== newGridSnapEnabled) {
-      this.gridSnapEnabled = newGridSnapEnabled
-    }
-    if (this.gridSize !== newGridSize) {
-      this.gridSize = newGridSize
     }
 
     // With phx-update="ignore", the canvas should never be replaced
@@ -551,7 +541,7 @@ const CanvasDesigner = {
 
     // Snap while moving
     this.canvas.on('object:moving', (e) => {
-      if (this.snapEnabled || this.gridSnapEnabled) {
+      if (this.snapEnabled) {
         this.handleSnap(e.target)
       }
     })
@@ -711,18 +701,9 @@ const CanvasDesigner = {
     })
 
     // Snap settings
-    this.handleEvent("update_snap_settings", ({ snap_enabled, grid_snap_enabled, grid_size }) => {
+    this.handleEvent("update_snap_settings", ({ snap_enabled }) => {
       if (!this._isDestroyed) {
         this.snapEnabled = snap_enabled
-        this.gridSnapEnabled = grid_snap_enabled
-        this.gridSize = grid_size
-      }
-    })
-
-    // Align all elements to grid
-    this.handleEvent("align_all_to_grid", ({ grid_size }) => {
-      if (!this._isDestroyed) {
-        this.alignAllElementsToGrid(grid_size)
       }
     })
 
@@ -2579,27 +2560,9 @@ const CanvasDesigner = {
     // Get moving object bounds
     const movingBounds = this.getObjectBounds(movingObj)
 
-    // Grid snap
-    if (this.gridSnapEnabled) {
-      const gridPx = this.gridSize * PX_PER_MM
-
-      // Snap left edge to grid
-      const snapLeft = Math.round((movingBounds.left - this.labelBounds.left) / gridPx) * gridPx + this.labelBounds.left
-      if (Math.abs(movingBounds.left - snapLeft) < threshold) {
-        movingObj.set('left', movingObj.left + (snapLeft - movingBounds.left))
-      }
-
-      // Snap top edge to grid
-      const snapTop = Math.round((movingBounds.top - this.labelBounds.top) / gridPx) * gridPx + this.labelBounds.top
-      if (Math.abs(movingBounds.top - snapTop) < threshold) {
-        movingObj.set('top', movingObj.top + (snapTop - movingBounds.top))
-      }
-    }
-
     // Element snap
     if (this.snapEnabled) {
-      // Update bounds after grid snap
-      const updatedBounds = this.getObjectBounds(movingObj)
+      const updatedBounds = movingBounds
 
       // Snap to other elements
       this.elements.forEach((obj, id) => {
@@ -2756,40 +2719,6 @@ const CanvasDesigner = {
       this.canvas.remove(line)
     })
     this._alignmentLines = []
-  },
-
-  alignAllElementsToGrid(gridSize) {
-    if (!this.canvas || !this.labelBounds) return
-
-    const gridPx = gridSize * PX_PER_MM
-    let hasChanges = false
-
-    this.elements.forEach((obj) => {
-      if (!obj || obj.locked) return
-
-      // Get current position relative to label
-      const relativeLeft = obj.left - this.labelBounds.left
-      const relativeTop = obj.top - this.labelBounds.top
-
-      // Snap to nearest grid point
-      const snappedLeft = Math.round(relativeLeft / gridPx) * gridPx + this.labelBounds.left
-      const snappedTop = Math.round(relativeTop / gridPx) * gridPx + this.labelBounds.top
-
-      // Only update if position changed
-      if (Math.abs(obj.left - snappedLeft) > 0.1 || Math.abs(obj.top - snappedTop) > 0.1) {
-        obj.set({
-          left: snappedLeft,
-          top: snappedTop
-        })
-        obj.setCoords()
-        hasChanges = true
-      }
-    })
-
-    if (hasChanges) {
-      this.canvas.requestRenderAll()
-      this.saveElements()
-    }
   },
 
   setupDragAndDrop() {
