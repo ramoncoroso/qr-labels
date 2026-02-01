@@ -995,6 +995,13 @@ const CanvasDesigner = {
 
     // If we have content, generate real barcode
     if (content) {
+      // Validate content for format before attempting generation
+      const validation = this.validateBarcodeContent(content, format)
+      if (!validation.valid) {
+        // Show error placeholder with format requirements
+        return this.createBarcodeErrorPlaceholder(w, h, x, y, element.rotation, validation.error)
+      }
+
       // Create placeholder first, then generate barcode
       const placeholder = this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'Generando...')
       placeholder._barcodeLoading = true
@@ -1076,7 +1083,25 @@ const CanvasDesigner = {
 
       } catch (err) {
         console.error('Error generating barcode:', err)
-        // Keep the placeholder on error
+        // Replace placeholder with error indicator
+        const errorPlaceholder = this.createBarcodeErrorPlaceholder(w, h, x, y, element.rotation, 'Error de formato')
+        errorPlaceholder._barcodeContent = content
+        errorPlaceholder._barcodeFormat = format
+
+        // Replace the "Generando..." placeholder with error
+        setTimeout(() => {
+          const obj = this.elements.get(element.id)
+          if (obj && obj._barcodeLoading) {
+            errorPlaceholder.elementId = obj.elementId
+            errorPlaceholder.elementType = obj.elementType
+            errorPlaceholder.elementData = obj.elementData
+
+            this.canvas.remove(obj)
+            this.elements.set(element.id, errorPlaceholder)
+            this.canvas.add(errorPlaceholder)
+            this.canvas.renderAll()
+          }
+        }, 0)
       }
 
       return placeholder
@@ -1084,6 +1109,64 @@ const CanvasDesigner = {
 
     // No content - show placeholder
     return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'BARCODE')
+  },
+
+  /**
+   * Validate barcode content for a specific format
+   * Returns { valid: boolean, error: string }
+   */
+  validateBarcodeContent(content, format) {
+    const digitsOnly = /^\d+$/
+    const alphanumeric = /^[A-Z0-9\s\-\.$/+%]+$/i
+
+    switch (format) {
+      case 'EAN13':
+        if (!digitsOnly.test(content)) {
+          return { valid: false, error: 'EAN-13: solo dígitos' }
+        }
+        if (content.length !== 12 && content.length !== 13) {
+          return { valid: false, error: 'EAN-13: 12-13 dígitos' }
+        }
+        return { valid: true }
+
+      case 'EAN8':
+        if (!digitsOnly.test(content)) {
+          return { valid: false, error: 'EAN-8: solo dígitos' }
+        }
+        if (content.length !== 7 && content.length !== 8) {
+          return { valid: false, error: 'EAN-8: 7-8 dígitos' }
+        }
+        return { valid: true }
+
+      case 'UPC':
+        if (!digitsOnly.test(content)) {
+          return { valid: false, error: 'UPC: solo dígitos' }
+        }
+        if (content.length !== 11 && content.length !== 12) {
+          return { valid: false, error: 'UPC: 11-12 dígitos' }
+        }
+        return { valid: true }
+
+      case 'ITF14':
+        if (!digitsOnly.test(content)) {
+          return { valid: false, error: 'ITF-14: solo dígitos' }
+        }
+        if (content.length !== 13 && content.length !== 14) {
+          return { valid: false, error: 'ITF-14: 13-14 dígitos' }
+        }
+        return { valid: true }
+
+      case 'CODE39':
+        if (!alphanumeric.test(content)) {
+          return { valid: false, error: 'CODE39: A-Z, 0-9, -.$/' }
+        }
+        return { valid: true }
+
+      case 'CODE128':
+      default:
+        // CODE128 accepts almost anything
+        return { valid: true }
+    }
   },
 
   createBarcodePlaceholder(w, h, x, y, rotation, label) {
@@ -1111,6 +1194,40 @@ const CanvasDesigner = {
       top: y,
       angle: rotation || 0
     })
+  },
+
+  /**
+   * Create an error placeholder for invalid barcode content/format
+   */
+  createBarcodeErrorPlaceholder(w, h, x, y, rotation, errorMsg) {
+    const rect = new fabric.Rect({
+      width: w,
+      height: h,
+      fill: '#fef2f2',
+      stroke: '#ef4444',
+      strokeWidth: 2,
+      strokeDashArray: [4, 4]
+    })
+
+    const text = new fabric.Text(errorMsg, {
+      fontSize: Math.min(w * 0.08, h * 0.25, 14),
+      fill: '#dc2626',
+      fontWeight: 'bold',
+      originX: 'center',
+      originY: 'center',
+      left: w / 2,
+      top: h / 2,
+      textAlign: 'center'
+    })
+
+    const group = new fabric.Group([rect, text], {
+      left: x,
+      top: y,
+      angle: rotation || 0
+    })
+
+    group._barcodeError = true
+    return group
   },
 
   createText(element, x, y) {
@@ -1321,7 +1438,7 @@ const CanvasDesigner = {
     const data = obj.elementData || {}
 
     // Parse numeric values
-    if (['x', 'y', 'width', 'height', 'rotation', 'font_size', 'border_width'].includes(field)) {
+    if (['x', 'y', 'width', 'height', 'rotation', 'font_size', 'border_width', 'border_radius'].includes(field)) {
       value = parseFloat(value) || 0
     }
 
@@ -1347,9 +1464,12 @@ const CanvasDesigner = {
           return // recreateCodeElement handles save
         } else if (obj.type === 'rect') {
           obj.set('width', value * PX_PER_MM)
-        } else if (obj.type === 'ellipse') {
-          // Ellipse uses rx (radius x), so width/2
-          obj.set('rx', (value * PX_PER_MM) / 2)
+          // If it's a circle element, recalculate rx/ry based on border_radius
+          if (obj.elementType === 'circle') {
+            const roundness = (data.border_radius ?? 100) / 100
+            const maxRadius = Math.min(value * PX_PER_MM, obj.height) / 2
+            obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
+          }
         } else if (obj.type === 'image') {
           const newW = value * PX_PER_MM
           obj.set('scaleX', newW / obj.width)
@@ -1365,9 +1485,12 @@ const CanvasDesigner = {
           return // recreateCodeElement handles save
         } else if (obj.type === 'rect') {
           obj.set('height', value * PX_PER_MM)
-        } else if (obj.type === 'ellipse') {
-          // Ellipse uses ry (radius y), so height/2
-          obj.set('ry', (value * PX_PER_MM) / 2)
+          // If it's a circle element, recalculate rx/ry based on border_radius
+          if (obj.elementType === 'circle') {
+            const roundness = (data.border_radius ?? 100) / 100
+            const maxRadius = Math.min(obj.width, value * PX_PER_MM) / 2
+            obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
+          }
         } else if (obj.type === 'image') {
           const newH = value * PX_PER_MM
           obj.set('scaleY', newH / obj.height)
@@ -1423,6 +1546,14 @@ const CanvasDesigner = {
         break
       case 'border_width':
         obj.set('strokeWidth', value * PX_PER_MM)
+        break
+      case 'border_radius':
+        // For circle elements, update the rx/ry based on roundness percentage
+        if (obj.elementType === 'circle' && obj.type === 'rect') {
+          const roundness = value / 100
+          const maxRadius = Math.min(obj.width, obj.height) / 2
+          obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
+        }
         break
       case 'binding':
         // For QR and barcode elements, changing binding requires regenerating the code

@@ -295,7 +295,10 @@ const PrintEngine = {
         div.style.height = `${element.height * scale * MM_TO_PX}px`
         div.style.backgroundColor = element.background_color || 'transparent'
         div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
-        div.style.borderRadius = '50%'
+        // border_radius: 0 = rectangle, 100 = full ellipse (50% CSS border-radius)
+        const circleRoundness = (element.border_radius ?? 100) / 100
+        const circleMaxRadius = Math.min(element.width, element.height) * scale * MM_TO_PX / 2
+        div.style.borderRadius = `${circleRoundness * circleMaxRadius}px`
         break
 
       default:
@@ -477,7 +480,11 @@ const PrintEngine = {
         return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'};"></div>`
 
       case 'circle':
-        return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'}; border-radius: 50%;"></div>`
+        // border_radius: 0 = rectangle, 100 = full ellipse
+        const htmlRoundness = (element.border_radius ?? 100) / 100
+        const htmlMaxRadius = Math.min(element.width, element.height) / 2
+        const htmlRadius = htmlRoundness * htmlMaxRadius
+        return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'}; border-radius: ${htmlRadius}mm;"></div>`
 
       default:
         return ''
@@ -627,23 +634,22 @@ const PrintEngine = {
         break
 
       case 'circle':
-        // jsPDF ellipse uses center coordinates and radii
-        const rx = element.width / 2
-        const ry = element.height / 2
-        const cx = x + rx
-        const cy = y + ry
+        // Calculate border radius based on roundness percentage
+        const pdfRoundness = (element.border_radius ?? 100) / 100
+        const pdfMaxRadius = Math.min(element.width, element.height) / 2
+        const pdfRadius = pdfRoundness * pdfMaxRadius
 
         // Determine fill/stroke mode
-        let ellipseStyle = 'S' // Default: stroke only
+        let circleStyle = 'S' // Default: stroke only
         if (element.background_color && element.background_color !== 'transparent') {
           pdf.setFillColor(element.background_color)
-          ellipseStyle = element.border_width > 0 ? 'FD' : 'F' // Fill+Draw or Fill only
+          circleStyle = element.border_width > 0 ? 'FD' : 'F' // Fill+Draw or Fill only
         }
         if (element.border_width > 0) {
           pdf.setDrawColor(element.border_color || '#000000')
           pdf.setLineWidth(element.border_width)
         }
-        pdf.ellipse(cx, cy, rx, ry, ellipseStyle)
+        pdf.roundedRect(x, y, element.width, element.height, pdfRadius, pdfRadius, circleStyle)
         break
     }
   }

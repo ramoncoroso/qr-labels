@@ -207,7 +207,10 @@ const LabelPreview = {
         div.style.height = `${element.height * scale * MM_TO_PX}px`
         div.style.backgroundColor = element.background_color || 'transparent'
         div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
-        div.style.borderRadius = '50%'
+        // border_radius: 0 = rectangle, 100 = full ellipse (50% CSS border-radius)
+        const circleRoundness = (element.border_radius ?? 100) / 100
+        const circleMaxRadius = Math.min(element.width, element.height) * scale * MM_TO_PX / 2
+        div.style.borderRadius = `${circleRoundness * circleMaxRadius}px`
         break
 
       case 'image':
