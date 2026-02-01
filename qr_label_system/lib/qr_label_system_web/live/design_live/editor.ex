@@ -1834,7 +1834,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </form>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">Peso</label>
+              <label class="block text-sm font-medium text-gray-700">Estilo</label>
               <form phx-change="update_element" class="mt-1">
                 <input type="hidden" name="field" value="font_weight" />
                 <select
