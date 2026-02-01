@@ -6,149 +6,152 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (31 enero 2026) - Parte 6
+## Sesion Actual (1 febrero 2026) - QR/Barcode Real en Canvas
+
+### Objetivo Completado
+
+Mostrar QR y codigos de barras reales en el canvas del editor cuando el usuario escribe contenido, en lugar de placeholders.
 
 ### Lo Que Se Implemento
 
-#### 1. Fix: Drag and Drop de Elementos al Canvas
+#### 1. Generacion de QR Real en Canvas
 
-**Problema:** El drag and drop desde la barra de herramientas al canvas no funcionaba. Al arrastrar un elemento, se comportaba igual que un click (se anadia en posicion por defecto).
-
-**Causa Raiz:**
-- El drag nativo del navegador (HTML5 Drag and Drop API) no funcionaba correctamente
-- Los eventos `dragstart` no se disparaban de forma consistente
-- Habia conflictos entre los eventos de click y drag
-
-**Solucion:**
-Reimplementacion completa del sistema de drag usando eventos de mouse manuales:
+**Archivo:** `assets/js/hooks/canvas_designer.js`
 
 ```javascript
-// Enfoque manual (mas confiable que drag nativo)
-mousedown -> mousemove -> mouseup
-
-// Click: si el movimiento es < 5px
-// Drag: si el movimiento es >= 5px, muestra ghost y permite soltar en canvas
+// createQR() ahora genera QR real usando qrcode library
+const content = element.text_content || element.binding || ''
+if (content) {
+  QRCode.toDataURL(content, options).then(dataUrl => {
+    // Reemplaza placeholder con imagen real
+  })
+}
 ```
 
 **Caracteristicas:**
-- Umbral de 5px para distinguir click de drag
-- Ghost visual (etiqueta azul) que sigue el cursor durante drag
-- Resaltado del canvas cuando el cursor pasa sobre el
-- Evento custom `element-drop` para comunicacion entre hooks
-- Click simple sigue funcionando (aniade en posicion por defecto)
+- Usa `text_content` para etiquetas individuales, `binding` para datos de Excel
+- Muestra "Generando..." mientras procesa
+- Reemplaza placeholder con imagen QR real
+- Soporta colores personalizados (dark/light)
 
-**Archivos:**
-- `assets/js/hooks/draggable_elements.js` - Reescrito completamente
-- `assets/js/hooks/canvas_designer.js` - Actualizado `setupDragAndDrop()`
-- `lib/qr_label_system_web/live/design_live/editor.ex` - Removido `phx-click` de botones
+#### 2. Generacion de Barcode Real en Canvas
 
-#### 2. Refactor: Mejoras de Calidad de Codigo
+**Archivo:** `assets/js/hooks/canvas_designer.js`
 
-**Problemas corregidos:**
-- **Memory leak**: Los event listeners de `mousedown` nunca se limpiaban
-- **Rendimiento**: `document.getElementById()` se llamaba en cada `mousemove`
-- **Falta de cleanup**: El hook no tenia `destroyed()`
+```javascript
+// createBarcode() genera barcode real usando JsBarcode
+const validation = this.validateBarcodeContent(content, format)
+if (!validation.valid) {
+  return this.createBarcodeErrorPlaceholder(...)
+}
+JsBarcode(canvas, content, options)
+```
 
-**Soluciones:**
-- Anadido `destroyed()` que limpia todos los event listeners
-- Cache del canvas container en `getCanvasContainer()`
-- Uso de `classList.toggle()` para manipulacion de clases mas limpia
-- Array `_cleanupFns` para rastrear funciones de limpieza
+**Caracteristicas:**
+- Validacion de contenido segun formato (EAN-13, CODE39, etc.)
+- Placeholder de error rojo cuando el formato es incompatible
+- Soporta todos los formatos: CODE128, CODE39, EAN-13, EAN-8, UPC, ITF-14
+
+#### 3. Validacion de Formatos de Barcode
+
+**Nueva funcion:** `validateBarcodeContent(content, format)`
+
+| Formato | Requisitos |
+|---------|-----------|
+| CODE128 | Cualquier caracter ASCII |
+| CODE39 | A-Z, 0-9, espacio, -.$/ |
+| EAN-13 | 12-13 digitos |
+| EAN-8 | 7-8 digitos |
+| UPC | 11-12 digitos |
+| ITF-14 | 13-14 digitos |
+
+**Placeholder de error:**
+- Fondo rojo claro (#fef2f2)
+- Borde rojo (#ef4444)
+- Mensaje descriptivo (ej: "EAN-13: solo digitos")
+
+#### 4. Hook PropertyFields para Preservar Foco
+
+**Archivo:** `assets/js/hooks/property_fields.js`
+
+**Problema resuelto:** Al escribir en campos de texto, el foco se perdia debido a re-renders de LiveView.
+
+**Solucion:**
+```javascript
+// Rastrea estado del input durante typing
+focusedElementName, focusedElementValue, cursorPosition
+
+// updated() restaura todo despues de re-render
+input.focus()
+input.value = this.focusedElementValue
+input.setSelectionRange(pos, pos)
+```
+
+**Mejoras de seguridad:**
+- `CSS.escape()` para prevenir inyeccion en selectores
+- `destroyed()` para limpiar event listeners
+- Limpieza de timeouts para evitar memory leaks
+
+#### 5. Prevencion de Deseleccion Durante Cambios
+
+**Problema:** Al cambiar formato de barcode, el elemento se deseleccionaba.
+
+**Causa:**
+```
+canvas.remove(obj) -> selection:cleared -> element_deselected -> panel vacio
+```
+
+**Solucion:**
+```javascript
+// Flag para bloquear evento de deseleccion
+this._isRecreatingElement = true
+this.canvas.remove(obj)
+// ... recrear elemento ...
+this._isRecreatingElement = false
+
+// En selection:cleared
+if (!this._isRecreatingElement) {
+  this.pushEvent("element_deselected", {})
+}
+```
+
+#### 6. Sincronizacion de elementData
+
+**Problema:** Al cambiar formato, el nuevo valor no llegaba a `recreateCodeElement`.
+
+**Causa:** `obj.elementData` no se actualizaba antes de llamar a recreate.
+
+**Solucion:**
+```javascript
+case 'barcode_format':
+  obj.elementData = data  // Actualizar ANTES de recrear
+  this.recreateCodeElement(obj, data.binding)
+```
 
 ---
 
-## Arquitectura del Drag and Drop
+## Archivos Modificados en Esta Sesion
 
-### Flujo de Comunicacion
-
-```
-[Boton Elemento]
-    |
-    v (mousedown)
-[DraggableElements Hook]
-    |
-    +-- Click (< 5px movimiento)
-    |       |
-    |       v
-    |   pushEvent('add_element', {type})
-    |       |
-    |       v
-    |   [LiveView] -> posicion por defecto
-    |
-    +-- Drag (>= 5px movimiento)
-            |
-            v
-        CustomEvent('element-drop', {type, x, y})
-            |
-            v
-        [CanvasDesigner Hook]
-            |
-            v
-        pushEvent('add_element_at', {type, x, y})
-            |
-            v
-        [LiveView] -> posicion exacta del drop
-```
-
-### Validacion de Seguridad (Backend)
-
-```elixir
-@valid_element_types ~w(qr barcode text line rectangle image)
-
-def handle_event("add_element", %{"type" => type}, socket)
-    when type in @valid_element_types do
-  # Solo tipos validos permitidos
-end
-```
+| Archivo | Cambios |
+|---------|---------|
+| `canvas_designer.js` | QR/barcode real, validacion, flags de recreacion |
+| `property_fields.js` | Nuevo hook para preservar foco |
+| `editor.ex` | phx-blur en inputs, debounce mejorado |
+| `index.js` | Registro de PropertyFields hook |
 
 ---
 
-## Sesiones Anteriores
-
-### Sesion 5 (31 enero 2026)
-
-- Fix: Subida de imagenes en el editor
-- Fix: Cambios se revertian automaticamente
-- Tiempo de respuesta de guardado mejorado
-- Auto-seleccion en input de contenido de texto
-- Hook AutoUploadSubmit creado
-- Limpieza de logs de debug
-
-### Sesion 4 (31 enero 2026)
-
-- Migracion de sidebar a header horizontal
-- Sistema de backup/restore de disenos
-- Mejoras en lista de disenos
-- Mensajes flash mejorados
-- Fix: Actualizacion de propiedades de elementos
-- Fix: Redimensionamiento de texto
-
----
-
-## Detalles Tecnicos Clave
-
-### Arquitectura de Persistencia del Canvas
-
-1. **Schema Embebido con `on_replace: :delete`**: Los elementos se almacenan como schemas embebidos. El cliente debe SIEMPRE enviar TODOS los elementos en cada guardado.
-
-2. **Flujo de Guardado:**
-   ```
-   Usuario modifica -> saveElements() [debounce 100ms] -> pushEvent("element_modified") -> DB
-   ```
-
-3. **Proteccion Contra Condiciones de Carrera:**
-   - Flag `canvas_loaded` en LiveView previene multiples `load_design`
-   - `_lastSaveTime` en JS ignora `load_design` si llega dentro de 1 segundo de un guardado
-
-### Estructura de Hooks JavaScript
+## Hooks JavaScript Actualizados
 
 | Hook | Proposito |
 |------|-----------|
-| `CanvasDesigner` | Editor principal con Fabric.js |
+| `CanvasDesigner` | Editor principal - ahora genera QR/barcode reales |
+| `PropertyFields` | **NUEVO** - Preserva foco durante re-renders |
+| `BorderRadiusSlider` | **NUEVO** - Slider suave para border-radius |
 | `DraggableElements` | Drag and drop de elementos al canvas |
 | `AutoHideFlash` | Auto-hide para mensajes flash |
 | `AutoUploadSubmit` | Auto-submit para uploads de imagenes |
-| `CodeGenerator` | Generacion de QR/barcode |
+| `CodeGenerator` | Generacion de QR/barcode para impresion |
 | `PrintEngine` | Exportacion PDF e impresion |
 | `ExcelReader` | Lectura de archivos Excel |
 | `LabelPreview` | Preview de etiquetas |
@@ -158,27 +161,97 @@ end
 
 ---
 
+## Flujo de Generacion QR/Barcode
+
+```
+[Usuario escribe contenido]
+       |
+       v
+[phx-blur="update_element"]
+       |
+       v
+[LiveView: handle_event("update_element")]
+       |
+       v
+[push_event("update_element_property")]
+       |
+       v
+[CanvasDesigner: updateSelectedElement()]
+       |
+       v
+[recreateCodeElement(obj, content)]
+       |
+       +-- createQR() o createBarcode()
+       |       |
+       |       v
+       |   [Validar formato]
+       |       |
+       |       +-- Valido: Generar imagen real
+       |       |
+       |       +-- Invalido: Mostrar error placeholder
+       |
+       v
+[canvas.setActiveObject(newObj)]
+       |
+       v
+[saveElements() -> element_modified]
+```
+
+---
+
 ## Pendiente / Para Continuar
 
 ### Alta Prioridad
 
-1. **Generacion de PDF desde Editor**
-   - Implementar boton "Generar X etiquetas" que genera PDF
-   - Usar los datos de `UploadDataStore`
-   - Aplicar bindings de columnas a elementos
+1. **Mejora UX de Formatos Rigidos**
+   - Cuando el usuario cambia a EAN-13, auto-limpiar contenido invalido
+   - O mostrar advertencia antes de cambiar
+   - Considerar: deshabilitar formatos incompatibles en dropdown
 
-2. **Preview Multi-Etiqueta**
-   - Mostrar como se vera cada etiqueta con datos reales
+2. **Preview Multi-Etiqueta con Datos Reales**
+   - Los QR/barcodes ahora funcionan en canvas
+   - Falta integrar con datos de Excel para preview de multiples etiquetas
 
 ### Media Prioridad
 
-3. **Mejoras en Preview del Editor** (QR/barcode reales en lugar de placeholders)
-4. **Configuracion de Impresion** (tamano de pagina, margenes, etiquetas por pagina)
+3. **Configuracion de Impresion**
+   - Tamano de pagina, margenes, etiquetas por pagina
+
+4. **Tests para Validacion de Barcode**
+   - Unit tests para `validateBarcodeContent()`
 
 ### Baja Prioridad
 
-5. **Limpieza de Codigo** (referencias a batches obsoletas)
-6. **Tests E2E** para flujos criticos
+5. **Limpieza de Codigo**
+   - Referencias obsoletas a batches
+   - Consolidar duplicacion entre hooks
+
+---
+
+## Bugs Conocidos y Soluciones
+
+### QR/Barcode no se genera
+
+**Sintoma:** El placeholder "Generando..." permanece indefinidamente.
+**Posibles causas:**
+1. Contenido vacio - verificar que `text_content` tenga valor
+2. Formato invalido - verificar consola por errores de JsBarcode
+3. Element ID no coincide - verificar que el ID sea consistente
+
+### Formato de barcode muestra error
+
+**Sintoma:** Placeholder rojo con mensaje de error.
+**Solucion:** El contenido no cumple los requisitos del formato. Ver tabla de requisitos arriba.
+
+### Input pierde foco al escribir
+
+**Sintoma:** Al escribir, el cursor salta o el valor se resetea.
+**Solucion:** Ya arreglado con PropertyFields hook. Verificar que el contenedor tenga `phx-hook="PropertyFields"`.
+
+### Elemento se deselecciona al cambiar formato
+
+**Sintoma:** Al cambiar formato de barcode, el panel de propiedades se vacia.
+**Solucion:** Ya arreglado con flag `_isRecreatingElement`. Verificar que no se llame `pushEvent("element_deselected")` durante recreacion.
 
 ---
 
@@ -187,6 +260,9 @@ end
 ```bash
 # Servidor de desarrollo
 cd qr_label_system && mix phx.server
+
+# Compilar JavaScript (despues de cambios en hooks)
+cd assets && npm run build
 
 # Tests
 mix test
@@ -201,28 +277,15 @@ mix phx.digest
 
 ---
 
-## Bugs Conocidos y Soluciones
+## Historial de Sesiones
 
-### Propiedades no se actualizan en canvas
-
-**Sintoma:** Cambiar valores en el panel de propiedades no afecta el canvas.
-**Solucion:** Verificar que el input este dentro de un `<form>` con `phx-change`.
-
-### Textbox vuelve a tamano original
-
-**Sintoma:** Al redimensionar texto y hacer clic fuera, vuelve al tamano anterior.
-**Solucion:** Ya arreglado - el codigo ahora lee dimensiones actuales del textbox.
-
-### Imagen aparece y desaparece
-
-**Sintoma:** Al subir imagen, aparece brevemente y luego desaparece.
-**Solucion:** Ya arreglado - proteccion contra eventos `load_design` que llegan despues de guardado.
-
-### Drag and drop no funciona
-
-**Sintoma:** Arrastrar elementos tiene el mismo comportamiento que click.
-**Solucion:** Ya arreglado - reimplementado con eventos de mouse manuales.
+| Fecha | Sesion | Principales Cambios |
+|-------|--------|---------------------|
+| 1 feb 2026 | 7 | QR/barcode real en canvas, validacion formatos, PropertyFields hook |
+| 31 ene 2026 | 6 | Drag and drop reimplementado, cleanup de hooks |
+| 31 ene 2026 | 5 | Upload de imagenes, fix guardado automatico |
+| 31 ene 2026 | 4 | Header horizontal, backup/restore |
 
 ---
 
-*Handoff actualizado: 31 enero 2026 (sesion 6)*
+*Handoff actualizado: 1 febrero 2026 (sesion 7)*

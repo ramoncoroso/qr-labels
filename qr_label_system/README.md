@@ -7,8 +7,10 @@ Sistema web de produccion para disenar y generar etiquetas personalizadas con co
 ### Editor Visual
 - Editor drag & drop basado en Fabric.js
 - Dimensiones personalizables (0-500mm)
-- Elementos: texto, QR, codigo de barras, lineas, rectangulos, imagenes
+- Elementos: texto, QR, codigo de barras, lineas, rectangulos, circulos/elipses, imagenes
 - Propiedades editables: posicion, tamano, rotacion, colores, fuentes
+- **Preview real de QR y codigos de barras** mientras editas
+- Validacion de formatos de codigo de barras con mensajes de error
 - Sistema de capas con z-index
 - Snap a grid y alineacion inteligente
 - Zoom con rueda del mouse (Ctrl + scroll)
@@ -18,10 +20,11 @@ Sistema web de produccion para disenar y generar etiquetas personalizadas con co
 | Elemento | Descripcion |
 |----------|-------------|
 | Texto | Fuente, tamano, peso, color, alineacion |
-| QR | Correccion de errores L/M/Q/H |
-| Barcode | CODE128, CODE39, EAN-13, EAN-8, UPC-A, ITF-14, pharmacode |
+| QR | Preview real, correccion de errores L/M/Q/H, colores personalizables |
+| Barcode | Preview real con validacion de formato (CODE128, CODE39, EAN-13, EAN-8, UPC, ITF-14) |
 | Linea | Grosor y color configurables |
 | Rectangulo | Relleno, borde, radio de esquinas |
+| Circulo/Elipse | Redondez ajustable (0-100%), relleno y borde |
 | Imagen | Soporte para imagenes base64 (max 2MB) |
 
 ### Fuentes de Datos
@@ -158,14 +161,16 @@ qr_label_system/
 │   ├── js/
 │   │   ├── app.js                    # Entry point
 │   │   └── hooks/                    # LiveView Hooks
-│   │       ├── canvas_designer.js    # Editor Fabric.js (2400+ lineas)
+│   │       ├── canvas_designer.js    # Editor Fabric.js con QR/barcode real
+│   │       ├── property_fields.js    # Preservacion de foco en inputs
 │   │       ├── draggable_elements.js # Drag & drop al canvas
-│   │       ├── code_generator.js     # Generacion QR/barcode
+│   │       ├── code_generator.js     # Generacion QR/barcode para impresion
 │   │       ├── print_engine.js       # PDF e impresion
 │   │       ├── excel_reader.js       # Lectura Excel client-side
 │   │       ├── label_preview.js      # Preview de etiquetas
 │   │       ├── keyboard_shortcuts.js # Atajos de teclado
 │   │       ├── sortable_layers.js    # Ordenamiento de capas
+│   │       ├── border_radius_slider.js # Slider para redondez
 │   │       ├── auto_hide_flash.js    # Auto-hide mensajes
 │   │       ├── auto_upload_submit.js # Auto-submit uploads
 │   │       └── single_label_print.js # Impresion individual
