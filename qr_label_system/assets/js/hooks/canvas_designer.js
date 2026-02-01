@@ -766,6 +766,33 @@ const CanvasDesigner = {
       }
     }
     window.addEventListener('resize', this._resizeHandler)
+
+    // Custom events from BorderRadiusSlider hook
+    window.addEventListener('border-radius-change', (e) => {
+      if (this._isDestroyed) return
+      const { elementId, value } = e.detail
+      const obj = this.elements.get(elementId)
+      if (obj && obj.elementType === 'circle' && obj.type === 'rect') {
+        const roundness = value / 100
+        const maxRadius = Math.min(obj.width, obj.height) / 2
+        obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
+        // Update elementData
+        if (obj.elementData) {
+          obj.elementData.border_radius = value
+        }
+        this.canvas.renderAll()
+      }
+    })
+
+    window.addEventListener('border-radius-save', (e) => {
+      if (this._isDestroyed) return
+      const { elementId, value } = e.detail
+      const obj = this.elements.get(elementId)
+      if (obj && obj.elementData) {
+        obj.elementData.border_radius = value
+        this.saveElements()
+      }
+    })
   },
 
   loadDesign(design) {
@@ -1434,20 +1461,14 @@ const CanvasDesigner = {
   },
 
   updateSelectedElement(field, value, targetObj = null) {
-    console.log('updateSelectedElement called:', { field, value, hasTargetObj: !!targetObj })
     const obj = targetObj || this.canvas.getActiveObject()
-    if (!obj?.elementId) {
-      console.log('No obj or elementId found')
-      return
-    }
-    console.log('Found object:', { elementId: obj.elementId, elementType: obj.elementType, objType: obj.type })
+    if (!obj?.elementId) return
 
     const data = obj.elementData || {}
 
     // Parse numeric values
     if (['x', 'y', 'width', 'height', 'rotation', 'font_size', 'border_width', 'border_radius'].includes(field)) {
       value = parseFloat(value) || 0
-      console.log('Parsed numeric value:', value)
     }
 
     data[field] = value
@@ -1559,14 +1580,10 @@ const CanvasDesigner = {
         break
       case 'border_radius':
         // For circle elements, update the rx/ry based on roundness percentage
-        console.log('border_radius update:', { elementType: obj.elementType, objType: obj.type, value, width: obj.width, height: obj.height })
         if (obj.elementType === 'circle' && obj.type === 'rect') {
           const roundness = value / 100
           const maxRadius = Math.min(obj.width, obj.height) / 2
-          console.log('Applying rx/ry:', { roundness, maxRadius, rx: roundness * maxRadius })
           obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
-        } else {
-          console.log('Condition failed - elementType:', obj.elementType, 'type:', obj.type)
         }
         break
       case 'binding':
