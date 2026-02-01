@@ -794,7 +794,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           font_family: "Arial",
           font_weight: "normal",
           text_align: "left",
-          text_content: "Texto",
+          text_content: "Escriba aqui...",
           color: "#000000",
           binding: nil,
           name: "Texto #{number}"
