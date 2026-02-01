@@ -1231,7 +1231,7 @@ const CanvasDesigner = {
   },
 
   createText(element, x, y) {
-    const content = element.text_content || element.binding || 'Texto'
+    const content = element.text_content || element.binding || 'Escriba aqui...'
     const fontSize = element.font_size || 12
 
     // Create textbox with initial width
@@ -1558,6 +1558,7 @@ const CanvasDesigner = {
       case 'binding':
         // For QR and barcode elements, changing binding requires regenerating the code
         if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
+          obj.elementData = data  // Update elementData before recreating
           this.recreateCodeElement(obj, value)
           return // recreateCodeElement handles save
         }
@@ -1565,6 +1566,7 @@ const CanvasDesigner = {
       case 'barcode_format':
         // Changing barcode format requires regenerating the barcode
         if (obj.elementType === 'barcode') {
+          obj.elementData = data  // Update elementData before recreating (includes new format)
           this.recreateCodeElement(obj, data.binding)
           return // recreateCodeElement handles save
         }
@@ -1682,15 +1684,25 @@ const CanvasDesigner = {
     data.x = x
     data.y = y
 
-    // Get current dimensions
-    if (obj.type === 'image') {
-      // If it's already an image (real QR/barcode), get scaled dimensions
-      data.width = Math.round((obj.width * (obj.scaleX || 1)) / PX_PER_MM * 100) / 100
-      data.height = Math.round((obj.height * (obj.scaleY || 1)) / PX_PER_MM * 100) / 100
-    } else if (obj.type === 'group') {
-      // If it's a placeholder group
-      data.width = Math.round(obj.getScaledWidth() / PX_PER_MM * 100) / 100
-      data.height = Math.round(obj.getScaledHeight() / PX_PER_MM * 100) / 100
+    // Get current dimensions only if not explicitly set
+    // (data comes from obj.elementData which may have been updated before this call)
+    const currentWidth = obj.type === 'image'
+      ? Math.round((obj.width * (obj.scaleX || 1)) / PX_PER_MM * 100) / 100
+      : obj.type === 'group'
+        ? Math.round(obj.getScaledWidth() / PX_PER_MM * 100) / 100
+        : data.width
+    const currentHeight = obj.type === 'image'
+      ? Math.round((obj.height * (obj.scaleY || 1)) / PX_PER_MM * 100) / 100
+      : obj.type === 'group'
+        ? Math.round(obj.getScaledHeight() / PX_PER_MM * 100) / 100
+        : data.height
+
+    // Only use calculated dimensions if data doesn't already have explicit values
+    if (!data.width || data.width === currentWidth) {
+      data.width = currentWidth
+    }
+    if (!data.height || data.height === currentHeight) {
+      data.height = currentHeight
     }
 
     // Remove old object
