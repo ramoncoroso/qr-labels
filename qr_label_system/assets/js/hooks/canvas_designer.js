@@ -533,7 +533,10 @@ const CanvasDesigner = {
     })
 
     this.canvas.on('selection:cleared', () => {
-      this.pushEvent("element_deselected", {})
+      // Don't send deselection event if we're in the middle of recreating an element
+      if (!this._isRecreatingElement) {
+        this.pushEvent("element_deselected", {})
+      }
     })
 
     // Element modification (drag, resize, rotate)
@@ -1737,6 +1740,9 @@ const CanvasDesigner = {
       data.height = currentHeight
     }
 
+    // Set flag to prevent deselection event during recreation
+    this._isRecreatingElement = true
+
     // Remove old object
     this.canvas.remove(obj)
     this.elements.delete(elementId)
@@ -1776,7 +1782,14 @@ const CanvasDesigner = {
       this.canvas.add(newObj)
       this.canvas.setActiveObject(newObj)
       this.canvas.renderAll()
+
+      // Clear recreation flag
+      this._isRecreatingElement = false
+
       this.saveElements()
+    } else {
+      // Clear flag even if creation failed
+      this._isRecreatingElement = false
     }
   },
 
