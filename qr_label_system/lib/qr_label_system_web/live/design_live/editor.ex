@@ -266,23 +266,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           socket
           |> push_event("update_element_property", %{id: element_id, field: field, value: value})
 
-        # For barcode_format with rigid formats, also set example text_content
-        field == "barcode_format" ->
-          example = barcode_format_example(value)
-          if example do
-            updated_with_example = updated_element
-              |> Map.put(:text_content, example)
-              |> Map.put("text_content", example)
-            socket
-            |> assign(:selected_element, updated_with_example)
-            |> push_event("update_element_property", %{id: element_id, field: field, value: value})
-            |> push_event("update_element_property", %{id: element_id, field: "text_content", value: example})
-          else
-            socket
-            |> assign(:selected_element, updated_element)
-            |> push_event("update_element_property", %{id: element_id, field: field, value: value})
-          end
-
         true ->
           socket
           |> assign(:selected_element, updated_element)
@@ -1766,6 +1749,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   placeholder="Texto a codificar"
                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
+                <%= case @element.barcode_format do %>
+                  <% "EAN13" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 5901234123457 (13 dígitos)</p>
+                  <% "EAN8" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 12345678 (8 dígitos)</p>
+                  <% "UPC" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 012345678905 (12 dígitos)</p>
+                  <% "ITF14" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 10012345678902 (14 dígitos)</p>
+                  <% "pharmacode" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 1234 (número entre 3-131070)</p>
+                  <% _ -> %>
+                <% end %>
               </div>
             <% end %>
             <div>
