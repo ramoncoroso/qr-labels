@@ -8,48 +8,69 @@ const PropertyFields = {
     this.focusedElementName = null
     this.focusedElementValue = null
     this.cursorPosition = null
+    this._blurTimeout = null
 
-    this.el.addEventListener('keydown', (e) => {
+    // Bind handlers for proper cleanup
+    this._handleKeydown = (e) => {
       if (e.key === 'Tab') {
         this.handleTab(e)
       }
-    })
+    }
 
-    // Track focus to restore after re-render
-    this.el.addEventListener('focusin', (e) => {
+    this._handleFocusin = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         this.focusedElementName = e.target.getAttribute('phx-value-field') || e.target.name
         this.focusedElementValue = e.target.value
         this.cursorPosition = e.target.selectionStart
       }
-    })
+    }
 
-    // Track cursor position changes
-    this.el.addEventListener('input', (e) => {
+    this._handleInput = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         this.focusedElementValue = e.target.value
         this.cursorPosition = e.target.selectionStart
       }
-    })
+    }
 
-    // Clear focus tracking on blur
-    this.el.addEventListener('focusout', (e) => {
+    this._handleFocusout = () => {
+      // Clear any existing timeout
+      if (this._blurTimeout) {
+        clearTimeout(this._blurTimeout)
+      }
       // Delay clearing to allow for re-focus after render
-      setTimeout(() => {
+      this._blurTimeout = setTimeout(() => {
         if (!this.el.contains(document.activeElement)) {
           this.focusedElementName = null
           this.focusedElementValue = null
           this.cursorPosition = null
         }
       }, 50)
-    })
+    }
+
+    this.el.addEventListener('keydown', this._handleKeydown)
+    this.el.addEventListener('focusin', this._handleFocusin)
+    this.el.addEventListener('input', this._handleInput)
+    this.el.addEventListener('focusout', this._handleFocusout)
+  },
+
+  destroyed() {
+    // Clean up event listeners and timers
+    if (this._blurTimeout) {
+      clearTimeout(this._blurTimeout)
+    }
+    this.el.removeEventListener('keydown', this._handleKeydown)
+    this.el.removeEventListener('focusin', this._handleFocusin)
+    this.el.removeEventListener('input', this._handleInput)
+    this.el.removeEventListener('focusout', this._handleFocusout)
   },
 
   updated() {
     // After LiveView re-render, restore focus if we had one
     if (this.focusedElementName) {
+      // Sanitize the field name to prevent CSS selector injection
+      const safeName = CSS.escape(this.focusedElementName)
       const input = this.el.querySelector(
-        `[phx-value-field="${this.focusedElementName}"], [name="${this.focusedElementName}"]`
+        `[phx-value-field="${safeName}"], [name="${safeName}"]`
       )
       if (input && document.activeElement !== input) {
         // Restore focus
