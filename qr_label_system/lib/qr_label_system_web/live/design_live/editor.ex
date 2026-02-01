@@ -253,15 +253,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                    Map.get(socket.assigns.selected_element, "id")
 
       # For QR, push both width and height updates
-      socket = if element_type == "qr" and field in ["width", "height"] do
-        socket
-        |> assign(:selected_element, updated_element)
-        |> push_event("update_element_property", %{id: element_id, field: "width", value: value})
-        |> push_event("update_element_property", %{id: element_id, field: "height", value: value})
-      else
-        socket
-        |> assign(:selected_element, updated_element)
-        |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+      socket = cond do
+        element_type == "qr" and field in ["width", "height"] ->
+          socket
+          |> assign(:selected_element, updated_element)
+          |> push_event("update_element_property", %{id: element_id, field: "width", value: value})
+          |> push_event("update_element_property", %{id: element_id, field: "height", value: value})
+
+        # For border_radius, don't update selected_element to avoid re-render during slider drag
+        # The value will be synced when element_modified is processed
+        field == "border_radius" ->
+          socket
+          |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+
+        true ->
+          socket
+          |> assign(:selected_element, updated_element)
+          |> push_event("update_element_property", %{id: element_id, field: field, value: value})
       end
 
       {:noreply, socket}
