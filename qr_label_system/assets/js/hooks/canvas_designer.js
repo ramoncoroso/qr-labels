@@ -599,6 +599,12 @@ const CanvasDesigner = {
       }
     })
 
+    this.handleEvent("delete_elements", ({ ids }) => {
+      if (ids && Array.isArray(ids) && !this._isDestroyed) {
+        this.deleteElements(ids)
+      }
+    })
+
     this.handleEvent("update_canvas_size", (props) => {
       if (props && !this._isDestroyed) {
         this.updateCanvasSize(props)
@@ -797,6 +803,9 @@ const CanvasDesigner = {
       case 'rectangle':
         obj = this.createRect(element, x, y)
         break
+      case 'circle':
+        obj = this.createCircle(element, x, y)
+        break
       case 'image':
         obj = this.createImage(element, x, y)
         break
@@ -986,6 +995,28 @@ const CanvasDesigner = {
     })
   },
 
+  createCircle(element, x, y) {
+    const width = (element.width || 15) * PX_PER_MM
+    const height = (element.height || 15) * PX_PER_MM
+
+    // fabric.Ellipse uses rx/ry (radius x/y), not width/height
+    // Position is at center, so we offset by radius to place at top-left corner
+    const ellipse = new fabric.Ellipse({
+      left: x,
+      top: y,
+      rx: width / 2,
+      ry: height / 2,
+      fill: element.background_color || '#ffffff',
+      stroke: element.border_color || '#000000',
+      strokeWidth: (element.border_width || 0.5) * PX_PER_MM,
+      angle: element.rotation || 0,
+      originX: 'left',
+      originY: 'top'
+    })
+
+    return ellipse
+  },
+
   createImage(element, x, y) {
     const w = (element.width || 20) * PX_PER_MM
     const h = (element.height || 20) * PX_PER_MM
@@ -1131,6 +1162,9 @@ const CanvasDesigner = {
           return // recreateGroupAtSize handles save
         } else if (obj.type === 'rect') {
           obj.set('width', value * PX_PER_MM)
+        } else if (obj.type === 'ellipse') {
+          // Ellipse uses rx (radius x), so width/2
+          obj.set('rx', (value * PX_PER_MM) / 2)
         } else if (obj.type === 'image') {
           const newW = value * PX_PER_MM
           obj.set('scaleX', newW / obj.width)
@@ -1144,6 +1178,9 @@ const CanvasDesigner = {
           return // recreateGroupAtSize handles save
         } else if (obj.type === 'rect') {
           obj.set('height', value * PX_PER_MM)
+        } else if (obj.type === 'ellipse') {
+          // Ellipse uses ry (radius y), so height/2
+          obj.set('ry', (value * PX_PER_MM) / 2)
         } else if (obj.type === 'image') {
           const newH = value * PX_PER_MM
           obj.set('scaleY', newH / obj.height)
@@ -1301,6 +1338,25 @@ const CanvasDesigner = {
       this.canvas.renderAll()
       this.saveElements()
     }
+  },
+
+  deleteElements(ids) {
+    if (!ids || ids.length === 0) return
+
+    // Deselect all first to avoid issues with active selection
+    this.canvas.discardActiveObject()
+
+    // Remove each element
+    ids.forEach(id => {
+      const obj = this.elements.get(id)
+      if (obj) {
+        this.canvas.remove(obj)
+        this.elements.delete(id)
+      }
+    })
+
+    this.canvas.renderAll()
+    this.saveElements()
   },
 
   updateCanvasSize(props) {
@@ -1466,6 +1522,28 @@ const CanvasDesigner = {
         // Height is auto-calculated by Fabric based on text content
         height = Math.round((obj.height / PX_PER_MM) * 100) / 100
         // Update elementData to stay in sync
+        if (data.width !== width || data.height !== height) {
+          data.width = width
+          data.height = height
+          obj.elementData = data
+        }
+      } else if (obj.type === 'ellipse') {
+        // Ellipse uses rx/ry, convert to width/height (diameter)
+        const visualWidth = Math.round(((obj.rx * 2 * scaleX) / PX_PER_MM) * 100) / 100
+        const visualHeight = Math.round(((obj.ry * 2 * scaleY) / PX_PER_MM) * 100) / 100
+        width = visualWidth
+        height = visualHeight
+        // Reset scale and update rx/ry to normalized values
+        if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+          obj.set({
+            rx: (width * PX_PER_MM) / 2,
+            ry: (height * PX_PER_MM) / 2,
+            scaleX: 1,
+            scaleY: 1
+          })
+          obj.setCoords()
+        }
+        // Update elementData
         if (data.width !== width || data.height !== height) {
           data.width = width
           data.height = height

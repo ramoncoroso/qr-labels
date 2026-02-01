@@ -290,6 +290,14 @@ const PrintEngine = {
         div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
         break
 
+      case 'circle':
+        div.style.width = `${element.width * scale * MM_TO_PX}px`
+        div.style.height = `${element.height * scale * MM_TO_PX}px`
+        div.style.backgroundColor = element.background_color || 'transparent'
+        div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
+        div.style.borderRadius = '50%'
+        break
+
       default:
         return null
     }
@@ -468,6 +476,9 @@ const PrintEngine = {
       case 'rectangle':
         return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'};"></div>`
 
+      case 'circle':
+        return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'}; border-radius: 50%;"></div>`
+
       default:
         return ''
     }
@@ -613,6 +624,26 @@ const PrintEngine = {
           pdf.setLineWidth(element.border_width)
           pdf.rect(x, y, element.width, element.height, 'S')
         }
+        break
+
+      case 'circle':
+        // jsPDF ellipse uses center coordinates and radii
+        const rx = element.width / 2
+        const ry = element.height / 2
+        const cx = x + rx
+        const cy = y + ry
+
+        // Determine fill/stroke mode
+        let ellipseStyle = 'S' // Default: stroke only
+        if (element.background_color && element.background_color !== 'transparent') {
+          pdf.setFillColor(element.background_color)
+          ellipseStyle = element.border_width > 0 ? 'FD' : 'F' // Fill+Draw or Fill only
+        }
+        if (element.border_width > 0) {
+          pdf.setDrawColor(element.border_color || '#000000')
+          pdf.setLineWidth(element.border_width)
+        }
+        pdf.ellipse(cx, cy, rx, ry, ellipseStyle)
         break
     }
   }

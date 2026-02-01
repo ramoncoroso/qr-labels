@@ -191,6 +191,14 @@ const LabelPreview = {
         div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
         break
 
+      case 'circle':
+        div.style.width = `${element.width * scale * MM_TO_PX}px`
+        div.style.height = `${element.height * scale * MM_TO_PX}px`
+        div.style.backgroundColor = element.background_color || 'transparent'
+        div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
+        div.style.borderRadius = '50%'
+        break
+
       case 'image':
         div.style.width = `${element.width * scale * MM_TO_PX}px`
         div.style.height = `${element.height * scale * MM_TO_PX}px`

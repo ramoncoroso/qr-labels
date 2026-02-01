@@ -81,7 +81,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
-  @valid_element_types ~w(qr barcode text line rectangle image)
+  @valid_element_types ~w(qr barcode text line rectangle image circle)
 
   @impl true
   def handle_event("add_element", %{"type" => type}, socket) when type in @valid_element_types do
@@ -255,13 +255,33 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("delete_element", _params, socket) do
-    if socket.assigns.selected_element do
-      {:noreply,
-       socket
-       |> push_event("delete_element", %{id: socket.assigns.selected_element.id})
-       |> assign(:selected_element, nil)}
-    else
-      {:noreply, socket}
+    selected_elements = socket.assigns.selected_elements || []
+    selected_element = socket.assigns.selected_element
+
+    cond do
+      # Multiple elements selected - delete all
+      length(selected_elements) > 1 ->
+        ids = Enum.map(selected_elements, fn el ->
+          Map.get(el, :id) || Map.get(el, "id")
+        end)
+        {:noreply,
+         socket
+         |> push_event("delete_elements", %{ids: ids})
+         |> assign(:selected_element, nil)
+         |> assign(:selected_elements, [])}
+
+      # Single element selected
+      selected_element != nil ->
+        id = Map.get(selected_element, :id) || Map.get(selected_element, "id")
+        {:noreply,
+         socket
+         |> push_event("delete_elements", %{ids: [id]})
+         |> assign(:selected_element, nil)
+         |> assign(:selected_elements, [])}
+
+      # Nothing selected
+      true ->
+        {:noreply, socket}
     end
   end
 
@@ -809,6 +829,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           name: "Imagen #{number}"
         })
 
+      "circle" ->
+        Map.merge(base, %{
+          width: 15.0,
+          height: 15.0,
+          binding: nil,
+          background_color: "#ffffff",
+          border_width: 0.5,
+          border_color: "#000000",
+          name: "Círculo #{number}"
+        })
+
       _ ->
         base
     end
@@ -1039,6 +1070,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
                 </svg>
                 <span class="text-xs pointer-events-none">Cuadro</span>
+              </button>
+
+              <button
+                type="button"
+                data-element-type="circle"
+                class="draggable-element w-full flex flex-col items-center p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600 text-gray-600 transition"
+              >
+                <svg class="w-6 h-6 mb-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <circle cx="12" cy="12" r="9" stroke-width="2" />
+                </svg>
+                <span class="text-xs pointer-events-none">Círculo</span>
               </button>
 
               <button
@@ -1300,6 +1342,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       <% "text" -> %>T
                       <% "line" -> %>—
                       <% "rectangle" -> %>□
+                      <% "circle" -> %>○
                       <% "image" -> %>IMG
                       <% _ -> %>?
                     <% end %>
@@ -1499,87 +1542,89 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <!-- Layer name -->
       <div>
         <label class="block text-sm font-medium text-gray-700">Nombre</label>
-        <input
-          type="text"
-          name="value"
-          value={Map.get(@element, :name) || @element.type}
-          phx-change="update_element"
-          phx-debounce="200"
-          phx-value-field="name"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-        />
+        <form phx-change="update_element" phx-value-field="name">
+          <input
+            type="text"
+            name="value"
+            value={Map.get(@element, :name) || @element.type}
+            phx-debounce="200"
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+          />
+        </form>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700">X (mm)</label>
-          <input
-            type="number"
-            name="value"
-            step="0.1"
-            value={@element.x}
-            phx-change="update_element"
-            phx-debounce="150"
-            phx-value-field="x"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
+          <form phx-change="update_element" phx-value-field="x">
+            <input
+              type="number"
+              name="value"
+              step="0.1"
+              value={@element.x}
+              phx-debounce="150"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
+          </form>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Y (mm)</label>
-          <input
-            type="number"
-            name="value"
-            step="0.1"
-            value={@element.y}
-            phx-change="update_element"
-            phx-debounce="150"
-            phx-value-field="y"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
+          <form phx-change="update_element" phx-value-field="y">
+            <input
+              type="number"
+              name="value"
+              step="0.1"
+              value={@element.y}
+              phx-debounce="150"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
+          </form>
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
-          <input
-            type="number"
-            name="value"
-            step="0.1"
-            value={@element.width}
-            phx-change="update_element"
-            phx-debounce="150"
-            phx-value-field="width"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
+      <%= if @element.type != "text" do %>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
+            <form phx-change="update_element" phx-value-field="width">
+              <input
+                type="number"
+                name="value"
+                step="0.1"
+                value={@element.width}
+                phx-debounce="150"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </form>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
+            <form phx-change="update_element" phx-value-field="height">
+              <input
+                type="number"
+                name="value"
+                step="0.1"
+                value={@element.height}
+                phx-debounce="150"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </form>
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
-          <input
-            type="number"
-            name="value"
-            step="0.1"
-            value={@element.height}
-            phx-change="update_element"
-            phx-debounce="150"
-            phx-value-field="height"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
-        </div>
-      </div>
+      <% end %>
 
       <div>
         <label class="block text-sm font-medium text-gray-700">Rotación (°)</label>
-        <input
-          type="number"
-          name="value"
-          step="1"
-          value={@element.rotation || 0}
-          phx-change="update_element"
-          phx-debounce="150"
-          phx-value-field="rotation"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-        />
+        <form phx-change="update_element" phx-value-field="rotation">
+          <input
+            type="number"
+            name="value"
+            step="1"
+            value={@element.rotation || 0}
+            phx-debounce="150"
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+          />
+        </form>
       </div>
 
       <!-- Vincular a columna: solo para etiquetas múltiples -->
@@ -1693,26 +1738,26 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-sm font-medium text-gray-700">Tamaño fuente</label>
-                <input
-                  type="number"
-                  name="value"
-                  value={@element.font_size || 12}
-                  phx-change="update_element"
-                  phx-debounce="150"
-                  phx-value-field="font_size"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
+                <form phx-change="update_element" phx-value-field="font_size">
+                  <input
+                    type="number"
+                    name="value"
+                    value={@element.font_size || 12}
+                    phx-debounce="150"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </form>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Color</label>
-                <input
-                  type="color"
-                  name="value"
-                  value={@element.color || "#000000"}
-                  phx-change="update_element"
-                  phx-value-field="color"
-                  class="mt-1 block w-full h-9 rounded-md border-gray-300"
-                />
+                <form phx-change="update_element" phx-value-field="color">
+                  <input
+                    type="color"
+                    name="value"
+                    value={@element.color || "#000000"}
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </form>
               </div>
             </div>
             <div>
@@ -1841,6 +1886,46 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
         <% "rectangle" -> %>
           <div class="border-t pt-4 space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :background_color) || "#ffffff"}
+                phx-change="update_element"
+                phx-value-field="background_color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Color de borde</label>
+              <input
+                type="color"
+                name="value"
+                value={Map.get(@element, :border_color) || "#000000"}
+                phx-change="update_element"
+                phx-value-field="border_color"
+                class="mt-1 block w-full h-9 rounded-md border-gray-300"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Ancho de borde (mm)</label>
+              <input
+                type="number"
+                name="value"
+                value={Map.get(@element, :border_width) || 0.5}
+                step="0.1"
+                min="0"
+                phx-change="update_element"
+                phx-value-field="border_width"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </div>
+          </div>
+
+        <% "circle" -> %>
+          <div class="border-t pt-4 space-y-3">
+            <p class="text-xs text-gray-500 mb-2">Tip: Si ancho = alto es un círculo, si difieren es una elipse.</p>
             <div>
               <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
               <input

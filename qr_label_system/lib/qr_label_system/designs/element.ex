@@ -16,7 +16,7 @@ defmodule QrLabelSystem.Designs.Element do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @element_types ~w(qr barcode text line rectangle image)
+  @element_types ~w(qr barcode text line rectangle image circle)
   @barcode_formats ~w(CODE128 CODE39 EAN13 EAN8 UPC ITF14 pharmacode)
 
   @primary_key false
@@ -129,6 +129,7 @@ defmodule QrLabelSystem.Designs.Element do
         "line" -> "Línea"
         "rectangle" -> "Rectángulo"
         "image" -> "Imagen"
+        "circle" -> "Círculo"
         _ -> "Elemento"
       end
       put_change(changeset, :name, type_name)
