@@ -1582,26 +1582,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         />
       </div>
 
-      <%= if @label_type == "single" do %>
-        <!-- Para etiquetas únicas: campo de contenido directo -->
-        <div class="border-t pt-4">
-          <label class="block text-sm font-medium text-gray-700">Contenido</label>
-          <input
-            type="text"
-            name="value"
-            value={Map.get(@element, :binding) || ""}
-            placeholder="Datos del QR"
-            phx-change="update_element"
-            phx-debounce="150"
-            phx-value-field="binding"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
-          <p class="mt-1 text-xs text-gray-500">
-            Ingresa el contenido que mostrará la lectura del QR
-          </p>
-        </div>
-      <% else %>
-        <!-- Para etiquetas múltiples: vincular a columna -->
+      <!-- Vincular a columna: solo para etiquetas múltiples -->
+      <%= if @label_type == "multiple" do %>
         <div class="border-t pt-4">
           <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
           <%= if length(@available_columns) > 0 do %>
@@ -1695,7 +1677,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <% "text" -> %>
           <div class="border-t pt-4 space-y-3">
             <div>
-              <label for="text_content_input" class="block text-sm font-medium text-gray-700">Contenido (si no está vinculado)</label>
+              <label for="text_content_input" class="block text-sm font-medium text-gray-700"><%= if @label_type == "single", do: "Contenido", else: "Contenido (si no está vinculado)" %></label>
               <form phx-change="update_element" phx-value-field="text_content">
                 <input
                   type="text"
