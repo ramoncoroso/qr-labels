@@ -230,19 +230,41 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Update selected_element locally to keep UI in sync
       # Handle both atom and string keys
       key = String.to_atom(field)
-      updated_element =
+
+      # Get element type
+      element_type = Map.get(socket.assigns.selected_element, :type) ||
+                     Map.get(socket.assigns.selected_element, "type")
+
+      # For QR codes, width and height must be equal (square)
+      updated_element = if element_type == "qr" and field in ["width", "height"] do
+        socket.assigns.selected_element
+        |> Map.put(:width, value)
+        |> Map.put("width", value)
+        |> Map.put(:height, value)
+        |> Map.put("height", value)
+      else
         socket.assigns.selected_element
         |> Map.put(key, value)
         |> Map.put(field, value)
+      end
 
       # Get element ID (handle both atom and string keys)
       element_id = Map.get(socket.assigns.selected_element, :id) ||
                    Map.get(socket.assigns.selected_element, "id")
 
-      {:noreply,
-       socket
-       |> assign(:selected_element, updated_element)
-       |> push_event("update_element_property", %{id: element_id, field: field, value: value})}
+      # For QR, push both width and height updates
+      socket = if element_type == "qr" and field in ["width", "height"] do
+        socket
+        |> assign(:selected_element, updated_element)
+        |> push_event("update_element_property", %{id: element_id, field: "width", value: value})
+        |> push_event("update_element_property", %{id: element_id, field: "height", value: value})
+      else
+        socket
+        |> assign(:selected_element, updated_element)
+        |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+      end
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -1590,29 +1612,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
-            <form phx-change="update_element" phx-value-field="width">
-              <input
-                type="number"
-                name="value"
-                step="0.1"
-                value={@element.width}
-                phx-debounce="150"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-            </form>
+            <input
+              type="number"
+              name="value"
+              step="0.1"
+              value={@element.width}
+              phx-blur="update_element"
+              phx-value-field="width"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
-            <form phx-change="update_element" phx-value-field="height">
-              <input
-                type="number"
-                name="value"
-                step="0.1"
-                value={@element.height}
-                phx-debounce="150"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-            </form>
+            <input
+              type="number"
+              name="value"
+              step="0.1"
+              value={@element.height}
+              phx-blur="update_element"
+              phx-value-field="height"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
           </div>
         </div>
       <% end %>
