@@ -1681,8 +1681,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               name="value"
               value={Map.get(@element, :binding) || ""}
               placeholder="Nombre de columna"
-              phx-change="update_element"
-              phx-debounce="150"
+              phx-blur="update_element"
               phx-value-field="binding"
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
             />
@@ -1972,7 +1971,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 value={Map.get(@element, :border_width) || 0.5}
                 step="0.1"
                 min="0"
-                phx-change="update_element"
+                phx-blur="update_element"
                 phx-value-field="border_width"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               />
@@ -1983,19 +1982,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <div class="border-t pt-4 space-y-3">
             <div>
               <label class="block text-sm font-medium text-gray-700">Redondez</label>
-              <div class="flex items-center space-x-2 mt-1">
+              <div
+                id={"border-radius-slider-#{Map.get(@element, :id) || Map.get(@element, "id")}"}
+                phx-hook="BorderRadiusSlider"
+                phx-update="ignore"
+                data-element-id={Map.get(@element, :id) || Map.get(@element, "id")}
+                data-value={Map.get(@element, :border_radius) || 100}
+                class="flex items-center space-x-2 mt-1"
+              >
                 <input
                   type="range"
-                  name="value"
                   min="0"
                   max="100"
-                  value={Map.get(@element, :border_radius) || 100}
-                  phx-change="update_element"
-                  phx-value-field="border_radius"
-                  phx-debounce="50"
                   class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
-                <span class="text-sm text-gray-600 w-10 text-right"><%= Map.get(@element, :border_radius) || 100 %>%</span>
+                <span class="text-sm text-gray-600 w-10 text-right"></span>
               </div>
               <p class="text-xs text-gray-400 mt-1">0% = rectángulo, 100% = elipse</p>
             </div>
@@ -2029,7 +2030,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 value={Map.get(@element, :border_width) || 0.5}
                 step="0.1"
                 min="0"
-                phx-change="update_element"
+                phx-blur="update_element"
                 phx-value-field="border_width"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               />

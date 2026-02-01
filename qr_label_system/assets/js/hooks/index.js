@@ -10,6 +10,7 @@ import DraggableElements from "./draggable_elements"
 import AutoHideFlash from "./auto_hide_flash"
 import AutoUploadSubmit from "./auto_upload_submit"
 import PropertyFields from "./property_fields"
+import BorderRadiusSlider from "./border_radius_slider"
 
 const Hooks = {
   CanvasDesigner,
@@ -23,7 +24,8 @@ const Hooks = {
   DraggableElements,
   AutoHideFlash,
   AutoUploadSubmit,
-  PropertyFields
+  PropertyFields,
+  BorderRadiusSlider
 }
 
 export default Hooks
