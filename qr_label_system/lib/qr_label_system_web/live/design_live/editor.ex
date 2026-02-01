@@ -1963,19 +1963,20 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <div class="border-t pt-4 space-y-3">
             <div>
               <label class="block text-sm font-medium text-gray-700">Redondez</label>
-              <div class="flex items-center space-x-2 mt-1">
-                <input
-                  type="range"
-                  name="value"
-                  min="0"
-                  max="100"
-                  value={Map.get(@element, :border_radius) || 100}
-                  phx-change="update_element"
-                  phx-value-field="border_radius"
-                  class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                />
-                <span class="text-sm text-gray-600 w-10 text-right"><%= Map.get(@element, :border_radius) || 100 %>%</span>
-              </div>
+              <form phx-change="update_element" phx-value-field="border_radius">
+                <div class="flex items-center space-x-2 mt-1">
+                  <input
+                    type="range"
+                    name="value"
+                    min="0"
+                    max="100"
+                    value={Map.get(@element, :border_radius) || 100}
+                    phx-debounce="50"
+                    class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span class="text-sm text-gray-600 w-10 text-right"><%= Map.get(@element, :border_radius) || 100 %>%</span>
+                </div>
+              </form>
               <p class="text-xs text-gray-400 mt-1">0% = rectángulo, 100% = elipse</p>
             </div>
             <div>
