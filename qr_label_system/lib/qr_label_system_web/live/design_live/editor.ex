@@ -1708,7 +1708,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     type="text"
                     name="value"
                     value={@element.text_content || ""}
-                    phx-debounce="150"
+                    phx-debounce="blur"
                     placeholder="Texto a codificar"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                   />
@@ -1742,7 +1742,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     type="text"
                     name="value"
                     value={@element.text_content || ""}
-                    phx-debounce="150"
+                    phx-debounce="blur"
                     placeholder="Texto a codificar"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                   />
