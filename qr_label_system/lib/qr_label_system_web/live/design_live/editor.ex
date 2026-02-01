@@ -54,8 +54,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:pending_save_flash, false)
        |> assign(:zoom, 100)
        |> assign(:snap_enabled, true)
-       |> assign(:grid_snap_enabled, false)
-       |> assign(:grid_size, 5)
        |> assign(:snap_threshold, 5)
        |> assign(:renaming, false)
        |> assign(:rename_value, design.name)
@@ -887,6 +885,35 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp barcode_format_example("pharmacode"), do: "1234"
   defp barcode_format_example(_), do: nil
 
+  # Check if barcode format is compatible with the given content
+  # Returns true if compatible, false otherwise
+  defp barcode_format_compatible?(nil, _format), do: true
+  defp barcode_format_compatible?("", _format), do: true
+  defp barcode_format_compatible?(content, format) do
+    content = String.trim(content)
+    digits_only = Regex.match?(~r/^\d+$/, content)
+    len = String.length(content)
+
+    case format do
+      "CODE128" -> true  # Accepts any text
+      "CODE39" -> Regex.match?(~r/^[A-Z0-9\-. \$\/\+%]*$/i, content)
+      "EAN13" -> digits_only and len in 12..13
+      "EAN8" -> digits_only and len in 7..8
+      "UPC" -> digits_only and len in 11..12
+      "ITF14" -> digits_only and len in 13..14
+      "pharmacode" ->
+        if digits_only do
+          case Integer.parse(content) do
+            {num, ""} -> num >= 3 and num <= 131070
+            _ -> false
+          end
+        else
+          false
+        end
+      _ -> true
+    end
+  end
+
   # History management for undo/redo
   @max_history_size 50
 
@@ -1217,31 +1244,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                 </svg>
               </button>
-            </div>
-
-            <!-- Grid Snap Control -->
-            <div class="flex items-center space-x-1 bg-white rounded-lg shadow-md px-2 py-1.5">
-              <button
-                phx-click="align_to_grid"
-                class={"flex items-center space-x-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition #{if @grid_snap_enabled, do: "bg-blue-100 text-blue-700", else: "hover:bg-gray-100 text-gray-600"}"}
-                title="Alinea todos los elementos a una rejilla"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16M8 4v16M16 4v16" />
-                </svg>
-                <span>Rejilla</span>
-              </button>
-              <select
-                :if={@grid_snap_enabled}
-                phx-change="update_grid_size"
-                name="size"
-                class="text-xs border-gray-300 rounded py-1 pl-2 pr-6"
-                title="Tamaño de la rejilla"
-              >
-                <option value="2" selected={@grid_size == 2}>2mm</option>
-                <option value="5" selected={@grid_size == 5}>5mm</option>
-                <option value="10" selected={@grid_size == 10}>10mm</option>
-              </select>
             </div>
 
             <!-- Alignment Controls (shown when multiple elements selected) -->
@@ -1772,12 +1774,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   name="value"
                   class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 >
-                  <option value="CODE128" selected={@element.barcode_format == "CODE128"}>CODE128</option>
-                  <option value="CODE39" selected={@element.barcode_format == "CODE39"}>CODE39</option>
-                  <option value="EAN13" selected={@element.barcode_format == "EAN13"}>EAN-13</option>
-                  <option value="EAN8" selected={@element.barcode_format == "EAN8"}>EAN-8</option>
-                  <option value="UPC" selected={@element.barcode_format == "UPC"}>UPC</option>
-                  <option value="ITF14" selected={@element.barcode_format == "ITF14"}>ITF-14</option>
+                  <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC"}, {"ITF14", "ITF-14"}] do %>
+                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                    <option
+                      value={value}
+                      selected={@element.barcode_format == value}
+                      disabled={not compatible}
+                      class={if not compatible, do: "text-gray-400", else: ""}
+                    >
+                      <%= label %><%= if not compatible, do: " (incompatible)", else: "" %>
+                    </option>
+                  <% end %>
                 </select>
               </form>
             </div>
