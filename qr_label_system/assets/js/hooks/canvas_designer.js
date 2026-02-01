@@ -880,7 +880,8 @@ const CanvasDesigner = {
 
   createQR(element, x, y) {
     const size = (element.width || 20) * PX_PER_MM
-    const content = element.binding || ''
+    // Use text_content for single labels, binding for multiple labels with data
+    const content = element.text_content || element.binding || ''
 
     // If we have content, generate real QR code
     if (content) {
@@ -990,7 +991,8 @@ const CanvasDesigner = {
   createBarcode(element, x, y) {
     const w = (element.width || 40) * PX_PER_MM
     const h = (element.height || 15) * PX_PER_MM
-    const content = element.binding || ''
+    // Use text_content for single labels, binding for multiple labels with data
+    const content = element.text_content || element.binding || ''
     const format = element.barcode_format || 'CODE128'
 
     // If we have content, generate real barcode
@@ -1432,14 +1434,20 @@ const CanvasDesigner = {
   },
 
   updateSelectedElement(field, value, targetObj = null) {
+    console.log('updateSelectedElement called:', { field, value, hasTargetObj: !!targetObj })
     const obj = targetObj || this.canvas.getActiveObject()
-    if (!obj?.elementId) return
+    if (!obj?.elementId) {
+      console.log('No obj or elementId found')
+      return
+    }
+    console.log('Found object:', { elementId: obj.elementId, elementType: obj.elementType, objType: obj.type })
 
     const data = obj.elementData || {}
 
     // Parse numeric values
     if (['x', 'y', 'width', 'height', 'rotation', 'font_size', 'border_width', 'border_radius'].includes(field)) {
       value = parseFloat(value) || 0
+      console.log('Parsed numeric value:', value)
     }
 
     data[field] = value
@@ -1455,13 +1463,11 @@ const CanvasDesigner = {
       case 'width':
         if (obj.type === 'textbox') {
           obj.set('width', value * PX_PER_MM)
-        } else if (obj.type === 'group' || (obj.type === 'image' && (obj.elementType === 'qr' || obj.elementType === 'barcode'))) {
-          // For QR/barcode elements (group or image): recreate at new size
-          // Update width in data before recreating
-          data.width = value
-          obj.elementData = data
-          this.recreateCodeElement(obj, data.binding)
-          return // recreateCodeElement handles save
+        } else if (obj.type === 'group') {
+          // For placeholder groups (QR/barcode): scale visually without recreating
+          const currentGroupWidth = obj.getScaledWidth()
+          const targetWidth = value * PX_PER_MM
+          obj.set('scaleX', (obj.scaleX || 1) * (targetWidth / currentGroupWidth))
         } else if (obj.type === 'rect') {
           obj.set('width', value * PX_PER_MM)
           // If it's a circle element, recalculate rx/ry based on border_radius
@@ -1477,12 +1483,11 @@ const CanvasDesigner = {
         }
         break
       case 'height':
-        if (obj.type === 'group' || (obj.type === 'image' && (obj.elementType === 'qr' || obj.elementType === 'barcode'))) {
-          // For QR/barcode elements (group or image): recreate at new size
-          data.height = value
-          obj.elementData = data
-          this.recreateCodeElement(obj, data.binding)
-          return // recreateCodeElement handles save
+        if (obj.type === 'group') {
+          // For placeholder groups (QR/barcode): scale visually without recreating
+          const currentGroupHeight = obj.getScaledHeight()
+          const targetHeight = value * PX_PER_MM
+          obj.set('scaleY', (obj.scaleY || 1) * (targetHeight / currentGroupHeight))
         } else if (obj.type === 'rect') {
           obj.set('height', value * PX_PER_MM)
           // If it's a circle element, recalculate rx/ry based on border_radius
@@ -1512,6 +1517,11 @@ const CanvasDesigner = {
           obj.setCoords()
           // Auto-fit width to content if text is short
           this.autoFitTextWidth(obj)
+        } else if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
+          // For QR and barcode, changing text_content requires regenerating
+          obj.elementData = data
+          this.recreateCodeElement(obj, value)
+          return // recreateCodeElement handles save
         }
         break
       case 'font_size':
@@ -1549,10 +1559,14 @@ const CanvasDesigner = {
         break
       case 'border_radius':
         // For circle elements, update the rx/ry based on roundness percentage
+        console.log('border_radius update:', { elementType: obj.elementType, objType: obj.type, value, width: obj.width, height: obj.height })
         if (obj.elementType === 'circle' && obj.type === 'rect') {
           const roundness = value / 100
           const maxRadius = Math.min(obj.width, obj.height) / 2
+          console.log('Applying rx/ry:', { roundness, maxRadius, rx: roundness * maxRadius })
           obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
+        } else {
+          console.log('Condition failed - elementType:', obj.elementType, 'type:', obj.type)
         }
         break
       case 'binding':
@@ -1666,17 +1680,18 @@ const CanvasDesigner = {
 
   /**
    * Recreate a QR code or barcode element with new content
-   * Used when the binding (content) field changes
+   * Used when the binding or text_content field changes
    */
-  recreateCodeElement(obj, newBinding) {
+  recreateCodeElement(obj, newContent) {
     if (!obj || !obj.elementId) return
 
     const elementId = obj.elementId
     const elementType = obj.elementType
     const data = { ...obj.elementData }
 
-    // Update binding
-    data.binding = newBinding
+    // Update both binding and text_content for compatibility
+    data.binding = newContent
+    data.text_content = newContent
 
     // Get current position (convert from canvas coords to mm)
     const x = (obj.left - this.labelBounds.left) / PX_PER_MM
