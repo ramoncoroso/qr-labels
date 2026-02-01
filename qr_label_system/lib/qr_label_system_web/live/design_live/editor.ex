@@ -266,6 +266,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           socket
           |> push_event("update_element_property", %{id: element_id, field: field, value: value})
 
+        # For barcode_format with rigid formats, also set example text_content
+        field == "barcode_format" ->
+          example = barcode_format_example(value)
+          if example do
+            updated_with_example = updated_element
+              |> Map.put(:text_content, example)
+              |> Map.put("text_content", example)
+            socket
+            |> assign(:selected_element, updated_with_example)
+            |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+            |> push_event("update_element_property", %{id: element_id, field: "text_content", value: example})
+          else
+            socket
+            |> assign(:selected_element, updated_element)
+            |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+          end
+
         true ->
           socket
           |> assign(:selected_element, updated_element)
@@ -877,6 +894,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         base
     end
   end
+
+  # Returns example content for barcode formats with rigid requirements
+  # Returns nil for flexible formats (CODE128, CODE39)
+  defp barcode_format_example("EAN13"), do: "5901234123457"
+  defp barcode_format_example("EAN8"), do: "12345678"
+  defp barcode_format_example("UPC"), do: "012345678905"
+  defp barcode_format_example("ITF14"), do: "10012345678902"
+  defp barcode_format_example("pharmacode"), do: "1234"
+  defp barcode_format_example(_), do: nil
 
   # History management for undo/redo
   @max_history_size 50
