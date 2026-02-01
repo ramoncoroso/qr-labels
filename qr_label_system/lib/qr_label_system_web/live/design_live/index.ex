@@ -30,29 +30,36 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    design = Designs.get_design!(id)
+    case Designs.get_design(id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "El diseño ya no existe")}
 
-    if design.user_id == socket.assigns.current_user.id do
-      {:ok, _} = Designs.delete_design(design)
-      {:noreply, stream_delete(socket, :designs, design)}
-    else
-      {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar este diseño")}
+      design when design.user_id == socket.assigns.current_user.id ->
+        {:ok, _} = Designs.delete_design(design)
+        {:noreply, stream_delete(socket, :designs, design)}
+
+      _design ->
+        {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar este diseño")}
     end
   end
 
   @impl true
   def handle_event("duplicate", %{"id" => id}, socket) do
-    design = Designs.get_design!(id)
+    case Designs.get_design(id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "El diseño ya no existe")}
 
-    case Designs.duplicate_design(design, socket.assigns.current_user.id) do
-      {:ok, new_design} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Diseño duplicado exitosamente")
-         |> stream_insert(:designs, new_design)}
+      design ->
+        case Designs.duplicate_design(design, socket.assigns.current_user.id) do
+          {:ok, new_design} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Diseño duplicado exitosamente")
+             |> stream_insert(:designs, new_design)}
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Error al duplicar el diseño")}
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "Error al duplicar el diseño")}
+        end
     end
   end
 
@@ -79,26 +86,34 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("save_rename", %{"id" => id}, socket) do
-    design = Designs.get_design!(id)
     new_name = String.trim(socket.assigns.rename_value)
 
-    if design.user_id == socket.assigns.current_user.id && new_name != "" do
-      case Designs.update_design(design, %{name: new_name}) do
-        {:ok, updated_design} ->
-          {:noreply,
-           socket
-           |> assign(:renaming_id, nil)
-           |> assign(:rename_value, "")
-           |> stream_insert(:designs, updated_design)}
+    case Designs.get_design(id) do
+      nil ->
+        {:noreply,
+         socket
+         |> assign(:renaming_id, nil)
+         |> assign(:rename_value, "")
+         |> put_flash(:error, "El diseño ya no existe")}
 
-        {:error, _changeset} ->
-          {:noreply, put_flash(socket, :error, "Error al renombrar el diseño")}
-      end
-    else
-      {:noreply,
-       socket
-       |> assign(:renaming_id, nil)
-       |> assign(:rename_value, "")}
+      design when design.user_id == socket.assigns.current_user.id and new_name != "" ->
+        case Designs.update_design(design, %{name: new_name}) do
+          {:ok, updated_design} ->
+            {:noreply,
+             socket
+             |> assign(:renaming_id, nil)
+             |> assign(:rename_value, "")
+             |> stream_insert(:designs, updated_design)}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "Error al renombrar el diseño")}
+        end
+
+      _design ->
+        {:noreply,
+         socket
+         |> assign(:renaming_id, nil)
+         |> assign(:rename_value, "")}
     end
   end
 

@@ -6,14 +6,20 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    design = Designs.get_design!(id)
+    case Designs.get_design(id) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Este diseño ha sido eliminado o no existe")
+         |> push_navigate(to: ~p"/designs")}
 
-    if design.user_id != socket.assigns.current_user.id do
-      {:ok,
-       socket
-       |> put_flash(:error, "No tienes permiso para editar este diseño")
-       |> push_navigate(to: ~p"/designs")}
-    else
+      design when design.user_id != socket.assigns.current_user.id ->
+        {:ok,
+         socket
+         |> put_flash(:error, "No tienes permiso para editar este diseño")
+         |> push_navigate(to: ~p"/designs")}
+
+      design ->
       # Load available columns from persistent store (from data-first flow)
       user_id = socket.assigns.current_user.id
       {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id)
@@ -1334,8 +1340,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <!-- Right Sidebar - Properties (fixed width, won't shrink) -->
         <div class="w-72 flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto">
           <div class="p-4">
-            <!-- Available Columns Panel (when data is loaded) -->
-            <div :if={length(@available_columns) > 0} class="bg-indigo-50 rounded-lg p-3 mb-4">
+            <!-- Available Columns Panel (only for multiple labels) -->
+            <div :if={@design.label_type == "multiple" && length(@available_columns) > 0} class="bg-indigo-50 rounded-lg p-3 mb-4">
               <h4 class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">
                 Columnas Disponibles
               </h4>
@@ -1358,7 +1364,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -1375,8 +1381,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <h3 class="font-semibold text-gray-900 mb-4">Propiedades de Etiqueta</h3>
               <.label_properties design={@design} />
 
-              <!-- Data loaded indicator -->
-              <%= if length(@upload_data) > 0 do %>
+              <!-- Data loaded indicator (only for multiple labels) -->
+              <%= if @design.label_type == "multiple" && length(@upload_data) > 0 do %>
                 <div class="mt-6 pt-4 border-t">
                   <div class="bg-indigo-50 rounded-lg p-3">
                     <div class="flex items-center space-x-2 text-indigo-700 mb-2">
@@ -1576,40 +1582,61 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         />
       </div>
 
-      <div class="border-t pt-4">
-        <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
-        <%= if length(@available_columns) > 0 do %>
-          <form phx-change="update_element" class="mt-1">
-            <input type="hidden" name="field" value="binding" />
-            <select
-              name="value"
-              class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            >
-              <option value="">Sin vincular</option>
-              <%= for col <- @available_columns do %>
-                <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
-              <% end %>
-            </select>
-          </form>
-          <p class="mt-1 text-xs text-gray-500">
-            Selecciona una columna de tus datos
-          </p>
-        <% else %>
+      <%= if @label_type == "single" do %>
+        <!-- Para etiquetas únicas: campo de contenido directo -->
+        <div class="border-t pt-4">
+          <label class="block text-sm font-medium text-gray-700">Contenido</label>
           <input
             type="text"
             name="value"
             value={Map.get(@element, :binding) || ""}
-            placeholder="Nombre de columna"
+            placeholder="Datos del QR"
             phx-change="update_element"
             phx-debounce="150"
             phx-value-field="binding"
             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
           />
           <p class="mt-1 text-xs text-gray-500">
-            Ingresa el nombre exacto de la columna del Excel/BD
+            Ingresa el contenido que mostrará la lectura del QR
           </p>
-        <% end %>
-      </div>
+        </div>
+      <% else %>
+        <!-- Para etiquetas múltiples: vincular a columna -->
+        <div class="border-t pt-4">
+          <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
+          <%= if length(@available_columns) > 0 do %>
+            <form phx-change="update_element" class="mt-1">
+              <input type="hidden" name="field" value="binding" />
+              <select
+                name="value"
+                class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              >
+                <option value="">Sin vincular</option>
+                <%= for col <- @available_columns do %>
+                  <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
+                <% end %>
+              </select>
+            </form>
+            <p class="mt-1 text-xs text-gray-500">
+              Selecciona una columna de tus datos
+            </p>
+          <% else %>
+            <input
+              type="text"
+              name="value"
+              value={Map.get(@element, :binding) || ""}
+              placeholder="Nombre de columna"
+              phx-change="update_element"
+              phx-debounce="150"
+              phx-value-field="binding"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
+            <p class="mt-1 text-xs text-gray-500">
+              Ingresa el nombre exacto de la columna del Excel/BD
+            </p>
+          <% end %>
+        </div>
+      <% end %>
 
       <%= case @element.type do %>
         <% "qr" -> %>

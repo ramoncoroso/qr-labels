@@ -2,21 +2,38 @@ defmodule QrLabelSystemWeb.DesignLive.Show do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Designs
+  alias QrLabelSystem.Designs.Design
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    design = Designs.get_design!(id)
+    case Designs.get_design(id) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Este diseño ha sido eliminado o no existe")
+         |> push_navigate(to: ~p"/designs")}
 
-    {:ok,
-     socket
-     |> assign(:page_title, design.name)
-     |> assign(:design, design)}
+      design ->
+        {:ok,
+         socket
+         |> assign(:page_title, design.name)
+         |> assign(:design, design)}
+    end
+  end
+
+  @impl true
+  def handle_event("download_pdf", _params, socket) do
+    {:noreply,
+     push_event(socket, "download_single_pdf", %{
+       design: Design.to_json(socket.assigns.design),
+       quantity: 1
+     })}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div>
+    <div id="design-show-page" phx-hook="SingleLabelPrint">
       <.header>
         <%= @design.name %>
         <:subtitle><%= @design.description || "Sin descripción" %></:subtitle>
@@ -26,6 +43,32 @@ defmodule QrLabelSystemWeb.DesignLive.Show do
           </.link>
         </:actions>
       </.header>
+
+      <!-- Action Buttons Panel -->
+      <div class="mt-6 bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Acciones</h3>
+        <div class="space-y-3">
+          <button
+            phx-click="download_pdf"
+            class="w-full py-3 rounded-xl font-medium transition flex items-center justify-center space-x-2 bg-indigo-600 text-white hover:bg-indigo-700"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Descargar PDF</span>
+          </button>
+
+          <.link
+            navigate={~p"/designs/#{@design.id}/edit"}
+            class="w-full py-3 rounded-xl font-medium transition flex items-center justify-center space-x-2 bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span>Editar en Canvas</span>
+          </.link>
+        </div>
+      </div>
 
       <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Design Preview -->
