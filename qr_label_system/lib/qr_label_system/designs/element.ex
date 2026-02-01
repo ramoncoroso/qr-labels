@@ -51,6 +51,7 @@ defmodule QrLabelSystem.Designs.Element do
     field :background_color, :string
     field :border_width, :float, default: 0.0
     field :border_color, :string, default: "#000000"
+    field :border_radius, :float, default: 100.0  # For circle: 0=rectangle, 100=ellipse
 
     # Image specific
     field :image_url, :string
@@ -74,7 +75,7 @@ defmodule QrLabelSystem.Designs.Element do
       :qr_error_level,
       :barcode_format, :barcode_show_text,
       :font_size, :font_family, :font_weight, :text_align, :text_content,
-      :color, :background_color, :border_width, :border_color,
+      :color, :background_color, :border_width, :border_color, :border_radius,
       :image_url, :image_data, :image_filename,
       :z_index, :visible, :locked, :name
     ])
