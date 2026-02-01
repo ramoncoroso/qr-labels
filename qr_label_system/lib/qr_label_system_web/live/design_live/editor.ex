@@ -1571,48 +1571,45 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp element_properties(assigns) do
     ~H"""
-    <div class="space-y-4">
+    <div class="space-y-4" id="property-fields" phx-hook="PropertyFields">
       <!-- Layer name -->
       <div>
         <label class="block text-sm font-medium text-gray-700">Nombre</label>
-        <form phx-change="update_element" phx-value-field="name">
-          <input
-            type="text"
-            name="value"
-            value={Map.get(@element, :name) || @element.type}
-            phx-debounce="200"
-            onfocus="this.setSelectionRange(this.value.length, this.value.length)"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
-        </form>
+        <input
+          type="text"
+          name="value"
+          value={Map.get(@element, :name) || @element.type}
+          phx-blur="update_element"
+          phx-value-field="name"
+          onfocus="this.setSelectionRange(this.value.length, this.value.length)"
+          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+        />
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700">X (mm)</label>
-          <form phx-change="update_element" phx-value-field="x">
-            <input
-              type="number"
-              name="value"
-              step="0.1"
-              value={@element.x}
-              phx-debounce="150"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            />
-          </form>
+          <input
+            type="number"
+            name="value"
+            step="0.1"
+            value={@element.x}
+            phx-blur="update_element"
+            phx-value-field="x"
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+          />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Y (mm)</label>
-          <form phx-change="update_element" phx-value-field="y">
-            <input
-              type="number"
-              name="value"
-              step="0.1"
-              value={@element.y}
-              phx-debounce="150"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            />
-          </form>
+          <input
+            type="number"
+            name="value"
+            step="0.1"
+            value={@element.y}
+            phx-blur="update_element"
+            phx-value-field="y"
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+          />
         </div>
       </div>
 
@@ -1647,16 +1644,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       <div>
         <label class="block text-sm font-medium text-gray-700">Rotación (°)</label>
-        <form phx-change="update_element" phx-value-field="rotation">
-          <input
-            type="number"
-            name="value"
-            step="1"
-            value={@element.rotation || 0}
-            phx-debounce="150"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
-        </form>
+        <input
+          type="number"
+          name="value"
+          step="1"
+          value={@element.rotation || 0}
+          phx-blur="update_element"
+          phx-value-field="rotation"
+          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+        />
       </div>
 
       <%= if @label_type == "multiple" do %>
@@ -1703,16 +1699,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <%= if @label_type == "single" do %>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Contenido código QR</label>
-                <form phx-change="update_element" phx-value-field="text_content">
-                  <input
-                    type="text"
-                    name="value"
-                    value={@element.text_content || ""}
-                    phx-debounce="blur"
-                    placeholder="Texto a codificar"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                  />
-                </form>
+                <input
+                  type="text"
+                  name="value"
+                  value={@element.text_content || ""}
+                  phx-blur="update_element"
+                  phx-value-field="text_content"
+                  placeholder="Texto a codificar"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
               </div>
             <% end %>
             <div>
@@ -1737,16 +1732,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <%= if @label_type == "single" do %>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Contenido código Barras</label>
-                <form phx-change="update_element" phx-value-field="text_content">
-                  <input
-                    type="text"
-                    name="value"
-                    value={@element.text_content || ""}
-                    phx-debounce="blur"
-                    placeholder="Texto a codificar"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                  />
-                </form>
+                <input
+                  type="text"
+                  name="value"
+                  value={@element.text_content || ""}
+                  phx-blur="update_element"
+                  phx-value-field="text_content"
+                  placeholder="Texto a codificar"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
               </div>
             <% end %>
             <div>
@@ -1787,41 +1781,39 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <div class="border-t pt-4 space-y-3">
             <div>
               <label for="text_content_input" class="block text-sm font-medium text-gray-700"><%= if @label_type == "single", do: "Contenido", else: "Contenido (si no está vinculado)" %></label>
-              <form phx-change="update_element" phx-value-field="text_content">
-                <input
-                  type="text"
-                  id="text_content_input"
-                  name="value"
-                  value={@element.text_content || ""}
-                  phx-debounce="150"
-                  onfocus="if(this.value === 'Texto') this.value = ''"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
-              </form>
+              <input
+                type="text"
+                id="text_content_input"
+                name="value"
+                value={@element.text_content || ""}
+                phx-blur="update_element"
+                phx-value-field="text_content"
+                onfocus="if(this.value === 'Texto') this.value = ''"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-sm font-medium text-gray-700">Tamaño fuente</label>
-                <form phx-change="update_element" phx-value-field="font_size">
-                  <input
-                    type="number"
-                    name="value"
-                    value={@element.font_size || 12}
-                    phx-debounce="150"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                  />
-                </form>
+                <input
+                  type="number"
+                  name="value"
+                  value={@element.font_size || 12}
+                  phx-blur="update_element"
+                  phx-value-field="font_size"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Color</label>
-                <form phx-change="update_element" phx-value-field="color">
-                  <input
-                    type="color"
-                    name="value"
-                    value={@element.color || "#000000"}
-                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
-                  />
-                </form>
+                <input
+                  type="color"
+                  name="value"
+                  value={@element.color || "#000000"}
+                  phx-change="update_element"
+                  phx-value-field="color"
+                  class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                />
               </div>
             </div>
             <div>

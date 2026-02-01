@@ -9,6 +9,7 @@ import SingleLabelPrint from "./single_label_print"
 import DraggableElements from "./draggable_elements"
 import AutoHideFlash from "./auto_hide_flash"
 import AutoUploadSubmit from "./auto_upload_submit"
+import PropertyFields from "./property_fields"
 
 const Hooks = {
   CanvasDesigner,
@@ -21,7 +22,8 @@ const Hooks = {
   SingleLabelPrint,
   DraggableElements,
   AutoHideFlash,
-  AutoUploadSubmit
+  AutoUploadSubmit,
+  PropertyFields
 }
 
 export default Hooks
