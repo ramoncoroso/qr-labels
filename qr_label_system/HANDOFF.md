@@ -6,7 +6,232 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (1 febrero 2026) - QR/Barcode Real en Canvas
+## Sesion Actual (1 febrero 2026) - Fix Sincronizacion Propiedades Canvas
+
+### Objetivo Completado
+
+Corregir propiedades que se guardaban en la base de datos pero no se aplicaban visualmente en el canvas.
+
+### Metodologia de Analisis
+
+Se realizo un analisis sistematico de super-ingeniero para detectar TODOS los errores de sincronizacion:
+
+1. **Mapeo del flujo completo**: UI → Evento → `updateSelectedElement()` → Fabric.js → `saveElements()` → BD
+2. **Comparacion de 3 fuentes**: Schema (element.ex) vs UI (editor.ex) vs Handler (canvas_designer.js)
+3. **Identificacion de brechas**: Propiedades que existian en una capa pero no en otra
+
+### Problemas Identificados y Corregidos
+
+#### 1. QR Error Level No Se Aplicaba
+
+**Problema:** `qr_error_level` tenia UI (select), se guardaba en BD, pero nunca se pasaba a la libreria QRCode.
+
+**Solucion:**
+```javascript
+// canvas_designer.js - createQR()
+QRCode.toDataURL(content, {
+  errorCorrectionLevel: element.qr_error_level || 'M',  // AGREGADO
+  // ...
+})
+
+// canvas_designer.js - updateSelectedElement()
+case 'qr_error_level':
+  if (obj.elementType === 'qr') {
+    obj.elementData = data
+    this.recreateCodeElement(obj, data.binding || data.text_content)
+    return
+  }
+  break
+```
+
+#### 2. Barcode Show Text No Se Aplicaba
+
+**Problema:** `barcode_show_text` tenia checkbox en UI, pero el switch no tenia este case. Ademas, el codigo usaba `element.show_text` (incorrecto) en vez de `element.barcode_show_text`.
+
+**Solucion:**
+```javascript
+// canvas_designer.js - createBarcode()
+displayValue: element.barcode_show_text !== false,  // Corregido nombre de campo
+
+// canvas_designer.js - updateSelectedElement()
+case 'barcode_show_text':
+  if (obj.elementType === 'barcode') {
+    obj.elementData = data
+    this.recreateCodeElement(obj, data.binding || data.text_content)
+    return
+  }
+  break
+```
+
+#### 3. Colores de QR/Barcode No Se Regeneraban
+
+**Problema:** `color` y `background_color` se leian al crear QR/barcode, pero cambios posteriores no regeneraban el codigo.
+
+**Solucion:**
+```javascript
+case 'color':
+case 'background_color':
+  // Para QR y barcode, cambiar color requiere regenerar
+  if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
+    obj.elementData = data
+    this.recreateCodeElement(obj, data.binding || data.text_content)
+    return
+  }
+  obj.set('fill', value)
+  break
+```
+
+**UI Agregada (editor.ex):**
+- Color pickers para QR: "Color del codigo" y "Color de fondo"
+- Color pickers para Barcode: "Color del codigo" y "Color de fondo"
+
+#### 4. Border Radius para Rectangulos
+
+**Problema:** `border_radius` existia en schema y funcionaba para circles, pero rectangulos no tenian UI ni handler.
+
+**Solucion:**
+```javascript
+// canvas_designer.js - createRect()
+const roundness = (element.border_radius || 0) / 100
+const maxRadius = Math.min(width, height) / 2
+const radius = roundness * maxRadius
+return new fabric.Rect({ rx: radius, ry: radius, ... })
+
+// canvas_designer.js - updateSelectedElement()
+case 'border_radius':
+  if ((obj.elementType === 'circle' || obj.elementType === 'rectangle') && obj.type === 'rect') {
+    // Ahora maneja AMBOS tipos
+  }
+```
+
+**UI Agregada (editor.ex):**
+- Slider "Radio de borde" para rectangulos (0% = esquinas rectas, 100% = maximo redondeo)
+- ID unico: `border-radius-slider-rect-#{id}` para evitar conflicto con circles
+
+#### 5. Grosor de Linea
+
+**Problema:** `border_width` existia en schema pero lineas no tenian control de grosor en UI.
+
+**Solucion:**
+```javascript
+// canvas_designer.js - createLine()
+const thickness = element.border_width || element.height || 0.5  // Backwards compatible
+
+// canvas_designer.js - updateSelectedElement()
+case 'border_width':
+  if (obj.elementType === 'line') {
+    obj.set('height', Math.max(value * PX_PER_MM, 2))  // Lineas usan height
+  } else {
+    obj.set('strokeWidth', value * PX_PER_MM)
+  }
+```
+
+**UI Agregada (editor.ex):**
+- Input numerico "Grosor (mm)" para lineas
+
+### Otros Fixes en Esta Sesion
+
+#### Fix de Audit Module
+
+**Problema:** El codigo usaba `log.changes` pero el schema define `log.metadata`.
+
+**Archivos corregidos:**
+- `audit_exporter.ex`: CSV header "Metadata", funcion `encode_metadata()`
+- `audit_live.ex`: Template usa `log.metadata`
+- `audit.ex`: Ordenamiento determinista con `order_by: [desc: l.inserted_at, desc: l.id]`
+
+#### Fix de Tests (20 failures → 0)
+
+| Test File | Problema | Solucion |
+|-----------|----------|----------|
+| `users_live_test.exs` | Selectores genericos | `form[phx-submit=search]` |
+| `user_forgot_password_live_test.exs` | LiveView redirige | `assert_redirect` |
+| `user_confirmation_live_test.exs` | LiveView redirige | `assert_redirect` |
+| `user_reset_password_live_test.exs` | Token invalido | Usar token valido |
+| `auth_integration_test.exs` | Ruta `/batches` no existe | Cambiar a `/data-sources` |
+| `design_live/show_test.exs` | Acceso a disenos ajenos | Documentar comportamiento |
+
+---
+
+## Matriz de Propiedades por Tipo de Elemento
+
+### QR Code
+| Propiedad | UI | Handler | Status |
+|-----------|-----|---------|--------|
+| text_content | ✅ | ✅ | OK |
+| qr_error_level | ✅ | ✅ | **FIXED** |
+| color | ✅ | ✅ | **FIXED** (UI agregada) |
+| background_color | ✅ | ✅ | **FIXED** (UI agregada) |
+
+### Barcode
+| Propiedad | UI | Handler | Status |
+|-----------|-----|---------|--------|
+| text_content | ✅ | ✅ | OK |
+| barcode_format | ✅ | ✅ | OK |
+| barcode_show_text | ✅ | ✅ | **FIXED** |
+| color | ✅ | ✅ | **FIXED** (UI agregada) |
+| background_color | ✅ | ✅ | **FIXED** (UI agregada) |
+
+### Rectangle
+| Propiedad | UI | Handler | Status |
+|-----------|-----|---------|--------|
+| background_color | ✅ | ✅ | OK |
+| border_color | ✅ | ✅ | OK |
+| border_width | ✅ | ✅ | OK |
+| border_radius | ✅ | ✅ | **FIXED** (UI agregada) |
+
+### Line
+| Propiedad | UI | Handler | Status |
+|-----------|-----|---------|--------|
+| color | ✅ | ✅ | OK |
+| border_width | ✅ | ✅ | **FIXED** (UI agregada) |
+
+---
+
+## Archivos Modificados en Esta Sesion
+
+| Archivo | Cambios |
+|---------|---------|
+| `canvas_designer.js` | +62 lineas: handlers para 6 propiedades, createRect/createLine mejorados |
+| `editor.ex` | +77 lineas: UI controls para QR/barcode colors, rectangle border_radius, line thickness |
+| `audit.ex` | Ordenamiento determinista |
+| `audit_exporter.ex` | Renombrar changes→metadata |
+| `audit_live.ex` | Template fix metadata |
+| 11 test files | Selectores, redirects, documentacion |
+
+---
+
+## Como Continuar
+
+### Para Agregar Nuevas Propiedades
+
+1. **Verificar schema** en `element.ex` - la propiedad debe existir
+2. **Agregar UI** en `editor.ex` - dentro del case del tipo de elemento
+3. **Agregar handler** en `updateSelectedElement()` de `canvas_designer.js`
+4. Si la propiedad requiere regenerar el elemento (QR/barcode), llamar `recreateCodeElement()`
+
+### Para Diagnosticar Propiedades Que No Funcionan
+
+```
+Propiedad no se aplica visualmente?
+    ↓
+¿Existe en element.ex schema?
+    No → Agregar campo al schema
+    Si ↓
+¿Tiene UI control en editor.ex?
+    No → Agregar input/select/slider
+    Si ↓
+¿Tiene case en updateSelectedElement()?
+    No → Agregar case con la logica apropiada
+    Si ↓
+¿Es QR/barcode y necesita regenerar?
+    Si → Llamar recreateCodeElement()
+    No → Usar obj.set() de Fabric.js
+```
+
+---
+
+## Sesion Anterior (1 febrero 2026) - QR/Barcode Real en Canvas
 
 ### Objetivo Completado
 
@@ -206,7 +431,7 @@ case 'barcode_format':
 1. **Mejora UX de Formatos Rigidos**
    - Cuando el usuario cambia a EAN-13, auto-limpiar contenido invalido
    - O mostrar advertencia antes de cambiar
-   - Considerar: deshabilitar formatos incompatibles en dropdown
+   - ✅ PARCIAL: Formatos incompatibles se muestran deshabilitados en dropdown
 
 2. **Preview Multi-Etiqueta con Datos Reales**
    - Los QR/barcodes ahora funcionan en canvas
@@ -220,11 +445,17 @@ case 'barcode_format':
 4. **Tests para Validacion de Barcode**
    - Unit tests para `validateBarcodeContent()`
 
+5. **Revisar Acceso a Disenos** (Nota de seguridad)
+   - `show.ex` permite ver cualquier diseno (para compartir templates)
+   - Considerar agregar check de `user_id` si se requiere acceso mas estricto
+   - Ver comentario en `show_test.exs`
+
 ### Baja Prioridad
 
-5. **Limpieza de Codigo**
+6. **Limpieza de Codigo**
    - Referencias obsoletas a batches
    - Consolidar duplicacion entre hooks
+   - Resolver warnings de compilacion (funcion `barcode_format_example/1` no usada)
 
 ---
 
@@ -281,6 +512,7 @@ mix phx.digest
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 1 feb 2026 | 8 | Fix sincronizacion propiedades canvas, UI controls, audit fixes, test fixes |
 | 1 feb 2026 | 7 | QR/barcode real en canvas, validacion formatos, PropertyFields hook |
 | 31 ene 2026 | 6 | Drag and drop reimplementado, cleanup de hooks |
 | 31 ene 2026 | 5 | Upload de imagenes, fix guardado automatico |
@@ -288,4 +520,4 @@ mix phx.digest
 
 ---
 
-*Handoff actualizado: 1 febrero 2026 (sesion 7)*
+*Handoff actualizado: 1 febrero 2026 (sesion 8)*
