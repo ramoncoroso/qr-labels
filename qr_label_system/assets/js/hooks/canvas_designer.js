@@ -10,6 +10,8 @@
  */
 
 import { fabric } from 'fabric'
+import QRCode from 'qrcode'
+import JsBarcode from 'jsbarcode'
 
 // Constants
 const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usability
@@ -878,7 +880,87 @@ const CanvasDesigner = {
 
   createQR(element, x, y) {
     const size = (element.width || 20) * PX_PER_MM
+    const content = element.binding || ''
 
+    // If we have content, generate real QR code
+    if (content) {
+      // Create placeholder first, then load QR asynchronously
+      const placeholder = this.createQRPlaceholder(size, x, y, element.rotation, 'Generando...')
+      placeholder._qrLoading = true
+      placeholder._qrContent = content
+
+      // Generate QR code asynchronously
+      QRCode.toDataURL(content, {
+        width: size,
+        margin: 1,
+        color: {
+          dark: element.color || '#000000',
+          light: element.background_color || '#ffffff'
+        }
+      }).then(dataUrl => {
+        if (this._isDestroyed) return
+
+        const obj = this.elements.get(element.id)
+        if (!obj || !obj._qrLoading || obj._qrContent !== content) return
+
+        fabric.Image.fromURL(dataUrl, (img) => {
+          if (this._isDestroyed) return
+
+          // Get fresh reference in case element was modified
+          const currentObj = this.elements.get(element.id)
+          if (!currentObj || currentObj._qrContent !== content) return
+
+          img.set({
+            left: x,
+            top: y,
+            scaleX: size / img.width,
+            scaleY: size / img.height,
+            angle: element.rotation || 0
+          })
+
+          // Copy over element data
+          img.elementId = currentObj.elementId
+          img.elementType = currentObj.elementType
+          img.elementData = currentObj.elementData
+          img._qrContent = content
+
+          // Copy visibility and lock state
+          img.set({
+            visible: currentObj.visible,
+            selectable: currentObj.selectable,
+            evented: currentObj.evented,
+            lockMovementX: currentObj.lockMovementX,
+            lockMovementY: currentObj.lockMovementY,
+            lockRotation: currentObj.lockRotation,
+            lockScalingX: currentObj.lockScalingX,
+            lockScalingY: currentObj.lockScalingY,
+            cornerColor: '#3b82f6',
+            cornerStyle: 'circle',
+            cornerSize: 8,
+            transparentCorners: false,
+            borderColor: currentObj.lockMovementX ? '#f59e0b' : '#3b82f6',
+            borderScaleFactor: 2
+          })
+
+          // Replace placeholder with actual QR image
+          this.canvas.remove(currentObj)
+          this.elements.set(element.id, img)
+          this.canvas.add(img)
+          this.applyZIndexOrdering()
+          this.canvas.renderAll()
+        }, { crossOrigin: 'anonymous' })
+      }).catch(err => {
+        console.error('Error generating QR code:', err)
+      })
+
+      return placeholder
+    }
+
+    // No content - show placeholder
+    return this.createQRPlaceholder(size, x, y, element.rotation, 'QR')
+  },
+
+  createQRPlaceholder(size, x, y, rotation, label) {
     const rect = new fabric.Rect({
       width: size,
       height: size,
@@ -888,8 +970,8 @@ const CanvasDesigner = {
       strokeDashArray: [4, 4]
     })
 
-    const text = new fabric.Text('QR', {
-      fontSize: size * 0.3,
+    const text = new fabric.Text(label, {
+      fontSize: size * 0.25,
       fill: '#3b82f6',
       fontWeight: 'bold',
       originX: 'center',
@@ -901,14 +983,110 @@ const CanvasDesigner = {
     return new fabric.Group([rect, text], {
       left: x,
       top: y,
-      angle: element.rotation || 0
+      angle: rotation || 0
     })
   },
 
   createBarcode(element, x, y) {
     const w = (element.width || 40) * PX_PER_MM
     const h = (element.height || 15) * PX_PER_MM
+    const content = element.binding || ''
+    const format = element.barcode_format || 'CODE128'
 
+    // If we have content, generate real barcode
+    if (content) {
+      // Create placeholder first, then generate barcode
+      const placeholder = this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'Generando...')
+      placeholder._barcodeLoading = true
+      placeholder._barcodeContent = content
+      placeholder._barcodeFormat = format
+
+      // Generate barcode using canvas
+      try {
+        const canvas = document.createElement('canvas')
+
+        // Configure JsBarcode options
+        const options = {
+          format: format,
+          width: 2,
+          height: h * 0.7, // Leave room for text
+          displayValue: element.show_text !== false,
+          fontSize: Math.max(10, h * 0.15),
+          margin: 5,
+          background: element.background_color || '#ffffff',
+          lineColor: element.color || '#000000'
+        }
+
+        JsBarcode(canvas, content, options)
+
+        // Convert canvas to data URL
+        const dataUrl = canvas.toDataURL('image/png')
+
+        fabric.Image.fromURL(dataUrl, (img) => {
+          if (this._isDestroyed) return
+
+          const obj = this.elements.get(element.id)
+          if (!obj || !obj._barcodeLoading || obj._barcodeContent !== content) return
+
+          // Scale to fit the target dimensions
+          const scaleX = w / img.width
+          const scaleY = h / img.height
+          const scale = Math.min(scaleX, scaleY)
+
+          img.set({
+            left: x,
+            top: y,
+            scaleX: scale,
+            scaleY: scale,
+            angle: element.rotation || 0
+          })
+
+          // Copy over element data
+          img.elementId = obj.elementId
+          img.elementType = obj.elementType
+          img.elementData = obj.elementData
+          img._barcodeContent = content
+          img._barcodeFormat = format
+
+          // Copy visibility and lock state
+          img.set({
+            visible: obj.visible,
+            selectable: obj.selectable,
+            evented: obj.evented,
+            lockMovementX: obj.lockMovementX,
+            lockMovementY: obj.lockMovementY,
+            lockRotation: obj.lockRotation,
+            lockScalingX: obj.lockScalingX,
+            lockScalingY: obj.lockScalingY,
+            cornerColor: '#3b82f6',
+            cornerStyle: 'circle',
+            cornerSize: 8,
+            transparentCorners: false,
+            borderColor: obj.lockMovementX ? '#f59e0b' : '#3b82f6',
+            borderScaleFactor: 2
+          })
+
+          // Replace placeholder with actual barcode image
+          this.canvas.remove(obj)
+          this.elements.set(element.id, img)
+          this.canvas.add(img)
+          this.applyZIndexOrdering()
+          this.canvas.renderAll()
+        }, { crossOrigin: 'anonymous' })
+
+      } catch (err) {
+        console.error('Error generating barcode:', err)
+        // Keep the placeholder on error
+      }
+
+      return placeholder
+    }
+
+    // No content - show placeholder
+    return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'BARCODE')
+  },
+
+  createBarcodePlaceholder(w, h, x, y, rotation, label) {
     const rect = new fabric.Rect({
       width: w,
       height: h,
@@ -918,7 +1096,7 @@ const CanvasDesigner = {
       strokeDashArray: [4, 4]
     })
 
-    const text = new fabric.Text('BARCODE', {
+    const text = new fabric.Text(label, {
       fontSize: Math.min(w, h) * 0.2,
       fill: '#3b82f6',
       fontWeight: 'bold',
@@ -931,7 +1109,7 @@ const CanvasDesigner = {
     return new fabric.Group([rect, text], {
       left: x,
       top: y,
-      angle: element.rotation || 0
+      angle: rotation || 0
     })
   },
 
@@ -999,22 +1177,26 @@ const CanvasDesigner = {
     const width = (element.width || 15) * PX_PER_MM
     const height = (element.height || 15) * PX_PER_MM
 
-    // fabric.Ellipse uses rx/ry (radius x/y), not width/height
-    // Position is at center, so we offset by radius to place at top-left corner
-    const ellipse = new fabric.Ellipse({
+    // border_radius is a percentage (0-100)
+    // 0% = rectangle, 100% = maximum roundness (ellipse-like)
+    const roundness = (element.border_radius ?? 100) / 100
+    const maxRadius = Math.min(width, height) / 2
+    const radius = roundness * maxRadius
+
+    const rect = new fabric.Rect({
       left: x,
       top: y,
-      rx: width / 2,
-      ry: height / 2,
+      width: width,
+      height: height,
+      rx: radius,
+      ry: radius,
       fill: element.background_color || '#ffffff',
       stroke: element.border_color || '#000000',
       strokeWidth: (element.border_width || 0.5) * PX_PER_MM,
-      angle: element.rotation || 0,
-      originX: 'left',
-      originY: 'top'
+      angle: element.rotation || 0
     })
 
-    return ellipse
+    return rect
   },
 
   createImage(element, x, y) {
@@ -1156,10 +1338,13 @@ const CanvasDesigner = {
       case 'width':
         if (obj.type === 'textbox') {
           obj.set('width', value * PX_PER_MM)
-        } else if (obj.type === 'group') {
-          // For groups (QR/barcode): recreate at new size to avoid scale issues
-          this.recreateGroupAtSize(obj, value, data.height)
-          return // recreateGroupAtSize handles save
+        } else if (obj.type === 'group' || (obj.type === 'image' && (obj.elementType === 'qr' || obj.elementType === 'barcode'))) {
+          // For QR/barcode elements (group or image): recreate at new size
+          // Update width in data before recreating
+          data.width = value
+          obj.elementData = data
+          this.recreateCodeElement(obj, data.binding)
+          return // recreateCodeElement handles save
         } else if (obj.type === 'rect') {
           obj.set('width', value * PX_PER_MM)
         } else if (obj.type === 'ellipse') {
@@ -1172,10 +1357,12 @@ const CanvasDesigner = {
         }
         break
       case 'height':
-        if (obj.type === 'group') {
-          // For groups (QR/barcode): recreate at new size
-          this.recreateGroupAtSize(obj, data.width, value)
-          return // recreateGroupAtSize handles save
+        if (obj.type === 'group' || (obj.type === 'image' && (obj.elementType === 'qr' || obj.elementType === 'barcode'))) {
+          // For QR/barcode elements (group or image): recreate at new size
+          data.height = value
+          obj.elementData = data
+          this.recreateCodeElement(obj, data.binding)
+          return // recreateCodeElement handles save
         } else if (obj.type === 'rect') {
           obj.set('height', value * PX_PER_MM)
         } else if (obj.type === 'ellipse') {
@@ -1236,6 +1423,20 @@ const CanvasDesigner = {
         break
       case 'border_width':
         obj.set('strokeWidth', value * PX_PER_MM)
+        break
+      case 'binding':
+        // For QR and barcode elements, changing binding requires regenerating the code
+        if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
+          this.recreateCodeElement(obj, value)
+          return // recreateCodeElement handles save
+        }
+        break
+      case 'barcode_format':
+        // Changing barcode format requires regenerating the barcode
+        if (obj.elementType === 'barcode') {
+          this.recreateCodeElement(obj, data.binding)
+          return // recreateCodeElement handles save
+        }
         break
     }
 
@@ -1314,6 +1515,80 @@ const CanvasDesigner = {
         evented: obj.evented,
         lockMovementX: obj.lockMovementX,
         lockMovementY: obj.lockMovementY,
+        cornerColor: '#3b82f6',
+        cornerStyle: 'circle',
+        cornerSize: 8,
+        transparentCorners: false,
+        borderColor: obj.lockMovementX ? '#f59e0b' : '#3b82f6',
+        borderScaleFactor: 2
+      })
+
+      this.elements.set(elementId, newObj)
+      this.canvas.add(newObj)
+      this.canvas.setActiveObject(newObj)
+      this.canvas.renderAll()
+      this.saveElements()
+    }
+  },
+
+  /**
+   * Recreate a QR code or barcode element with new content
+   * Used when the binding (content) field changes
+   */
+  recreateCodeElement(obj, newBinding) {
+    if (!obj || !obj.elementId) return
+
+    const elementId = obj.elementId
+    const elementType = obj.elementType
+    const data = { ...obj.elementData }
+
+    // Update binding
+    data.binding = newBinding
+
+    // Get current position (convert from canvas coords to mm)
+    const x = (obj.left - this.labelBounds.left) / PX_PER_MM
+    const y = (obj.top - this.labelBounds.top) / PX_PER_MM
+    data.x = x
+    data.y = y
+
+    // Get current dimensions
+    if (obj.type === 'image') {
+      // If it's already an image (real QR/barcode), get scaled dimensions
+      data.width = Math.round((obj.width * (obj.scaleX || 1)) / PX_PER_MM * 100) / 100
+      data.height = Math.round((obj.height * (obj.scaleY || 1)) / PX_PER_MM * 100) / 100
+    } else if (obj.type === 'group') {
+      // If it's a placeholder group
+      data.width = Math.round(obj.getScaledWidth() / PX_PER_MM * 100) / 100
+      data.height = Math.round(obj.getScaledHeight() / PX_PER_MM * 100) / 100
+    }
+
+    // Remove old object
+    this.canvas.remove(obj)
+    this.elements.delete(elementId)
+
+    // Create new object with updated content
+    const newX = this.labelBounds.left + x * PX_PER_MM
+    const newY = this.labelBounds.top + y * PX_PER_MM
+
+    let newObj
+    if (elementType === 'qr') {
+      newObj = this.createQR(data, newX, newY)
+    } else if (elementType === 'barcode') {
+      newObj = this.createBarcode(data, newX, newY)
+    }
+
+    if (newObj) {
+      newObj.elementId = elementId
+      newObj.elementType = elementType
+      newObj.elementData = data
+
+      // Copy over visibility/lock state
+      newObj.set({
+        visible: obj.visible !== false,
+        selectable: !obj.lockMovementX,
+        evented: !obj.lockMovementX,
+        lockMovementX: obj.lockMovementX || false,
+        lockMovementY: obj.lockMovementY || false,
         cornerColor: '#3b82f6',
         cornerStyle: 'circle',
         cornerSize: 8,

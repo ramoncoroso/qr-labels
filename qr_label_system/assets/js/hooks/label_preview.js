@@ -41,8 +41,9 @@ const LabelPreview = {
     const scaleY = maxHeight / labelHeightPx
     const scale = Math.min(scaleX, scaleY, 2) // Cap at 2x for small labels
 
-    // Generate codes for this row
-    const codes = await this.generateCodes(design.elements || [], row, mapping, scale)
+    // Generate codes for this row (pass label_type to differentiate single vs multiple)
+    const labelType = design.label_type || 'single'
+    const codes = await this.generateCodes(design.elements || [], row, mapping, scale, labelType)
 
     // Create label element
     const labelDiv = document.createElement('div')
@@ -60,7 +61,7 @@ const LabelPreview = {
       // Skip invisible elements
       if (element.visible === false) continue
 
-      const elementDiv = this.renderElement(element, row, mapping, codes, scale)
+      const elementDiv = this.renderElement(element, row, mapping, codes, scale, labelType)
       if (elementDiv) {
         labelDiv.appendChild(elementDiv)
       }
@@ -69,14 +70,22 @@ const LabelPreview = {
     this.el.appendChild(labelDiv)
   },
 
-  async generateCodes(elements, row, mapping, scale) {
+  async generateCodes(elements, row, mapping, scale, labelType) {
     const codes = {}
 
     for (const element of elements) {
       if (element.type !== 'qr' && element.type !== 'barcode') continue
 
-      const columnName = mapping[element.id]
-      const value = columnName ? row[columnName] : null
+      let value = null
+
+      if (labelType === 'single') {
+        // For single labels, use text_content from the element
+        value = element.text_content
+      } else {
+        // For multiple labels, use mapped column from row data
+        const columnName = mapping[element.id]
+        value = columnName ? row[columnName] : null
+      }
 
       if (!value) continue
 
@@ -120,7 +129,7 @@ const LabelPreview = {
     }
   },
 
-  renderElement(element, row, mapping, codes, scale) {
+  renderElement(element, row, mapping, codes, scale, labelType) {
     const div = document.createElement('div')
     div.style.position = 'absolute'
     div.style.left = `${element.x * scale * MM_TO_PX}px`
@@ -158,12 +167,14 @@ const LabelPreview = {
       case 'text':
         let textContent = element.text_content || ''
 
-        // If bound to a column, get value from row data
-        const columnName = mapping[element.id]
-        if (columnName && row[columnName]) {
-          textContent = row[columnName]
-        } else if (element.binding && row[element.binding]) {
-          textContent = row[element.binding]
+        // For multiple labels, try to get value from row data
+        if (labelType === 'multiple') {
+          const columnName = mapping[element.id]
+          if (columnName && row[columnName]) {
+            textContent = row[columnName]
+          } else if (element.binding && row[element.binding]) {
+            textContent = row[element.binding]
+          }
         }
 
         div.textContent = textContent || '[Texto]'

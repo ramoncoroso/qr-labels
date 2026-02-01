@@ -220,7 +220,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # Whitelist of allowed fields for element updates (security)
   @allowed_element_fields ~w(x y width height rotation binding qr_error_level
     barcode_format barcode_show_text font_size font_family font_weight
-    text_align text_content color background_color border_width border_color
+    text_align text_content color background_color border_width border_color border_radius
     z_index visible locked name image_data image_filename)
 
   @impl true
@@ -770,6 +770,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           width: 20.0,
           height: 20.0,
           qr_error_level: "M",
+          text_content: "QR-#{number}",
           binding: nil,
           name: "Código QR #{number}"
         })
@@ -780,6 +781,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           height: 15.0,
           barcode_format: "CODE128",
           barcode_show_text: true,
+          text_content: "CODE#{number}",
           binding: nil,
           name: "Código de Barras #{number}"
         })
@@ -837,6 +839,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           background_color: "#ffffff",
           border_width: 0.5,
           border_color: "#000000",
+          border_radius: 100,
           name: "Círculo #{number}"
         })
 
@@ -1548,6 +1551,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             name="value"
             value={Map.get(@element, :name) || @element.type}
             phx-debounce="200"
+            onfocus="this.setSelectionRange(this.value.length, this.value.length)"
             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
           />
         </form>
@@ -1627,8 +1631,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </form>
       </div>
 
-      <!-- Vincular a columna: solo para etiquetas múltiples -->
       <%= if @label_type == "multiple" do %>
+        <!-- Vincular a columna: solo para etiquetas múltiples -->
         <div class="border-t pt-4">
           <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
           <%= if length(@available_columns) > 0 do %>
@@ -1667,24 +1671,56 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       <%= case @element.type do %>
         <% "qr" -> %>
-          <div class="border-t pt-4">
-            <label class="block text-sm font-medium text-gray-700">Nivel de corrección de error</label>
-            <form phx-change="update_element" class="mt-1">
-              <input type="hidden" name="field" value="qr_error_level" />
-              <select
-                name="value"
-                class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <option value="L" selected={@element.qr_error_level == "L"}>L (7%)</option>
-                <option value="M" selected={@element.qr_error_level == "M"}>M (15%)</option>
-                <option value="Q" selected={@element.qr_error_level == "Q"}>Q (25%)</option>
-                <option value="H" selected={@element.qr_error_level == "H"}>H (30%)</option>
-              </select>
-            </form>
+          <div class="border-t pt-4 space-y-3">
+            <%= if @label_type == "single" do %>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Contenido código QR</label>
+                <form phx-change="update_element" phx-value-field="text_content">
+                  <input
+                    type="text"
+                    name="value"
+                    value={@element.text_content || ""}
+                    phx-debounce="150"
+                    placeholder="Texto a codificar"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </form>
+              </div>
+            <% end %>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Nivel de corrección de error</label>
+              <form phx-change="update_element" class="mt-1">
+                <input type="hidden" name="field" value="qr_error_level" />
+                <select
+                  name="value"
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
+                  <option value="L" selected={@element.qr_error_level == "L"}>L (7%)</option>
+                  <option value="M" selected={@element.qr_error_level == "M"}>M (15%)</option>
+                  <option value="Q" selected={@element.qr_error_level == "Q"}>Q (25%)</option>
+                  <option value="H" selected={@element.qr_error_level == "H"}>H (30%)</option>
+                </select>
+              </form>
+            </div>
           </div>
 
         <% "barcode" -> %>
           <div class="border-t pt-4 space-y-3">
+            <%= if @label_type == "single" do %>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Contenido código Barras</label>
+                <form phx-change="update_element" phx-value-field="text_content">
+                  <input
+                    type="text"
+                    name="value"
+                    value={@element.text_content || ""}
+                    phx-debounce="150"
+                    placeholder="Texto a codificar"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </form>
+              </div>
+            <% end %>
             <div>
               <label class="block text-sm font-medium text-gray-700">Formato</label>
               <form phx-change="update_element" class="mt-1">
@@ -1925,7 +1961,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
         <% "circle" -> %>
           <div class="border-t pt-4 space-y-3">
-            <p class="text-xs text-gray-500 mb-2">Tip: Si ancho = alto es un círculo, si difieren es una elipse.</p>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Redondez</label>
+              <div class="flex items-center space-x-2 mt-1">
+                <input
+                  type="range"
+                  name="value"
+                  min="0"
+                  max="100"
+                  value={Map.get(@element, :border_radius) || 100}
+                  phx-change="update_element"
+                  phx-value-field="border_radius"
+                  class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <span class="text-sm text-gray-600 w-10 text-right"><%= Map.get(@element, :border_radius) || 100 %>%</span>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">0% = rectángulo, 100% = elipse</p>
+            </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
               <input
