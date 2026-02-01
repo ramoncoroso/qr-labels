@@ -1685,7 +1685,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   name="value"
                   value={@element.text_content || ""}
                   phx-debounce="150"
-                  onfocus="this.select()"
+                  onfocus="if(this.value === 'Texto') this.value = ''"
                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
               </form>
