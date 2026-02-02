@@ -987,3 +987,80 @@ mix phx.server
 - QR y Barcode son grupos (imagen + texto opcional)
 - Al redimensionar, usar `recreateGroupAtSize()` para mantener proporciones
 - El `elementData` debe sincronizarse con el tamaño visual
+
+---
+
+## Cambios Implementados (2026-02-02) - Fix consume_uploaded_entries
+
+### Resumen
+
+Se corrigió un bug crítico que impedía que los archivos Excel se procesaran correctamente en el flujo de etiquetas múltiples. La causa raíz era un patrón incorrecto en el manejo del resultado de `consume_uploaded_entries`.
+
+### El Problema
+
+`consume_uploaded_entries/3` de Phoenix LiveView devuelve una lista con los valores retornados por el callback. Si el callback retorna `{:ok, value}`, el resultado es `[{:ok, value}]`, **no** `[value]`.
+
+**Código incorrecto:**
+```elixir
+# El callback retorna {:ok, file_path}
+consume_uploaded_entries(socket, :data_file, fn %{path: path}, entry ->
+  {:ok, dest}
+end)
+
+# Este pattern NO coincide porque uploaded_files es [{:ok, dest}]
+case uploaded_files do
+  [file_path] when is_binary(file_path) ->  # ❌ NUNCA COINCIDE
+    ...
+end
+```
+
+**Código correcto:**
+```elixir
+case uploaded_files do
+  [{:ok, file_path}] ->  # ✅ COINCIDE CORRECTAMENTE
+    ...
+end
+```
+
+### Archivos Corregidos
+
+| Archivo | Función Afectada | Problema |
+|---------|------------------|----------|
+| `lib/qr_label_system_web/live/generate_live/data_first.ex` | `upload_file` | Excel/CSV no se procesaban en flujo data-first |
+| `lib/qr_label_system_web/live/design_live/index.ex` | `import_backup` | Importación de backups JSON no funcionaba |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | `upload_element_image` | Subida de imágenes para elementos no funcionaba |
+
+### Impacto
+
+- **Excel upload en etiquetas múltiples:** Las cabeceras del Excel ahora aparecen correctamente en las opciones de "vincular" (binding)
+- **Import de backups:** Los archivos JSON de backup ahora se importan correctamente
+- **Imágenes en editor:** Las imágenes subidas para elementos ahora se procesan correctamente
+
+### Commits
+
+| Hash | Descripción |
+|------|-------------|
+| `742e39f` | fix: Excel file upload pattern matching in data-first flow |
+| `87f0771` | fix: Pattern matching for consume_uploaded_entries in index and editor |
+
+### Verificación
+
+Todos los tests pasan: **667 tests, 0 failures**
+
+### Lección Aprendida
+
+Siempre verificar que el pattern matching coincida con lo que realmente retorna la función. `consume_uploaded_entries` pasa el valor retornado por el callback directamente a la lista de resultados, incluyendo la tupla `{:ok, ...}` si el callback la retorna.
+
+---
+
+## Historial de Cambios (Actualizado)
+
+| Fecha | Cambio |
+|-------|--------|
+| 2025-01-29 | Auditoría completa de seguridad y código |
+| 2025-01-29 | Documentación de issues encontrados |
+| 2025-01-29 | Actualización de HANDOFF con próximos pasos |
+| 2025-01-29 | **IMPLEMENTACIÓN DE FIXES DE SEGURIDAD Y CALIDAD** |
+| 2025-01-31 | **CORRECCIONES DEL EDITOR DE ETIQUETAS** (5 fixes) |
+| 2026-01-31 | **MEJORAS EN FLUJO DE GENERACIÓN Y EDITOR** |
+| 2026-02-02 | **FIX: consume_uploaded_entries pattern matching** (3 archivos) |
