@@ -5,9 +5,9 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
   @impl true
   def mount(_params, _session, socket) do
-    # Get data from persistent store
+    # Get data from persistent store (data not yet associated with a design)
     user_id = socket.assigns.current_user.id
-    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id)
+    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id, nil)
 
     if is_nil(upload_data) or length(upload_data) == 0 do
       {:ok,
@@ -35,15 +35,19 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   @impl true
   def handle_event("use_design", _params, socket) do
     design_id = socket.assigns.selected_design_id
+    user_id = socket.assigns.current_user.id
 
     if design_id do
       design = Designs.get_design!(design_id)
 
       # Verify ownership
-      if design.user_id != socket.assigns.current_user.id do
+      if design.user_id != user_id do
         {:noreply, put_flash(socket, :error, "No tienes permiso para usar este diseño")}
       else
-        # Navigate to editor - data is already in UploadDataStore
+        # Associate the data with this design
+        QrLabelSystem.UploadDataStore.associate_with_design(user_id, design.id)
+
+        # Navigate to editor - data is now associated with the design
         # User can assign columns and preview labels before generating
         {:noreply,
          socket

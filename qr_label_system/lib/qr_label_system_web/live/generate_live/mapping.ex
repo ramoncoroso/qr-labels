@@ -24,8 +24,8 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
   defp mount_authorized(socket, design, source_id, user_id) do
     {data_source, data, columns} =
       if source_id == "upload" do
-        # Get data from UploadDataStore (uploaded file)
-        {upload_data, upload_columns} = UploadDataStore.get(user_id)
+        # Get data from UploadDataStore (uploaded file) - associated with this design
+        {upload_data, upload_columns} = UploadDataStore.get(user_id, design.id)
         {nil, upload_data || [], upload_columns || []}
       else
         # Load from saved data source with ownership verification

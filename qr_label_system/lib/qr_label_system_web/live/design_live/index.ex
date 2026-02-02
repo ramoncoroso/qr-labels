@@ -2,6 +2,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Designs
+  alias QrLabelSystem.UploadDataStore
 
   @max_file_size 5 * 1024 * 1024
 
@@ -15,6 +16,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:import_error, nil)
      |> assign(:renaming_id, nil)
      |> assign(:rename_value, "")
+     |> assign(:show_data_modal, false)
+     |> assign(:pending_edit_design, nil)
      |> allow_upload(:backup_file,
        accept: ~w(.json),
        max_entries: 1,
@@ -167,6 +170,71 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   end
 
   @impl true
+  def handle_event("edit_design", %{"id" => id}, socket) do
+    user_id = socket.assigns.current_user.id
+
+    case Designs.get_design(id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "El diseño ya no existe")}
+
+      design when design.user_id != user_id ->
+        {:noreply, put_flash(socket, :error, "No tienes permiso para editar este diseño")}
+
+      design ->
+        # For single designs, navigate directly to editor
+        if design.label_type == "single" do
+          {:noreply, push_navigate(socket, to: ~p"/designs/#{design.id}/edit")}
+        else
+          # For multiple designs, check if data exists
+          if UploadDataStore.has_data?(user_id, design.id) do
+            # Show modal asking whether to use existing or load new
+            {:noreply,
+             socket
+             |> assign(:show_data_modal, true)
+             |> assign(:pending_edit_design, design)}
+          else
+            # No data, redirect to data loading
+            {:noreply, push_navigate(socket, to: ~p"/generate/data/#{design.id}")}
+          end
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("use_existing_data", _params, socket) do
+    design = socket.assigns.pending_edit_design
+
+    {:noreply,
+     socket
+     |> assign(:show_data_modal, false)
+     |> assign(:pending_edit_design, nil)
+     |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
+  end
+
+  @impl true
+  def handle_event("load_new_data", _params, socket) do
+    design = socket.assigns.pending_edit_design
+    user_id = socket.assigns.current_user.id
+
+    # Clear existing data for this design
+    UploadDataStore.clear(user_id, design.id)
+
+    {:noreply,
+     socket
+     |> assign(:show_data_modal, false)
+     |> assign(:pending_edit_design, nil)
+     |> push_navigate(to: ~p"/generate/data/#{design.id}")}
+  end
+
+  @impl true
+  def handle_event("close_data_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_data_modal, false)
+     |> assign(:pending_edit_design, nil)}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div>
@@ -299,8 +367,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
                 <div class="flex items-center gap-2">
                   <!-- Edit Button - Primary Action -->
-                  <.link
-                    navigate={~p"/designs/#{design.id}/edit"}
+                  <button
+                    phx-click="edit_design"
+                    phx-value-id={design.id}
                     class="group relative inline-flex items-center justify-center w-10 h-10 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 hover:border-blue-300 transition-all duration-200 hover:shadow-sm"
                   >
                     <svg class="w-5 h-5 text-blue-600 group-hover:text-blue-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -310,7 +379,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                     <span class="absolute -bottom-9 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                       Editar
                     </span>
-                  </.link>
+                  </button>
 
                   <!-- Preview Button -->
                   <.link
@@ -366,6 +435,58 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </div>
 
+      </div>
+
+      <!-- Data Modal for Multiple Designs -->
+      <div :if={@show_data_modal && @pending_edit_design} class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          <!-- Background overlay -->
+          <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" phx-click="close_data_modal"></div>
+
+          <!-- Modal panel -->
+          <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+            <div class="bg-white px-6 pt-6 pb-4">
+              <div class="sm:flex sm:items-start">
+                <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-12 sm:w-12">
+                  <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                  </svg>
+                </div>
+                <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                  <h3 class="text-lg leading-6 font-semibold text-gray-900" id="modal-title">
+                    Datos existentes detectados
+                  </h3>
+                  <div class="mt-2">
+                    <p class="text-sm text-gray-500">
+                      Ya tienes datos cargados para el diseño "<%= @pending_edit_design.name %>".
+                      ¿Qué deseas hacer?
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 sm:flex sm:flex-row-reverse gap-3">
+              <button
+                phx-click="use_existing_data"
+                class="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2.5 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm transition"
+              >
+                Usar datos existentes
+              </button>
+              <button
+                phx-click="load_new_data"
+                class="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm transition"
+              >
+                Cargar nuevos datos
+              </button>
+              <button
+                phx-click="close_data_modal"
+                class="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-gray-500 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:w-auto sm:text-sm transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     """

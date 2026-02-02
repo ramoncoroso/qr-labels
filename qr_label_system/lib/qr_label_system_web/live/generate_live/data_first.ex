@@ -3,15 +3,73 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
   alias QrLabelSystem.DataSources.ExcelParser
   alias QrLabelSystem.Security.FileSanitizer
+  alias QrLabelSystem.Designs
 
   # Maximum file size: 10 MB
   @max_file_size 10 * 1024 * 1024
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
+    # Check if we're loading data for a specific design
+    design_id = Map.get(params, "design_id")
+    user_id = socket.assigns.current_user.id
+
+    # Validate design ownership if design_id is provided
+    case validate_design(design_id, user_id) do
+      {:ok, design} ->
+        mount_with_design(socket, design)
+
+      {:error, :not_found} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "El diseño no existe")
+         |> push_navigate(to: ~p"/designs")}
+
+      {:error, :unauthorized} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "No tienes permiso para editar este diseño")
+         |> push_navigate(to: ~p"/designs")}
+
+      :no_design ->
+        mount_without_design(socket)
+    end
+  end
+
+  defp validate_design(nil, _user_id), do: :no_design
+  defp validate_design(design_id, user_id) do
+    case Designs.get_design(design_id) do
+      nil -> {:error, :not_found}
+      design when design.user_id != user_id -> {:error, :unauthorized}
+      design -> {:ok, design}
+    end
+  end
+
+  defp mount_with_design(socket, design) do
+    {:ok,
+     socket
+     |> assign(:page_title, "Cargar Datos - #{design.name}")
+     |> assign(:design_id, design.id)
+     |> assign(:design_name, design.name)
+     |> assign(:active_method, nil)
+     |> assign(:upload_data, nil)
+     |> assign(:upload_columns, [])
+     |> assign(:upload_error, nil)
+     |> assign(:pasted_text, "")
+     |> assign(:processing, false)
+     |> allow_upload(:data_file,
+       accept: ~w(.xlsx .xls .csv),
+       max_entries: 1,
+       max_file_size: @max_file_size
+     )}
+  end
+
+  defp mount_without_design(socket) do
     {:ok,
      socket
      |> assign(:page_title, "Cargar Datos")
+     |> assign(:design_id, nil)
+     |> assign(:design_name, nil)
      |> assign(:active_method, nil)
      |> assign(:upload_data, nil)
      |> assign(:upload_columns, [])
@@ -113,14 +171,23 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     if socket.assigns.upload_data && length(socket.assigns.upload_data) > 0 do
       # Store data in persistent store for the workflow
       user_id = socket.assigns.current_user.id
+      design_id = socket.assigns.design_id
 
       QrLabelSystem.UploadDataStore.put(
         user_id,
+        design_id,
         socket.assigns.upload_data,
         socket.assigns.upload_columns
       )
 
-      {:noreply, push_navigate(socket, to: ~p"/generate/design")}
+      # Navigate based on whether we have a design_id
+      if design_id do
+        # Coming from /designs, go to editor
+        {:noreply, push_navigate(socket, to: ~p"/designs/#{design_id}/edit")}
+      else
+        # Data-first flow, go to design selection
+        {:noreply, push_navigate(socket, to: ~p"/generate/design")}
+      end
     else
       {:noreply, put_flash(socket, :error, "No hay datos cargados")}
     end
@@ -128,7 +195,11 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
   @impl true
   def handle_event("back", _params, socket) do
-    {:noreply, push_navigate(socket, to: ~p"/generate")}
+    if socket.assigns.design_id do
+      {:noreply, push_navigate(socket, to: ~p"/designs")}
+    else
+      {:noreply, push_navigate(socket, to: ~p"/generate")}
+    end
   end
 
   defp parse_pasted_data(text) when is_binary(text) do
@@ -177,7 +248,11 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     ~H"""
     <div class="max-w-4xl mx-auto">
       <.header>
-        Cargar datos para etiquetas
+        <%= if @design_name do %>
+          Cargar datos para "<%= @design_name %>"
+        <% else %>
+          Cargar datos para etiquetas
+        <% end %>
         <:subtitle>
           Selecciona cómo quieres cargar tus datos. Cada fila generará una etiqueta diferente.
         </:subtitle>
@@ -187,29 +262,48 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
         <!-- Progress Steps -->
         <div class="mb-8">
           <div class="flex items-center justify-center space-x-4">
-            <div class="flex items-center">
-              <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+            <%= if @design_id do %>
+              <!-- Flow: Coming from /designs -->
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">1</div>
+                <span class="ml-2 text-sm font-medium text-indigo-600">Cargar datos</span>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Modo múltiple</span>
-            </div>
-            <div class="w-16 h-0.5 bg-indigo-600"></div>
-            <div class="flex items-center">
-              <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">1</div>
-              <span class="ml-2 text-sm font-medium text-indigo-600">Cargar datos</span>
-            </div>
-            <div class="w-16 h-0.5 bg-gray-300"></div>
-            <div class="flex items-center">
-              <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">2</div>
-              <span class="ml-2 text-sm text-gray-500">Elegir diseño</span>
-            </div>
-            <div class="w-16 h-0.5 bg-gray-300"></div>
-            <div class="flex items-center">
-              <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">3</div>
-              <span class="ml-2 text-sm text-gray-500">Imprimir</span>
-            </div>
+              <div class="w-16 h-0.5 bg-gray-300"></div>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">2</div>
+                <span class="ml-2 text-sm text-gray-500">Editar diseño</span>
+              </div>
+              <div class="w-16 h-0.5 bg-gray-300"></div>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">3</div>
+                <span class="ml-2 text-sm text-gray-500">Imprimir</span>
+              </div>
+            <% else %>
+              <!-- Flow: Data-first -->
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <span class="ml-2 text-sm font-medium text-green-600">Modo múltiple</span>
+              </div>
+              <div class="w-16 h-0.5 bg-indigo-600"></div>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">1</div>
+                <span class="ml-2 text-sm font-medium text-indigo-600">Cargar datos</span>
+              </div>
+              <div class="w-16 h-0.5 bg-gray-300"></div>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">2</div>
+                <span class="ml-2 text-sm text-gray-500">Elegir diseño</span>
+              </div>
+              <div class="w-16 h-0.5 bg-gray-300"></div>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">3</div>
+                <span class="ml-2 text-sm text-gray-500">Imprimir</span>
+              </div>
+            <% end %>
           </div>
         </div>
 
@@ -434,15 +528,15 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
         <!-- Back button when no data -->
         <div :if={!@upload_data || length(@upload_data) == 0} class="mt-8">
-          <.link
-            navigate={~p"/generate"}
+          <button
+            phx-click="back"
             class="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 hover:border-gray-400 font-medium transition"
           >
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            <span>Volver a selección de modo</span>
-          </.link>
+            <span><%= if @design_id, do: "Volver a diseños", else: "Volver a selección de modo" %></span>
+          </button>
         </div>
       </div>
     </div>

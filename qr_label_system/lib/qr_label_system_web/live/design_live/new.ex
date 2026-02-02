@@ -14,9 +14,9 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
     changeset = Designs.change_design(%Design{label_type: label_type})
 
-    # Get upload data from persistent store (for data-first flow)
+    # Get upload data from persistent store (for data-first flow - data not yet associated)
     user_id = socket.assigns.current_user.id
-    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id)
+    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id, nil)
     return_to = Phoenix.Flash.get(socket.assigns.flash, :return_to)
 
     {:ok,
@@ -42,14 +42,20 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
   @impl true
   def handle_event("save", %{"design" => design_params}, socket) do
+    user_id = socket.assigns.current_user.id
+
     design_params =
       design_params
-      |> Map.put("user_id", socket.assigns.current_user.id)
+      |> Map.put("user_id", user_id)
       |> Map.put("label_type", socket.assigns.label_type)
 
     case Designs.create_design(design_params) do
       {:ok, design} ->
-        # Data is already in the persistent store, just navigate
+        # For multiple designs, associate the data with the new design
+        if socket.assigns.label_type == "multiple" do
+          QrLabelSystem.UploadDataStore.associate_with_design(user_id, design.id)
+        end
+
         {:noreply,
          socket
          |> put_flash(:info, "Diseño creado exitosamente")

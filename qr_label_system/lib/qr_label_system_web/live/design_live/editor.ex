@@ -22,7 +22,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       design ->
       # Load available columns from persistent store (from data-first flow)
       user_id = socket.assigns.current_user.id
-      {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id)
+      {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id, design.id)
 
       # Ensure we have lists (not nil)
       upload_data = upload_data || []
@@ -313,6 +313,62 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # Catch-all for invalid/disallowed fields - silently ignore (security)
   def handle_event("update_element", _params, socket) do
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("set_content_mode", %{"mode" => mode}, socket) do
+    if socket.assigns.selected_element do
+      element_id = Map.get(socket.assigns.selected_element, :id) ||
+                   Map.get(socket.assigns.selected_element, "id")
+      element_type = Map.get(socket.assigns.selected_element, :type) ||
+                     Map.get(socket.assigns.selected_element, "type")
+
+      # Get current values
+      current_binding = Map.get(socket.assigns.selected_element, :binding) ||
+                        Map.get(socket.assigns.selected_element, "binding") || ""
+      current_text = Map.get(socket.assigns.selected_element, :text_content) ||
+                     Map.get(socket.assigns.selected_element, "text_content") || ""
+
+      case mode do
+        "binding" ->
+          # Switch to binding mode: set binding to empty string (not nil)
+          # This signals "binding mode active but no column selected yet"
+          binding_value = if current_binding != "" && current_binding != nil do
+            current_binding
+          else
+            ""  # Empty string = binding mode, nil = fixed mode
+          end
+
+          updated_element = socket.assigns.selected_element
+            |> Map.put(:binding, binding_value)
+            |> Map.put("binding", binding_value)
+
+          {:noreply,
+           socket
+           |> assign(:selected_element, updated_element)
+           |> assign(:pending_selection_id, element_id)}
+
+        "fixed" ->
+          # Switch to fixed mode: clear binding and use text_content
+          updated_element = socket.assigns.selected_element
+            |> Map.put(:binding, nil)
+            |> Map.put("binding", nil)
+            |> Map.put(:text_content, current_text)
+            |> Map.put("text_content", current_text)
+
+          # Push update to canvas to clear binding
+          {:noreply,
+           socket
+           |> assign(:selected_element, updated_element)
+           |> assign(:pending_selection_id, element_id)
+           |> push_event("update_element_property", %{id: element_id, field: "binding", value: nil})}
+
+        _ ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -1652,38 +1708,76 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         />
       </div>
 
-      <%= if @label_type == "multiple" do %>
-        <!-- Vincular a columna: solo para etiquetas múltiples -->
-        <div class="border-t pt-4">
-          <label class="block text-sm font-medium text-gray-700">Vincular a columna</label>
-          <%= if length(@available_columns) > 0 do %>
-            <form phx-change="update_element" class="mt-1">
-              <input type="hidden" name="field" value="binding" />
-              <select
+      <%= if @label_type == "multiple" && @element.type in ["qr", "barcode", "text"] do %>
+        <!-- Contenido del elemento: vincular a columna o texto fijo -->
+        <div class="border-t pt-4 space-y-3">
+          <label class="block text-sm font-medium text-gray-700">Contenido del elemento</label>
+
+          <!-- Selector de modo -->
+          <div class="flex rounded-lg border border-gray-300 overflow-hidden">
+            <button
+              type="button"
+              phx-click="set_content_mode"
+              phx-value-mode="binding"
+              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if has_binding?(@element), do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+            >
+              Vincular a columna
+            </button>
+            <button
+              type="button"
+              phx-click="set_content_mode"
+              phx-value-mode="fixed"
+              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if !has_binding?(@element), do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+            >
+              Texto fijo
+            </button>
+          </div>
+
+          <%= if has_binding?(@element) do %>
+            <!-- Modo: Vincular a columna -->
+            <%= if length(@available_columns) > 0 do %>
+              <form phx-change="update_element">
+                <input type="hidden" name="field" value="binding" />
+                <select
+                  name="value"
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
+                  <option value="">Seleccionar columna...</option>
+                  <%= for col <- @available_columns do %>
+                    <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
+                  <% end %>
+                </select>
+              </form>
+              <p class="text-xs text-gray-500">
+                El contenido cambiará según cada fila de datos
+              </p>
+            <% else %>
+              <input
+                type="text"
                 name="value"
+                value={Map.get(@element, :binding) || ""}
+                placeholder="Nombre de columna"
+                phx-blur="update_element"
+                phx-value-field="binding"
                 class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <option value="">Sin vincular</option>
-                <%= for col <- @available_columns do %>
-                  <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
-                <% end %>
-              </select>
-            </form>
-            <p class="mt-1 text-xs text-gray-500">
-              Selecciona una columna de tus datos
-            </p>
+              />
+              <p class="text-xs text-gray-500">
+                Ingresa el nombre exacto de la columna
+              </p>
+            <% end %>
           <% else %>
+            <!-- Modo: Texto fijo -->
             <input
               type="text"
               name="value"
-              value={Map.get(@element, :binding) || ""}
-              placeholder="Nombre de columna"
+              value={Map.get(@element, :text_content) || ""}
+              placeholder={get_fixed_text_placeholder(@element.type)}
               phx-blur="update_element"
-              phx-value-field="binding"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              phx-value-field="text_content"
+              class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
             />
-            <p class="mt-1 text-xs text-gray-500">
-              Ingresa el nombre exacto de la columna del Excel/BD
+            <p class="text-xs text-gray-500">
+              Este contenido será igual en todas las etiquetas
             </p>
           <% end %>
         </div>
@@ -2213,4 +2307,20 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     </form>
     """
   end
+
+  # Helper to check if element is in binding mode (vs fixed text mode)
+  # nil = fixed text mode, "" or any string = binding mode
+  defp has_binding?(element) do
+    binding = Map.get(element, :binding)
+    # Also check string key
+    binding = if is_nil(binding), do: Map.get(element, "binding"), else: binding
+    # nil means fixed text mode, anything else (including "") means binding mode
+    binding != nil
+  end
+
+  # Placeholder text for fixed content input
+  defp get_fixed_text_placeholder("qr"), do: "URL o texto a codificar"
+  defp get_fixed_text_placeholder("barcode"), do: "Código a mostrar"
+  defp get_fixed_text_placeholder("text"), do: "Texto fijo"
+  defp get_fixed_text_placeholder(_), do: "Contenido"
 end
