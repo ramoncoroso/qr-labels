@@ -8,6 +8,31 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ## Sesion Actual (2 febrero 2026) - Mejoras Flujo de Importacion y Vinculacion
 
+### Resumen Ejecutivo
+
+Esta sesion se enfoco en mejorar la experiencia de usuario del flujo de **etiquetas multiples** (generacion masiva desde Excel/CSV). Se corrigieron 4 problemas criticos que impedian el uso efectivo del sistema:
+
+| # | Problema | Impacto | Estado |
+|---|----------|---------|--------|
+| 1 | CSV no leia cabeceras | Columnas mostraban datos en vez de nombres | ✅ Corregido |
+| 2 | UI confusa con 3 botones | Usuarios no sabian cual usar | ✅ Simplificado |
+| 3 | Elemento se deseleccionaba | Flujo interrumpido al vincular datos | ✅ Corregido |
+| 4 | Sin opcion texto fijo | No se podian mezclar datos fijos y variables | ✅ Implementado |
+
+### Flujo de Etiquetas Multiples (Contexto)
+
+```
+[Usuario sube Excel/CSV] → [Selecciona diseño] → [Vincula columnas a elementos] → [Genera PDF]
+       ↓                         ↓                        ↓
+   data_first.ex          design_select.ex           editor.ex
+```
+
+**Tipos de etiqueta:**
+- `single`: Una etiqueta con contenido fijo (ej: QR con URL especifica)
+- `multiple`: Lote de etiquetas con datos de Excel/CSV (ej: etiquetas de productos)
+
+---
+
 ### Objetivos Completados
 
 1. Fix parser CSV para leer cabeceras correctamente
@@ -200,6 +225,42 @@ end
 | `data_first.ex` | UI simplificada, fix pattern matching upload |
 | `editor.ex` | +80 lineas: pending_selection_id, set_content_mode, UI modo fijo/binding |
 
+### Commits de Esta Sesion
+
+```
+6ca907b fix: CSV parser headers and simplify data import UI
+4c57e7b fix: Keep element selected when changing binding in multiple labels
+dc69758 feat: Add fixed text vs column binding option for multiple labels
+742e39f docs: Update HANDOFF with session 9 - import flow and binding improvements
+```
+
+### Como Probar los Cambios
+
+1. **Probar importacion CSV:**
+   ```bash
+   # Usar archivo de ejemplo incluido
+   # En navegador: http://localhost:4000/generate/data
+   # Subir: priv/ejemplo_productos.csv
+   # Verificar que columnas muestren: SKU, Nombre, Precio, Stock
+   ```
+
+2. **Probar preservacion de seleccion:**
+   ```
+   1. Subir Excel/CSV en /generate/data
+   2. Seleccionar o crear diseño multiple
+   3. Agregar elemento QR al canvas
+   4. Seleccionar QR → cambiar vinculacion a una columna
+   5. Verificar que QR sigue seleccionado (no salta a propiedades de etiqueta)
+   ```
+
+3. **Probar modo fijo vs binding:**
+   ```
+   1. En diseño multiple, seleccionar elemento QR/barcode/text
+   2. Verificar que aparece selector "Vincular columna" / "Texto fijo"
+   3. En modo binding: dropdown de columnas disponibles
+   4. En modo fijo: input de texto libre
+   ```
+
 ---
 
 ### Plan para Continuar
@@ -207,30 +268,100 @@ end
 #### Alta Prioridad
 
 1. **Preview de Etiquetas con Datos Reales**
-   - Mostrar preview de varias etiquetas con datos del Excel/CSV
-   - Navegacion entre registros para verificar resultado
+   - **Que:** Mostrar preview de varias etiquetas con datos del Excel/CSV
+   - **Donde:** `editor.ex` - agregar navegador de registros debajo del canvas
+   - **Como:**
+     - Obtener datos de `UploadDataStore.get(user_id, design_id)`
+     - Crear componente de navegacion: `<< Anterior | Registro 3 de 150 | Siguiente >>`
+     - Al navegar, reemplazar `{{columna}}` en elementos con valores reales
+     - Regenerar QR/barcode con datos del registro actual
+   - **Archivos a modificar:**
+     - `editor.ex`: UI de navegacion, assigns para registro actual
+     - `canvas_designer.js`: funcion `previewWithData(rowData)`
 
 2. **Generacion/Impresion de Lote**
-   - Generar PDF con todas las etiquetas del lote
-   - Configuracion de pagina (tamano, margenes, etiquetas por fila)
+   - **Que:** Generar PDF con todas las etiquetas del lote
+   - **Donde:** Nueva ruta `/generate/print` o extension de `editor.ex`
+   - **Como:**
+     - Iterar sobre todos los registros del Excel/CSV
+     - Generar cada etiqueta con datos sustituidos
+     - Organizar en pagina segun configuracion (etiquetas por fila, margenes)
+     - Exportar como PDF usando `PrintEngine` hook existente
+   - **Archivos a modificar:**
+     - `print_engine.js`: extender para lotes
+     - Nuevo: `generate_live/print.ex` o similar
 
 #### Media Prioridad
 
 3. **Validacion de Datos Importados**
-   - Detectar filas con datos faltantes
-   - Advertir si columnas vinculadas no existen en datos
+   - **Que:** Detectar filas con datos faltantes o invalidos
+   - **Donde:** `data_first.ex` despues de parsear archivo
+   - **Como:**
+     - Verificar que columnas vinculadas existan en datos
+     - Detectar filas con celdas vacias en columnas requeridas
+     - Mostrar resumen: "3 filas con datos incompletos"
+     - Opcion de excluir filas problematicas
+   - **Archivos a modificar:**
+     - `excel_parser.ex`: agregar validacion
+     - `data_first.ex`: UI de advertencias
 
 4. **Mejora UX del Selector de Columnas**
-   - Mostrar preview del valor de la columna al seleccionarla
-   - Indicador visual de columnas ya utilizadas
+   - **Que:** Mejor feedback visual al vincular columnas
+   - **Donde:** `editor.ex` panel de propiedades
+   - **Como:**
+     - Mostrar valor de ejemplo al lado de cada columna: `Nombre (ej: "Laptop HP")`
+     - Indicar columnas ya usadas con icono de check
+     - Resaltar columnas no utilizadas
+   - **Archivos a modificar:**
+     - `editor.ex`: modificar dropdown de columnas
 
 #### Baja Prioridad
 
 5. **Plantillas Predefinidas**
-   - Ofrecer disenos de etiquetas comunes (precio, inventario, envio)
+   - **Que:** Ofrecer disenos de etiquetas comunes
+   - **Ejemplos:** Etiqueta de precio, etiqueta de envio, etiqueta de inventario
+   - **Como:** Crear disenos "template" con `user_id: nil` y listarlos en `/designs/new`
 
 6. **Export/Import de Disenos**
-   - Permitir compartir disenos entre usuarios
+   - **Que:** Permitir compartir disenos entre usuarios
+   - **Como:** Exportar design como JSON, importar y clonar con nuevo `user_id`
+
+---
+
+### Diagrama de Flujo Completo (Estado Actual)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        FLUJO ETIQUETAS MULTIPLES                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  [/generate/data]          [/generate/design]         [/designs/:id/edit]   │
+│       │                          │                          │               │
+│  ┌────▼────┐              ┌──────▼──────┐            ┌──────▼──────┐        │
+│  │ Subir   │              │ Seleccionar │            │ Vincular    │        │
+│  │ Excel/  │─────────────▶│ o crear     │───────────▶│ columnas a  │        │
+│  │ CSV     │              │ diseño      │            │ elementos   │        │
+│  └─────────┘              └─────────────┘            └──────┬──────┘        │
+│       │                                                     │               │
+│       │ UploadDataStore                                     │               │
+│       │ .put(user_id, data)                                 │               │
+│       │                                                     │               │
+│       └──────────────────────────────────────────┐          │               │
+│                                                  │          │               │
+│                                              ┌───▼──────────▼───┐           │
+│                                              │   [PENDIENTE]    │           │
+│                                              │   Preview con    │           │
+│                                              │   datos reales   │           │
+│                                              └────────┬─────────┘           │
+│                                                       │                     │
+│                                              ┌────────▼─────────┐           │
+│                                              │   [PENDIENTE]    │           │
+│                                              │   Generar PDF    │           │
+│                                              │   del lote       │           │
+│                                              └──────────────────┘           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
