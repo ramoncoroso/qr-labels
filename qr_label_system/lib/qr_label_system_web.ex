@@ -38,7 +38,7 @@ defmodule QrLabelSystemWeb do
         layouts: [html: QrLabelSystemWeb.Layouts]
 
       import Plug.Conn
-      import QrLabelSystemWeb.Gettext
+      use Gettext, backend: QrLabelSystemWeb.Gettext
 
       unquote(verified_routes())
     end
@@ -79,7 +79,7 @@ defmodule QrLabelSystemWeb do
       use PhoenixHTMLHelpers
 
       import QrLabelSystemWeb.CoreComponents
-      import QrLabelSystemWeb.Gettext
+      use Gettext, backend: QrLabelSystemWeb.Gettext
 
       alias Phoenix.LiveView.JS
 

@@ -11,7 +11,7 @@ defmodule QrLabelSystemWeb.CoreComponents do
   use Phoenix.Component
 
   alias Phoenix.LiveView.JS
-  import QrLabelSystemWeb.Gettext
+  use Gettext, backend: QrLabelSystemWeb.Gettext
 
   @doc """
   Renders a modal.
