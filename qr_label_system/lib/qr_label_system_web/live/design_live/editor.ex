@@ -40,6 +40,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:design, design)
        |> assign(:selected_element, nil)
        |> assign(:selected_elements, [])
+       |> assign(:pending_selection_id, nil)
        |> assign(:clipboard, [])
        |> assign(:available_columns, available_columns)
        |> assign(:upload_data, upload_data)
@@ -159,12 +160,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       el_id = Map.get(el, :id) || Map.get(el, "id")
       el_id == id
     end)
-    {:noreply, assign(socket, :selected_element, element)}
+
+    # If element not found but we have a pending_selection_id matching this ID,
+    # keep the current selected_element (element_modified will sync it)
+    if is_nil(element) && Map.get(socket.assigns, :pending_selection_id) == id do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :selected_element, element)}
+    end
   end
 
   @impl true
   def handle_event("element_deselected", _params, socket) do
-    {:noreply, assign(socket, :selected_element, nil)}
+    # Don't deselect if we're in the middle of an element recreation
+    if Map.get(socket.assigns, :pending_selection_id) do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :selected_element, nil)}
+    end
   end
 
   @impl true
@@ -173,11 +186,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
-        # Sync selected_element with updated design to prevent stale data
+        # Get the ID of the element that should remain selected
+        # Priority: pending_selection_id > current selected_element
+        selected_id = Map.get(socket.assigns, :pending_selection_id) ||
+          (socket.assigns.selected_element &&
+            (Map.get(socket.assigns.selected_element, :id) ||
+             Map.get(socket.assigns.selected_element, "id")))
+
+        # Find the element in the updated design
         updated_selected =
-          if socket.assigns.selected_element do
-            selected_id = Map.get(socket.assigns.selected_element, :id) ||
-                         Map.get(socket.assigns.selected_element, "id")
+          if selected_id do
             Enum.find(updated_design.elements || [], fn el ->
               (Map.get(el, :id) || Map.get(el, "id")) == selected_id
             end)
@@ -193,6 +211,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           |> push_to_history(design)
           |> assign(:design, updated_design)
           |> assign(:selected_element, updated_selected)
+          |> assign(:pending_selection_id, nil)  # Clear pending selection after sync
           |> assign(:pending_save_flash, false)
 
         socket = if show_flash do
@@ -250,11 +269,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       element_id = Map.get(socket.assigns.selected_element, :id) ||
                    Map.get(socket.assigns.selected_element, "id")
 
+      # Fields that cause element recreation in canvas (QR/barcode regeneration)
+      # For these, we need to preserve selection through the save cycle
+      recreating_fields = ["binding", "color", "background_color", "text_content",
+                          "qr_error_level", "barcode_show_text", "barcode_format"]
+
       # For QR, push both width and height updates
       socket = cond do
         element_type == "qr" and field in ["width", "height"] ->
           socket
           |> assign(:selected_element, updated_element)
+          |> assign(:pending_selection_id, element_id)
           |> push_event("update_element_property", %{id: element_id, field: "width", value: value})
           |> push_event("update_element_property", %{id: element_id, field: "height", value: value})
 
@@ -262,12 +287,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         # The value will be synced when element_modified is processed
         field == "border_radius" ->
           socket
+          |> assign(:pending_selection_id, element_id)
           |> push_event("update_element_property", %{id: element_id, field: field, value: value})
 
-        # For barcode_format, don't update selected_element to avoid losing focus
-        # The canvas will recreate the barcode and save, which syncs the element
-        field == "barcode_format" ->
+        # For fields that cause canvas element recreation, set pending_selection_id
+        # to ensure the element stays selected after the save cycle
+        field in recreating_fields ->
           socket
+          |> assign(:selected_element, updated_element)
+          |> assign(:pending_selection_id, element_id)
           |> push_event("update_element_property", %{id: element_id, field: field, value: value})
 
         true ->
