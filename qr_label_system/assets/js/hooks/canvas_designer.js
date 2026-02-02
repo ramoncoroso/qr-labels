@@ -1528,7 +1528,7 @@ const CanvasDesigner = {
         // For QR and barcode, changing color requires regenerating
         if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
           obj.elementData = data
-          this.recreateCodeElement(obj, data.binding || data.text_content)
+          this.recreateCodeElement(obj, data.binding || data.text_content, 'preserve')
           return // recreateCodeElement handles save
         }
         obj.set('fill', value)
@@ -1543,8 +1543,9 @@ const CanvasDesigner = {
           this.autoFitTextWidth(obj)
         } else if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
           // For QR and barcode, changing text_content requires regenerating
+          // Pass 'text_content' to preserve the binding value (important for fixed text mode)
           obj.elementData = data
-          this.recreateCodeElement(obj, value)
+          this.recreateCodeElement(obj, value, 'text_content')
           return // recreateCodeElement handles save
         }
         break
@@ -1576,7 +1577,7 @@ const CanvasDesigner = {
         // For QR and barcode, changing background_color requires regenerating
         if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
           obj.elementData = data
-          this.recreateCodeElement(obj, data.binding || data.text_content)
+          this.recreateCodeElement(obj, data.binding || data.text_content, 'preserve')
           return // recreateCodeElement handles save
         }
         obj.set('fill', value)
@@ -1604,7 +1605,7 @@ const CanvasDesigner = {
         // For QR and barcode elements, changing binding requires regenerating the code
         if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
           obj.elementData = data  // Update elementData before recreating
-          this.recreateCodeElement(obj, value)
+          this.recreateCodeElement(obj, value, 'binding')
           return // recreateCodeElement handles save
         }
         break
@@ -1612,7 +1613,7 @@ const CanvasDesigner = {
         // Changing QR error level requires regenerating the QR code
         if (obj.elementType === 'qr') {
           obj.elementData = data
-          this.recreateCodeElement(obj, data.binding || data.text_content)
+          this.recreateCodeElement(obj, data.binding || data.text_content, 'preserve')
           return // recreateCodeElement handles save
         }
         break
@@ -1620,7 +1621,7 @@ const CanvasDesigner = {
         // Changing barcode show_text requires regenerating the barcode
         if (obj.elementType === 'barcode') {
           obj.elementData = data
-          this.recreateCodeElement(obj, data.binding || data.text_content)
+          this.recreateCodeElement(obj, data.binding || data.text_content, 'preserve')
           return // recreateCodeElement handles save
         }
         break
@@ -1628,7 +1629,7 @@ const CanvasDesigner = {
         // Changing barcode format requires regenerating the barcode
         if (obj.elementType === 'barcode') {
           obj.elementData = data  // Update elementData before recreating (includes new format)
-          this.recreateCodeElement(obj, data.binding || data.text_content)
+          this.recreateCodeElement(obj, data.binding || data.text_content, 'preserve')
           return // recreateCodeElement handles save
         }
         break
@@ -1728,17 +1729,35 @@ const CanvasDesigner = {
   /**
    * Recreate a QR code or barcode element with new content
    * Used when the binding or text_content field changes
+   * @param {Object} obj - The fabric object to recreate
+   * @param {string} newContent - The new content value
+   * @param {string} field - Which field triggered the recreation:
+   *   - 'binding': update both binding and text_content
+   *   - 'text_content': update only text_content, preserve binding
+   *   - 'preserve': don't change binding/text_content (used for style changes like color)
    */
-  recreateCodeElement(obj, newContent) {
+  recreateCodeElement(obj, newContent, field = 'binding') {
     if (!obj || !obj.elementId) return
 
     const elementId = obj.elementId
     const elementType = obj.elementType
     const data = { ...obj.elementData }
 
-    // Update both binding and text_content for compatibility
-    data.binding = newContent
-    data.text_content = newContent
+    // Update the appropriate field based on what triggered the recreation
+    // This preserves the distinction between binding mode and fixed text mode
+    if (field === 'binding') {
+      data.binding = newContent
+      // Also update text_content for display purposes when in binding mode
+      if (newContent !== null && newContent !== undefined) {
+        data.text_content = newContent
+      }
+    } else if (field === 'text_content') {
+      // For text_content updates, preserve the existing binding value
+      // binding: null means "fixed text mode"
+      // binding: "" or string means "binding mode"
+      data.text_content = newContent
+    }
+    // For 'preserve', we don't modify binding or text_content
 
     // Get current position (convert from canvas coords to mm)
     const x = (obj.left - this.labelBounds.left) / PX_PER_MM

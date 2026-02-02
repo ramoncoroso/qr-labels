@@ -293,10 +293,29 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         # For fields that cause canvas element recreation, set pending_selection_id
         # to ensure the element stays selected after the save cycle
         field in recreating_fields ->
+          # Check if we're updating text_content in "fixed" mode (binding is nil)
+          # For QR/barcode, we need to also send binding: nil to override the JS behavior
+          # that sets both binding and text_content to the same value
+          current_binding = Map.get(socket.assigns.selected_element, :binding) ||
+                           Map.get(socket.assigns.selected_element, "binding")
+          is_fixed_mode = is_nil(current_binding)
+          is_code_element = element_type in ["qr", "barcode"]
+
+          socket = socket
+            |> assign(:selected_element, updated_element)
+            |> assign(:pending_selection_id, element_id)
+
+          # For QR/barcode in fixed mode, send binding: nil first to ensure
+          # the canvas doesn't overwrite it with text_content value
+          socket = if field == "text_content" and is_fixed_mode and is_code_element do
+            socket
+            |> push_event("update_element_property", %{id: element_id, field: "binding", value: nil})
+            |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+          else
+            push_event(socket, "update_element_property", %{id: element_id, field: field, value: value})
+          end
+
           socket
-          |> assign(:selected_element, updated_element)
-          |> assign(:pending_selection_id, element_id)
-          |> push_event("update_element_property", %{id: element_id, field: field, value: value})
 
         true ->
           socket
@@ -343,11 +362,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> Map.put(:binding, binding_value)
             |> Map.put("binding", binding_value)
 
-          # Only update local state - canvas will sync when user selects a column
-          {:noreply,
-           socket
-           |> assign(:selected_element, updated_element)
-           |> assign(:pending_selection_id, element_id)}
+          # For text elements, sync binding to canvas immediately
+          # QR/barcode will sync when user selects a column (to avoid recreation issues)
+          socket = socket
+            |> assign(:selected_element, updated_element)
+            |> assign(:pending_selection_id, element_id)
+
+          socket = if element_type == "text" do
+            push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
+          else
+            socket
+          end
+
+          {:noreply, socket}
 
         "fixed" ->
           # Switch to fixed mode: clear binding and preserve text_content
@@ -355,11 +382,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> Map.put(:binding, nil)
             |> Map.put("binding", nil)
 
-          # Only update local state - canvas will sync when user types text
-          {:noreply,
-           socket
-           |> assign(:selected_element, updated_element)
-           |> assign(:pending_selection_id, element_id)}
+          # For text elements, sync binding to canvas immediately
+          # QR/barcode will sync when user types content (to avoid recreation issues)
+          socket = socket
+            |> assign(:selected_element, updated_element)
+            |> assign(:pending_selection_id, element_id)
+
+          socket = if element_type == "text" do
+            push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: nil})
+          else
+            socket
+          end
+
+          {:noreply, socket}
 
         _ ->
           {:noreply, socket}
