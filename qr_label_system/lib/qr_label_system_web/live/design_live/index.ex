@@ -149,7 +149,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       end)
 
     case uploaded_files do
-      [content] ->
+      [{:ok, content}] ->
         case Designs.import_designs_from_json(content, user_id) do
           {:ok, imported_designs} ->
             {:noreply,
