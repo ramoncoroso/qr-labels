@@ -343,25 +343,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> Map.put(:binding, binding_value)
             |> Map.put("binding", binding_value)
 
+          # Only update local state - canvas will sync when user selects a column
           {:noreply,
            socket
            |> assign(:selected_element, updated_element)
            |> assign(:pending_selection_id, element_id)}
 
         "fixed" ->
-          # Switch to fixed mode: clear binding and use text_content
+          # Switch to fixed mode: clear binding and preserve text_content
           updated_element = socket.assigns.selected_element
             |> Map.put(:binding, nil)
             |> Map.put("binding", nil)
-            |> Map.put(:text_content, current_text)
-            |> Map.put("text_content", current_text)
 
-          # Push update to canvas to clear binding
+          # Only update local state - canvas will sync when user types text
           {:noreply,
            socket
            |> assign(:selected_element, updated_element)
-           |> assign(:pending_selection_id, element_id)
-           |> push_event("update_element_property", %{id: element_id, field: "binding", value: nil})}
+           |> assign(:pending_selection_id, element_id)}
 
         _ ->
           {:noreply, socket}

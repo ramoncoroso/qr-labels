@@ -6,7 +6,235 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (1 febrero 2026) - Fix Sincronizacion Propiedades Canvas
+## Sesion Actual (2 febrero 2026) - Mejoras Flujo de Importacion y Vinculacion
+
+### Objetivos Completados
+
+1. Fix parser CSV para leer cabeceras correctamente
+2. Simplificar UI de importacion (unificar botones Excel/CSV)
+3. Preservar seleccion de elementos al cambiar vinculacion
+4. Agregar modo texto fijo vs vinculacion de columna en etiquetas multiples
+
+---
+
+### Problema 1: CSV No Leia Cabeceras
+
+**Sintoma:** Al importar CSV, las columnas mostraban valores de datos en vez de nombres de columnas.
+
+**Causa:** NimbleCSV por defecto salta la primera fila (skip_headers: true).
+
+**Archivo:** `lib/qr_label_system/data_sources/excel_parser.ex`
+
+**Solucion:**
+```elixir
+# ANTES (incorrecto)
+[headers | data_rows] =
+  file_path
+  |> File.stream!()
+  |> NimbleCSV.RFC4180.parse_stream(separator: separator)
+  |> Enum.take(max_rows + 1)
+
+# DESPUES (correcto)
+[headers | data_rows] =
+  file_path
+  |> File.stream!()
+  |> NimbleCSV.RFC4180.parse_stream(skip_headers: false, separator: separator)
+  |> Enum.take(max_rows + 1)
+```
+
+---
+
+### Problema 2: UI Confusa con 3 Botones de Importacion
+
+**Sintoma:** En `/generate/data` habia 3 botones: "Cargar Excel", "Cargar CSV", "Agregar manualmente". Usuarios no sabian cual elegir.
+
+**Solucion:** Unificar Excel y CSV en un solo boton "Importar archivo".
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Cambios:**
+- Un solo boton "Importar archivo" que acepta `.xlsx` y `.csv`
+- El sistema auto-detecta el formato por extension
+- Fix en pattern matching de `consume_uploaded_entries`:
+
+```elixir
+# ANTES (error)
+case uploaded_files do
+  [{:ok, file_path}] -> ...
+
+# DESPUES (correcto - consume_uploaded_entries devuelve path directamente)
+case uploaded_files do
+  [file_path] when is_binary(file_path) -> ...
+```
+
+---
+
+### Problema 3: Elemento se Deselecciona al Cambiar Vinculacion
+
+**Sintoma:** En etiquetas multiples, al seleccionar una columna para vincular a un QR, el elemento se deseleccionaba y el panel mostraba propiedades de la etiqueta.
+
+**Causa:** Condicion de carrera entre eventos:
+```
+1. Usuario cambia binding
+2. LiveView guarda y recrea elemento en canvas
+3. Canvas emite selection:created con nuevo objeto
+4. LiveView recibe element_selected ANTES de que el design se actualice
+5. Elemento no se encuentra → selected_element = nil
+```
+
+**Solucion:** Mecanismo `pending_selection_id` para "reservar" la seleccion.
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+```elixir
+# En mount()
+|> assign(:pending_selection_id, nil)
+
+# En handle_event("update_element")
+socket = assign(socket, :pending_selection_id, element_id)
+# ... guardar elemento ...
+# Despues de guardar exitosamente:
+socket = assign(socket, :pending_selection_id, nil)
+
+# En handle_event("element_selected")
+def handle_event("element_selected", %{"id" => id}, socket) do
+  element = find_element(socket.assigns.design.elements, id)
+
+  # Si no encontramos el elemento pero estamos esperandolo, mantener seleccion actual
+  if is_nil(element) && Map.get(socket.assigns, :pending_selection_id) == id do
+    {:noreply, socket}
+  else
+    {:noreply, assign(socket, :selected_element, element)}
+  end
+end
+
+# En handle_event("element_deselected")
+def handle_event("element_deselected", _params, socket) do
+  # No deseleccionar si estamos en proceso de recrear elemento
+  if Map.get(socket.assigns, :pending_selection_id) do
+    {:noreply, socket}
+  else
+    {:noreply, assign(socket, :selected_element, nil)}
+  end
+end
+```
+
+---
+
+### Problema 4: Sin Opcion de Texto Fijo en Etiquetas Multiples
+
+**Sintoma:** En etiquetas multiples, QR/barcode/text solo permitian vincular columnas. No habia forma de usar texto fijo (ej: QR con URL constante).
+
+**Solucion:** Agregar selector de modo "Vincular columna" vs "Texto fijo".
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+**UI agregada para QR, Barcode y Text:**
+```heex
+<%= if @design.type == "multiple" do %>
+  <div class="mb-4 flex rounded-lg bg-gray-100 p-1">
+    <button
+      type="button"
+      phx-click="set_content_mode"
+      phx-value-mode="binding"
+      class={if has_binding?(@selected_element), do: "active-tab", else: "inactive-tab"}
+    >
+      Vincular columna
+    </button>
+    <button
+      type="button"
+      phx-click="set_content_mode"
+      phx-value-mode="fixed"
+      class={if !has_binding?(@selected_element), do: "active-tab", else: "inactive-tab"}
+    >
+      Texto fijo
+    </button>
+  </div>
+
+  <%= if has_binding?(@selected_element) do %>
+    <!-- Dropdown de columnas -->
+  <% else %>
+    <!-- Input de texto fijo -->
+  <% end %>
+<% end %>
+```
+
+**Handler agregado:**
+```elixir
+def handle_event("set_content_mode", %{"mode" => mode}, socket) do
+  element = socket.assigns.selected_element
+
+  updates = case mode do
+    "binding" -> %{binding: "", text_content: nil}
+    "fixed" -> %{binding: nil, text_content: ""}
+  end
+
+  # Actualizar elemento y guardar
+end
+```
+
+**Helper para detectar modo:**
+```elixir
+defp has_binding?(element) do
+  binding = Map.get(element, :binding) || Map.get(element, "binding")
+  binding != nil  # nil = modo fijo, cualquier valor (incluso "") = modo vinculacion
+end
+```
+
+---
+
+### Archivos Creados para Testing
+
+| Archivo | Descripcion |
+|---------|-------------|
+| `priv/ejemplo_productos.csv` | 12 productos alimenticios con SKU, Nombre, Precio, Stock |
+| `priv/ejemplo_inventario.xlsx` | 12 items de ropa con Codigo, Producto, Talla, Color, Precio |
+
+---
+
+### Archivos Modificados
+
+| Archivo | Cambios |
+|---------|---------|
+| `excel_parser.ex` | +1 linea: `skip_headers: false` |
+| `data_first.ex` | UI simplificada, fix pattern matching upload |
+| `editor.ex` | +80 lineas: pending_selection_id, set_content_mode, UI modo fijo/binding |
+
+---
+
+### Plan para Continuar
+
+#### Alta Prioridad
+
+1. **Preview de Etiquetas con Datos Reales**
+   - Mostrar preview de varias etiquetas con datos del Excel/CSV
+   - Navegacion entre registros para verificar resultado
+
+2. **Generacion/Impresion de Lote**
+   - Generar PDF con todas las etiquetas del lote
+   - Configuracion de pagina (tamano, margenes, etiquetas por fila)
+
+#### Media Prioridad
+
+3. **Validacion de Datos Importados**
+   - Detectar filas con datos faltantes
+   - Advertir si columnas vinculadas no existen en datos
+
+4. **Mejora UX del Selector de Columnas**
+   - Mostrar preview del valor de la columna al seleccionarla
+   - Indicador visual de columnas ya utilizadas
+
+#### Baja Prioridad
+
+5. **Plantillas Predefinidas**
+   - Ofrecer disenos de etiquetas comunes (precio, inventario, envio)
+
+6. **Export/Import de Disenos**
+   - Permitir compartir disenos entre usuarios
+
+---
+
+## Sesion Anterior (1 febrero 2026) - Fix Sincronizacion Propiedades Canvas
 
 ### Objetivo Completado
 
@@ -512,6 +740,7 @@ mix phx.digest
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 2 feb 2026 | 9 | Fix CSV parser, UI importacion simplificada, preservar seleccion, modo fijo/binding |
 | 1 feb 2026 | 8 | Fix sincronizacion propiedades canvas, UI controls, audit fixes, test fixes |
 | 1 feb 2026 | 7 | QR/barcode real en canvas, validacion formatos, PropertyFields hook |
 | 31 ene 2026 | 6 | Drag and drop reimplementado, cleanup de hooks |
@@ -520,4 +749,4 @@ mix phx.digest
 
 ---
 
-*Handoff actualizado: 1 febrero 2026 (sesion 8)*
+*Handoff actualizado: 2 febrero 2026 (sesion 9)*
