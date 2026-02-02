@@ -114,7 +114,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
       end)
 
     case uploaded_files do
-      [file_path] when is_binary(file_path) ->
+      [{:ok, file_path}] ->
         result = ExcelParser.parse_file(file_path)
 
         # Schedule cleanup
