@@ -56,7 +56,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
       end)
 
     case uploaded_files do
-      [{:ok, file_path}] ->
+      [file_path] when is_binary(file_path) ->
         result = ExcelParser.parse_file(file_path)
 
         # Schedule cleanup
@@ -113,8 +113,6 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     if socket.assigns.upload_data && length(socket.assigns.upload_data) > 0 do
       # Store data in persistent store for the workflow
       user_id = socket.assigns.current_user.id
-      IO.inspect({user_id, length(socket.assigns.upload_data), socket.assigns.upload_columns},
-        label: "DataFirst: Storing data for user")
 
       QrLabelSystem.UploadDataStore.put(
         user_id,
@@ -216,39 +214,21 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
         </div>
 
         <!-- Method Selection Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <button
             phx-click="select_method"
-            phx-value-method="excel"
-            class={"rounded-xl p-6 text-left transition-all border-2 #{if @active_method == "excel", do: "border-green-500 bg-green-50 ring-2 ring-green-200", else: "border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/50"}"}
+            phx-value-method="file"
+            class={"rounded-xl p-6 text-left transition-all border-2 #{if @active_method == "file", do: "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200", else: "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50"}"}
           >
             <div class="flex items-center space-x-4">
-              <div class={"w-14 h-14 rounded-xl flex items-center justify-center #{if @active_method == "excel", do: "bg-green-500", else: "bg-green-100"}"}>
-                <svg class={"w-7 h-7 #{if @active_method == "excel", do: "text-white", else: "text-green-600"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <div class={"w-14 h-14 rounded-xl flex items-center justify-center #{if @active_method == "file", do: "bg-indigo-500", else: "bg-indigo-100"}"}>
+                <svg class={"w-7 h-7 #{if @active_method == "file", do: "text-white", else: "text-indigo-600"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
               </div>
               <div>
-                <h3 class={"font-semibold #{if @active_method == "excel", do: "text-green-900", else: "text-gray-900"}"}>Excel</h3>
-                <p class={"text-sm #{if @active_method == "excel", do: "text-green-700", else: "text-gray-500"}"}>Archivo .xlsx</p>
-              </div>
-            </div>
-          </button>
-
-          <button
-            phx-click="select_method"
-            phx-value-method="csv"
-            class={"rounded-xl p-6 text-left transition-all border-2 #{if @active_method == "csv", do: "border-blue-500 bg-blue-50 ring-2 ring-blue-200", else: "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/50"}"}
-          >
-            <div class="flex items-center space-x-4">
-              <div class={"w-14 h-14 rounded-xl flex items-center justify-center #{if @active_method == "csv", do: "bg-blue-500", else: "bg-blue-100"}"}>
-                <svg class={"w-7 h-7 #{if @active_method == "csv", do: "text-white", else: "text-blue-600"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div>
-                <h3 class={"font-semibold #{if @active_method == "csv", do: "text-blue-900", else: "text-gray-900"}"}>CSV</h3>
-                <p class={"text-sm #{if @active_method == "csv", do: "text-blue-700", else: "text-gray-500"}"}>Archivo .csv</p>
+                <h3 class={"font-semibold #{if @active_method == "file", do: "text-indigo-900", else: "text-gray-900"}"}>Importar archivo</h3>
+                <p class={"text-sm #{if @active_method == "file", do: "text-indigo-700", else: "text-gray-500"}"}>Excel (.xlsx) o CSV (.csv)</p>
               </div>
             </div>
           </button>
@@ -273,9 +253,9 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
         </div>
 
         <!-- Upload Area (Excel/CSV) -->
-        <div :if={@active_method in ["excel", "csv"]} class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div :if={@active_method == "file"} class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h3 class="text-lg font-medium text-gray-900 mb-4">
-            Subir archivo <%= if @active_method == "excel", do: "Excel", else: "CSV" %>
+            Subir archivo Excel o CSV
           </h3>
 
           <form phx-submit="upload_file" phx-change="validate_upload">
@@ -297,7 +277,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
                 </label>
               </p>
               <p class="mt-2 text-sm text-gray-500">
-                <%= if @active_method == "excel", do: "Excel (.xlsx, .xls)", else: "CSV (.csv)" %> hasta 10MB
+                Excel (.xlsx) o CSV (.csv) hasta 10MB
               </p>
             </div>
 

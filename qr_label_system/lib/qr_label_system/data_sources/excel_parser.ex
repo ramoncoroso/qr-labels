@@ -51,7 +51,7 @@ defmodule QrLabelSystem.DataSources.ExcelParser do
       [headers | data_rows] =
         file_path
         |> File.stream!()
-        |> NimbleCSV.RFC4180.parse_stream(separator: separator)
+        |> NimbleCSV.RFC4180.parse_stream(skip_headers: false, separator: separator)
         |> Enum.take(max_rows + 1)
 
       normalized_headers = normalize_headers(headers)
