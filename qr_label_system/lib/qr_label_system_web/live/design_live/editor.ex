@@ -64,8 +64,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:show_layers, true)
        |> assign(:preview_data, preview_data)
        |> assign(:preview_row_index, 0)
-       |> assign(:history, [])
-       |> assign(:history_index, -1)
+       |> assign(:history, [design.elements || []])
+       |> assign(:history_index, 0)
        |> assign(:has_unsaved_changes, false)
        |> assign(:pending_save_flash, false)
        |> assign(:zoom, 100)
@@ -100,9 +100,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("add_element", %{"type" => type}, socket) when type in @valid_element_types do
-    # Add element to design immediately so it can be selected
-    # Convert existing elements to maps to avoid Ecto.CastError when mixing structs and maps
-    current_elements = socket.assigns.design.elements || []
+    # Save current state to history before making changes
+    design = socket.assigns.design
+    current_elements = design.elements || []
     element = create_default_element(type, current_elements)
     current_elements_as_maps = Enum.map(current_elements, fn el ->
       case el do
@@ -112,10 +112,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end)
     new_elements = current_elements_as_maps ++ [element]
 
-    case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
+    case Designs.update_design(design, %{elements: new_elements}) do
       {:ok, updated_design} ->
         {:noreply,
          socket
+         |> push_to_history(design)
          |> assign(:design, updated_design)
          |> assign(:selected_element, element)
          |> push_event("add_element", %{element: element})}
@@ -135,7 +136,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("add_element_at", %{"type" => type, "x" => x, "y" => y}, socket)
       when type in @valid_element_types do
-    current_elements = socket.assigns.design.elements || []
+    # Save current state to history before making changes
+    design = socket.assigns.design
+    current_elements = design.elements || []
     element = create_default_element(type, current_elements)
     # Override position with drop location
     element = Map.merge(element, %{x: x, y: y})
@@ -148,10 +151,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end)
     new_elements = current_elements_as_maps ++ [element]
 
-    case Designs.update_design(socket.assigns.design, %{elements: new_elements}) do
+    case Designs.update_design(design, %{elements: new_elements}) do
       {:ok, updated_design} ->
         {:noreply,
          socket
+         |> push_to_history(design)
          |> assign(:design, updated_design)
          |> assign(:selected_element, element)
          |> push_event("add_element", %{element: element})}
@@ -1046,7 +1050,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   # History management for undo/redo
-  @max_history_size 50
+  @max_history_size 10
 
   defp push_to_history(socket, design) do
     history = socket.assigns.history
@@ -1086,7 +1090,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
-       |> push_event("load_design", %{design: Design.to_json(updated_design)})}
+       |> push_event("reload_design", %{design: Design.to_json(updated_design)})}
     else
       :no_history
     end
@@ -1109,7 +1113,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
-       |> push_event("load_design", %{design: Design.to_json(updated_design)})}
+       |> push_event("reload_design", %{design: Design.to_json(updated_design)})}
     else
       :no_future
     end
@@ -1307,37 +1311,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
-          <div class="mt-auto px-2">
-            <div class="border-t border-gray-200 pt-4 space-y-2">
-              <button
-                phx-click="undo"
-                disabled={!@can_undo}
-                class={"w-full flex flex-col items-center p-2 rounded-lg transition #{if @can_undo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
-                title="Deshacer"
-              >
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-              </button>
-              <button
-                phx-click="redo"
-                disabled={!@can_redo}
-                class={"w-full flex flex-col items-center p-2 rounded-lg transition #{if @can_redo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
-                title="Rehacer"
-              >
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                </svg>
-              </button>
-            </div>
-          </div>
         </div>
 
         <!-- Canvas Area - grows but doesn't push sidebars -->
         <div class="flex-1 min-w-0 overflow-auto p-8 flex flex-col items-center justify-center">
           <!-- Toolbar -->
           <div class="mb-4 flex items-center space-x-2 flex-wrap gap-y-2">
-            <!-- Zoom Controls -->
+            <!-- Zoom & Undo/Redo Controls -->
             <div class="flex items-center space-x-2 bg-white rounded-lg shadow-md px-3 py-2">
               <span class="text-xs text-gray-500 font-medium">ZOOM</span>
               <button
@@ -1373,6 +1353,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+              <div class="w-px h-4 bg-gray-300 mx-1"></div>
+              <button
+                phx-click="undo"
+                disabled={!@can_undo}
+                class={"p-1.5 rounded-md transition #{if @can_undo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
+                title="Deshacer"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              </button>
+              <button
+                phx-click="redo"
+                disabled={!@can_redo}
+                class={"p-1.5 rounded-md transition #{if @can_redo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
+                title="Rehacer"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
                 </svg>
               </button>
             </div>

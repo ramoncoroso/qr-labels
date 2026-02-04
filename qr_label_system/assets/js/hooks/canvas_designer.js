@@ -576,6 +576,13 @@ const CanvasDesigner = {
       }
     })
 
+    // Force reload design (used for undo/redo)
+    this.handleEvent("reload_design", ({ design }) => {
+      if (design && !this._isDestroyed) {
+        this.loadDesign(design)
+      }
+    })
+
     this.handleEvent("add_element", ({ element }) => {
       if (element && element.type && !this._isDestroyed) {
         this.addElement(element)
