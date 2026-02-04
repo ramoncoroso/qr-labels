@@ -312,10 +312,11 @@ defmodule QrLabelSystem.Security.FileSanitizer do
       {:ok, "application/octet-stream"}
   """
   def detect_mime_type_from_file(file_path) do
-    case File.open(file_path, [:read, :binary]) do
-      {:ok, file} ->
-        header = IO.binread(file, 8)
-        File.close(file)
+    # Use File.open/3 with block to ensure file is always closed
+    case File.open(file_path, [:read, :binary], fn file ->
+      IO.binread(file, 8)
+    end) do
+      {:ok, header} ->
         {:ok, atom_to_mime(detect_mime_type(header))}
 
       {:error, reason} ->

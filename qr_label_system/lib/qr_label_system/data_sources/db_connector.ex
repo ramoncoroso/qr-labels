@@ -7,6 +7,60 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   @timeout 30_000
   @max_retries 3
 
+  # Compiled once at module load - more efficient than creating on each call
+  @dangerous_patterns [
+    # DDL/DML statements
+    ~r/\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|MERGE)\b/i,
+
+    # SELECT INTO (creates tables)
+    ~r/\bSELECT\b[^;]*\bINTO\s+(OUTFILE|DUMPFILE|TEMPORARY|TABLE|\w+\.\w+|\w+)\b/i,
+
+    # CTEs can wrap dangerous operations
+    ~r/\bWITH\s+\w+\s+(AS\s*)?\(/i,
+
+    # Comments (bypass filters)
+    ~r/(--|\/\*|\*\/|#)/,
+
+    # UNION-based injection
+    ~r/\bUNION\s+(ALL\s+)?SELECT\b/i,
+
+    # Stacked queries
+    ~r/;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|WITH)/i,
+
+    # PostgreSQL dangerous functions
+    ~r/\b(pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file)\s*\(/i,
+    ~r/\b(lo_import|lo_export|lo_get|lo_put)\s*\(/i,
+    ~r/\b(pg_sleep|pg_terminate_backend|pg_cancel_backend)\s*\(/i,
+    ~r/\b(dblink|dblink_exec|dblink_connect)\s*\(/i,
+    ~r/\bCOPY\s+\w+\s+(FROM|TO)\b/i,
+
+    # MySQL dangerous functions and operations
+    ~r/\b(LOAD_FILE|LOAD\s+DATA)\s*[\(\s]/i,
+    ~r/\bINTO\s+(OUTFILE|DUMPFILE)\b/i,
+    ~r/\b(BENCHMARK|SLEEP)\s*\(/i,
+
+    # SQL Server dangerous operations
+    ~r/\b(xp_|sp_)\w+/i,
+    ~r/\b(EXEC|EXECUTE)\s*[\(\s@]/i,
+    ~r/\b(OPENROWSET|OPENDATASOURCE|OPENQUERY)\s*\(/i,
+    ~r/\bWAITFOR\s+(DELAY|TIME)\b/i,
+    ~r/\bBULK\s+INSERT\b/i,
+
+    # Information schema (recon)
+    ~r/\bINFORMATION_SCHEMA\b/i,
+    ~r/\bpg_catalog\b/i,
+    ~r/\bsys\.(databases|tables|columns|objects)\b/i,
+
+    # Hex encoding (bypass attempts)
+    ~r/0x[0-9a-fA-F]{4,}/,
+
+    # String manipulation functions (often used for bypass)
+    ~r/\b(CHAR|CHR|UNHEX|CONV)\s*\(/i,
+
+    # Dynamic SQL construction
+    ~r/\b(PREPARE|DEALLOCATE)\s+\w+/i
+  ]
+
   @doc """
   Tests a database connection.
   Returns {:ok, :connected} or {:error, reason}
@@ -86,62 +140,7 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   defp normalize_char(char), do: char
 
   defp has_dangerous_pattern?(query) do
-    Enum.any?(dangerous_patterns(), &String.match?(query, &1))
-  end
-
-  defp dangerous_patterns do
-    [
-      # DDL/DML statements
-      ~r/\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|MERGE)\b/i,
-
-      # SELECT INTO (creates tables)
-      ~r/\bSELECT\b[^;]*\bINTO\s+(OUTFILE|DUMPFILE|TEMPORARY|TABLE|\w+\.\w+|\w+)\b/i,
-
-      # CTEs can wrap dangerous operations
-      ~r/\bWITH\s+\w+\s+(AS\s*)?\(/i,
-
-      # Comments (bypass filters)
-      ~r/(--|\/\*|\*\/|#)/,
-
-      # UNION-based injection
-      ~r/\bUNION\s+(ALL\s+)?SELECT\b/i,
-
-      # Stacked queries
-      ~r/;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|WITH)/i,
-
-      # PostgreSQL dangerous functions
-      ~r/\b(pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file)\s*\(/i,
-      ~r/\b(lo_import|lo_export|lo_get|lo_put)\s*\(/i,
-      ~r/\b(pg_sleep|pg_terminate_backend|pg_cancel_backend)\s*\(/i,
-      ~r/\b(dblink|dblink_exec|dblink_connect)\s*\(/i,
-      ~r/\bCOPY\s+\w+\s+(FROM|TO)\b/i,
-
-      # MySQL dangerous functions and operations
-      ~r/\b(LOAD_FILE|LOAD\s+DATA)\s*[\(\s]/i,
-      ~r/\bINTO\s+(OUTFILE|DUMPFILE)\b/i,
-      ~r/\b(BENCHMARK|SLEEP)\s*\(/i,
-
-      # SQL Server dangerous operations
-      ~r/\b(xp_|sp_)\w+/i,
-      ~r/\b(EXEC|EXECUTE)\s*[\(\s@]/i,
-      ~r/\b(OPENROWSET|OPENDATASOURCE|OPENQUERY)\s*\(/i,
-      ~r/\bWAITFOR\s+(DELAY|TIME)\b/i,
-      ~r/\bBULK\s+INSERT\b/i,
-
-      # Information schema (recon)
-      ~r/\bINFORMATION_SCHEMA\b/i,
-      ~r/\bpg_catalog\b/i,
-      ~r/\bsys\.(databases|tables|columns|objects)\b/i,
-
-      # Hex encoding (bypass attempts)
-      ~r/0x[0-9a-fA-F]{4,}/,
-
-      # String manipulation functions (often used for bypass)
-      ~r/\b(CHAR|CHR|UNHEX|CONV)\s*\(/i,
-
-      # Dynamic SQL construction
-      ~r/\b(PREPARE|DEALLOCATE)\s+\w+/i
-    ]
+    Enum.any?(@dangerous_patterns, &String.match?(query, &1))
   end
 
   # Connection functions
