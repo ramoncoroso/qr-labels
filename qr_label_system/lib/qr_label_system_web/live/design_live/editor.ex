@@ -1800,18 +1800,29 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 El contenido cambiará según cada fila de datos
               </p>
             <% else %>
-              <input
-                type="text"
-                name="value"
-                value={Map.get(@element, :binding) || ""}
-                placeholder="Nombre de columna"
-                phx-blur="update_element"
-                phx-value-field="binding"
-                class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-              <p class="text-xs text-gray-500">
-                Ingresa el nombre exacto de la columna
-              </p>
+              <!-- No hay datos cargados - mostrar opción para cargar -->
+              <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div class="flex items-start space-x-3">
+                  <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-amber-800">No hay datos cargados</p>
+                    <p class="text-xs text-amber-700 mt-1">
+                      Para vincular a una columna, primero debes cargar un archivo de datos.
+                    </p>
+                    <.link
+                      navigate={~p"/generate/data?design_id=#{@design_id}"}
+                      class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <span>Cargar datos</span>
+                    </.link>
+                  </div>
+                </div>
+              </div>
             <% end %>
           <% else %>
             <!-- Modo: Texto fijo -->
