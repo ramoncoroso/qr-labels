@@ -6,37 +6,32 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (4 febrero 2026) - Funcionalidades Pendientes (Revertidas)
+## Sesion Actual (4 febrero 2026) - Funcionalidad "Disenar sin datos"
 
 ### Resumen Ejecutivo
 
-Se intento implementar dos funcionalidades que fueron **revertidas** por causar errores en el editor:
-
 | # | Tarea | Estado |
 |---|-------|--------|
-| 1 | Opcion "Disenar sin datos" en /generate/data | ❌ Revertido |
-| 2 | Fix race condition en binding mode del editor | ❌ Revertido |
+| 1 | Opcion "Disenar sin datos" en /generate/data | ✅ Completado |
+| 2 | Fix race condition en binding mode del editor | ❌ Pendiente |
 
 ---
 
-### Tareas Pendientes para Proxima Sesion
+### 1. Opcion "Disenar sin datos" (Completado)
 
-#### 1. Opcion "Disenar sin datos" (`/generate/data`)
+**Ubicacion:** `/generate/data` → tercera tarjeta "Diseñar sin datos"
 
-**Objetivo:** Agregar tercera opcion en `/generate/data` para crear etiquetas multiples sin necesidad de cargar Excel/CSV.
+**Implementacion:**
+- Grid de 3 columnas con nueva opcion
+- Boton "Continuar al diseño" navega a `/generate/design?no_data=true`
+- Limpia datos previos del usuario con `UploadDataStore.clear/1`
 
-**Archivos a modificar:**
+**Archivo modificado:**
 - `lib/qr_label_system_web/live/generate_live/data_first.ex`
 
-**Implementacion sugerida:**
-- Agregar tercera tarjeta en el grid (cambiar de 2 a 3 columnas)
-- Modal para especificar cantidad de etiquetas
-- Crear data source tipo "manual" con datos vacios
-- Redirigir al editor con el diseno creado
-
 ---
 
-#### 2. Fix Binding Mode en Editor (Race Condition)
+### Tarea Pendiente: Fix Binding Mode en Editor (Race Condition)
 
 **Problema:** Al hacer clic en "Vincular a columna" en un elemento de texto sin datos cargados, el boton vuelve automaticamente a "Texto fijo".
 
