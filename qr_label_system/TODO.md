@@ -103,3 +103,33 @@ La validación SQL en `db_connector.ex:39-85` usa regex que puede ser evadida:
 
 **Archivos a modificar**:
 - `lib/qr_label_system/data_sources/db_connector.ex`
+
+## [SEGURIDAD] Eliminar credenciales hardcodeadas de documentación
+
+**Estado**: Pendiente
+**Riesgo**: Medio
+**Esfuerzo**: Bajo
+
+**Problema**:
+Los archivos README.md y HANDOFF.md contienen credenciales de desarrollo explícitas (`admin@example.com` / `admin123456`). Estas pueden:
+- Copiarse accidentalmente a producción
+- Usarse por atacantes que encuentren el repositorio
+- Crear falsa sensación de seguridad
+
+**Ubicación**:
+- `README.md` líneas 202-203
+- `qr_label_system/README.md` líneas 202-203
+- `HANDOFF.md` líneas 333-334
+
+**Solución**:
+Reemplazar credenciales explícitas por instrucciones genéricas:
+```markdown
+# Crear usuario admin en desarrollo
+mix run -e "QrLabelSystem.Accounts.create_admin_user()"
+# O usar seeds: mix run priv/repo/seeds.exs
+```
+
+**Archivos a modificar**:
+- `README.md`
+- `qr_label_system/README.md`
+- `HANDOFF.md`
