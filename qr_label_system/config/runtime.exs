@@ -5,6 +5,15 @@ import Config
 # temporary table. Therefore, you should not introduce any compile-time
 # configuration changes here, like defining new modules
 
+# Load .env file in dev/test environments
+if config_env() in [:dev, :test] do
+  Dotenvy.source([
+    ".env",
+    ".env.#{config_env()}",
+    ".env.#{config_env()}.local"
+  ])
+end
+
 # Configure Hammer rate limiter backend (works in all environments)
 # Using ETS backend - for distributed systems, use Redis backend
 config :hammer,

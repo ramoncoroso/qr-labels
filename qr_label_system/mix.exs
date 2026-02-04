@@ -89,6 +89,7 @@ defmodule QrLabelSystem.MixProject do
       {:hammer, "~> 6.1"},
 
       # Dev & Test
+      {:dotenvy, "~> 0.8", only: [:dev, :test]},
       {:floki, ">= 0.30.0", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

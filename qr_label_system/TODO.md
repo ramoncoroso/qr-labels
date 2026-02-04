@@ -2,24 +2,19 @@
 
 ## Configurar carga automática de .env
 
-**Estado**: Pendiente
+**Estado**: ✅ Completado
 
-El archivo `.env` fue creado con el nuevo `SECRET_KEY_BASE`, pero el proyecto no tiene una librería para cargarlo automáticamente.
+**Solución implementada**:
+Instalado `dotenvy` para cargar automáticamente archivos `.env` en dev/test.
 
-**Opciones**:
+Archivos soportados (en orden de prioridad):
+- `.env`
+- `.env.dev` / `.env.test`
+- `.env.dev.local` / `.env.test.local`
 
-1. **Manual** - Ejecutar `source .env && mix phx.server` cada vez
-2. **Automático** - Instalar `dotenvy` (recomendado):
-   ```elixir
-   # En mix.exs, agregar a deps:
-   {:dotenvy, "~> 0.8"}
-   ```
-   Luego en `config/runtime.exs`:
-   ```elixir
-   if config_env() == :dev do
-     Dotenvy.source([".env", ".env.#{config_env()}.local"])
-   end
-   ```
+**Archivos modificados**:
+- `mix.exs` - agregada dependencia `dotenvy`
+- `config/runtime.exs` - carga automática de .env
 
 ## Alinear elementos en toolbar
 
