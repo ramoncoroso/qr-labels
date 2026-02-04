@@ -6,11 +6,11 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (4 febrero 2026) - Mejoras de Seguridad Completas
+## Sesion Actual (4 febrero 2026) - Seguridad Completa + 3 Fixes Adicionales
 
 ### Resumen Ejecutivo
 
-Esta sesion se enfoco en completar **todas las mejoras de seguridad pendientes** y una mejora de DX (Developer Experience). Se resolvieron 6 tareas del TODO.
+Sesion enfocada en completar **todas las mejoras de seguridad**. Se resolvieron 9 tareas en total (6 de la sesion anterior + 3 nuevas).
 
 | # | Tarea | Riesgo | Estado |
 |---|-------|--------|--------|
@@ -20,6 +20,9 @@ Esta sesion se enfoco en completar **todas las mejoras de seguridad pendientes**
 | 4 | Configurar usuario BD read-only | Medio | ✅ Completado |
 | 5 | Reducir info en endpoints health | Bajo-Medio | ✅ Completado |
 | 6 | Carga automatica de .env | DX | ✅ Completado |
+| 7 | **Anonimizar PII en logs** | Medio | ✅ Completado (nuevo) |
+| 8 | **Sanitizar uploads DataSourceController** | Alto | ✅ Completado (nuevo) |
+| 9 | **Limpieza automatica archivos huerfanos** | Medio | ✅ Completado (nuevo) |
 
 ---
 
@@ -197,12 +200,121 @@ end
 
 ---
 
+### 7. Anonimizar PII en Logs (Riesgo Medio) - NUEVO
+
+**Problema:** `HomeLive` registraba emails completos en logs de magic link.
+
+**Solucion:**
+```elixir
+# lib/qr_label_system_web/live/home_live.ex
+
+# Funcion para anonimizar email
+defp anonymize_email(email) do
+  case String.split(email, "@") do
+    [local, domain] when byte_size(local) > 0 ->
+      first_char = String.first(local)
+      "#{first_char}***@#{domain}"
+    _ ->
+      "***@***"
+  end
+end
+
+# Uso en logs
+Logger.debug("Magic link request for: #{anonymize_email(email)}")
+# Resultado: "u***@example.com" en vez de "user@example.com"
+```
+
+**Cambios:**
+- Removidos logs innecesarios del mount
+- Cambiado `Logger.info` a `Logger.debug`
+- Removida exposicion de errores de changeset
+
+---
+
+### 8. Sanitizar Uploads en DataSourceController (Riesgo Alto) - NUEVO
+
+**Problema:** El controller de upload copiaba archivos sin validar extension, tamano ni contenido.
+
+**Solucion:**
+```elixir
+# lib/qr_label_system_web/controllers/data_source_controller.ex
+
+@allowed_extensions ~w(.xlsx .xls .csv)
+@max_file_size_mb 10
+
+def upload(conn, %{"file" => upload}) do
+  sanitized_name = FileSanitizer.sanitize_filename(upload.filename)
+  ext = Path.extname(sanitized_name) |> String.downcase()
+
+  with :ok <- validate_extension(ext),
+       :ok <- validate_file_size(upload.path),
+       :ok <- validate_file_content(upload.path, ext) do
+    # Archivo valido, procesar...
+  else
+    {:error, :invalid_extension} ->
+      put_flash(conn, :error, "Tipo de archivo no permitido")
+    {:error, :file_too_large} ->
+      put_flash(conn, :error, "Archivo demasiado grande (max 10MB)")
+    {:error, :mime_type_mismatch} ->
+      put_flash(conn, :error, "El contenido no coincide con la extension")
+  end
+end
+```
+
+**Tests agregados:**
+- Test para archivo con extension invalida
+- Test para archivo con contenido que no coincide
+
+---
+
+### 9. Limpieza Automatica de Archivos Huerfanos (Riesgo Medio) - NUEVO
+
+**Problema:** Archivos en `priv/uploads/data_sources/` persistian indefinidamente si el usuario abandonaba el flujo.
+
+**Solucion:** Worker de Oban que elimina archivos > 24h.
+
+```elixir
+# lib/qr_label_system/workers/upload_cleanup_worker.ex
+
+defmodule QrLabelSystem.Workers.UploadCleanupWorker do
+  use Oban.Worker, queue: :cleanup, max_attempts: 3
+
+  @default_ttl_hours 24
+
+  @impl Oban.Worker
+  def perform(%Oban.Job{args: args}) do
+    ttl_hours = Map.get(args, "ttl_hours", @default_ttl_hours)
+    {:ok, deleted_count} = cleanup_old_files(uploads_directory(), ttl_hours)
+    Logger.info("UploadCleanupWorker: Deleted #{deleted_count} orphaned files")
+    :ok
+  end
+end
+```
+
+**Configuracion Oban Cron:**
+```elixir
+# config/config.exs
+config :qr_label_system, Oban,
+  plugins: [
+    Oban.Plugins.Pruner,
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"0 * * * *", QrLabelSystem.Workers.UploadCleanupWorker}
+     ]}
+  ],
+  queues: [default: 10, cleanup: 5]
+```
+
+---
+
 ### Commits de Esta Sesion
 
 ```
-f02257c security: Complete all security improvements
-45bdb3f feat: Add automatic .env loading with dotenvy
+98148e4 security: Fix PII logging, file upload validation, and orphaned file cleanup
+8f6b8b8 docs: Update HANDOFF with session 10 - security improvements
 2904a3c refactor: Improve efficiency and fix resource leak
+45bdb3f feat: Add automatic .env loading with dotenvy
+f02257c security: Complete all security improvements
 ```
 
 ---
@@ -218,9 +330,13 @@ f02257c security: Complete all security improvements
 | `editor.ex` | Usa validacion magic bytes en upload |
 | `README.md` | Credenciales removidas |
 | `config/runtime.exs` | Dotenvy + env config |
+| `config/config.exs` | Oban Cron plugin para cleanup |
 | `config/test.exs` | env: :test |
 | `mix.exs` | Dependencia dotenvy |
-| Tests (3 archivos) | 129+ tests de seguridad |
+| `home_live.ex` | PII anonimizado en logs |
+| `data_source_controller.ex` | Sanitizacion de uploads |
+| `workers/upload_cleanup_worker.ex` | **Nuevo** - Job de limpieza |
+| Tests (4 archivos) | 129+ tests de seguridad + tests upload
 
 ---
 
@@ -258,11 +374,14 @@ f02257c security: Complete all security improvements
 
 | Aspecto | Estado |
 |---------|--------|
-| **Tests** | 710 tests, 0 failures ✅ |
+| **Tests** | 712 tests, 0 failures ✅ |
 | **Compilacion** | Sin errores ✅ |
 | **Seguridad SQL** | Normalización Unicode, 20+ patrones, 86 tests ✅ |
-| **Seguridad uploads** | Magic bytes, no confia en cliente ✅ |
+| **Seguridad uploads editor** | Magic bytes, no confia en cliente ✅ |
+| **Seguridad uploads controller** | Extension + tamaño + magic bytes ✅ |
 | **Info exposure** | Versiones ocultas en prod ✅ |
+| **PII en logs** | Emails anonimizados ✅ |
+| **Limpieza archivos** | Oban job cada hora, TTL 24h ✅ |
 | **Resource management** | File.open con bloque ✅ |
 | **Performance** | Regex en module attribute ✅ |
 
@@ -1133,6 +1252,7 @@ mix phx.digest
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 4 feb 2026 | 11 | PII anonimizado, sanitizacion uploads controller, cleanup job Oban |
 | 4 feb 2026 | 10 | Seguridad completa: SQL validation, magic bytes, health info, .env auto-load |
 | 2 feb 2026 | 9 | Fix CSV parser, UI importacion simplificada, preservar seleccion, modo fijo/binding |
 | 1 feb 2026 | 8 | Fix sincronizacion propiedades canvas, UI controls, audit fixes, test fixes |
@@ -1143,4 +1263,4 @@ mix phx.digest
 
 ---
 
-*Handoff actualizado: 4 febrero 2026 (sesion 10)*
+*Handoff actualizado: 4 febrero 2026 (sesion 11)*
