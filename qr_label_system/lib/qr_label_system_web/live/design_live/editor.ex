@@ -1265,7 +1265,46 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </button>
               </div>
             <% end %>
-            <p class="text-xs text-gray-500"><%= @design.width_mm %> × <%= @design.height_mm %> mm</p>
+            <div class="flex items-center space-x-3 text-xs text-gray-500">
+              <span><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
+              <span class="text-gray-300">|</span>
+              <div class="flex items-center space-x-1">
+                <button
+                  phx-click="zoom_out"
+                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                  title="Alejar (-25%)"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                  </svg>
+                </button>
+                <button
+                  phx-click="zoom_reset"
+                  class="px-1.5 py-0.5 font-medium text-gray-600 hover:bg-gray-100 rounded transition min-w-[40px] text-center"
+                  title="Restablecer al 100%"
+                >
+                  <%= @zoom %>%
+                </button>
+                <button
+                  phx-click="zoom_in"
+                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                  title="Acercar (+25%)"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                  </svg>
+                </button>
+                <button
+                  phx-click="fit_to_view"
+                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                  title="Ajustar a la vista"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1386,50 +1425,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <div class="flex-1 min-w-0 overflow-auto p-8 flex flex-col items-center justify-center">
           <!-- Toolbar -->
           <div class="mb-4 flex items-center space-x-2 flex-wrap gap-y-2">
-            <!-- Zoom & Undo/Redo Controls -->
-            <div class="flex items-center space-x-2 bg-white rounded-lg shadow-md px-3 py-2">
-              <span class="text-xs text-gray-500 font-medium">ZOOM</span>
-              <button
-                phx-click="zoom_out"
-                class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
-                title="Alejar (25%)"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                </svg>
-              </button>
-              <button
-                phx-click="zoom_reset"
-                class="px-2 py-1 text-sm font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-md min-w-[50px] transition"
-                title="Restablecer al 100%"
-              >
-                <%= @zoom %>%
-              </button>
-              <button
-                phx-click="zoom_in"
-                class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
-                title="Acercar (+25%)"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                </svg>
-              </button>
-              <div class="w-px h-4 bg-gray-300 mx-1"></div>
-              <button
-                phx-click="fit_to_view"
-                class="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition"
-                title="Ajustar a la vista"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
-              </button>
-              <div class="w-px h-4 bg-gray-300 mx-1"></div>
+            <!-- Undo/Redo Controls -->
+            <div class="flex items-center space-x-1 bg-white rounded-lg shadow-md px-3 py-2">
               <button
                 phx-click="undo"
                 disabled={!@can_undo}
                 class={"p-1.5 rounded-md transition #{if @can_undo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
-                title="Deshacer"
+                title="Deshacer (Ctrl+Z)"
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -1439,7 +1441,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 phx-click="redo"
                 disabled={!@can_redo}
                 class={"p-1.5 rounded-md transition #{if @can_redo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
-                title="Rehacer"
+                title="Rehacer (Ctrl+Y)"
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
@@ -1476,11 +1478,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <button :if={length(@selected_elements) > 2} phx-click="distribute_elements" phx-value-direction="vertical" class="p-1.5 rounded hover:bg-gray-100" title="Distribuir vertical">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16M6 12h12M4 20h16" /></svg>
               </button>
-            </div>
-
-            <!-- Size info -->
-            <div class="flex items-center bg-white rounded-lg shadow-md px-3 py-2">
-              <span class="text-xs text-gray-400"><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
             </div>
           </div>
 
@@ -2098,19 +2095,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
         <% "text" -> %>
           <div class="border-t pt-4 space-y-3">
-            <div>
-              <label for="text_content_input" class="block text-sm font-medium text-gray-700"><%= if @label_type == "single", do: "Contenido", else: "Contenido (si no está vinculado)" %></label>
-              <input
-                type="text"
-                id="text_content_input"
-                name="value"
-                value={@element.text_content || ""}
-                phx-blur="update_element"
-                phx-value-field="text_content"
-                onfocus="if(this.value === 'Texto') this.value = ''"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-            </div>
+            <%= if @label_type == "single" do %>
+              <div>
+                <label for="text_content_input" class="block text-sm font-medium text-gray-700">Contenido</label>
+                <input
+                  type="text"
+                  id="text_content_input"
+                  name="value"
+                  value={@element.text_content || ""}
+                  phx-blur="update_element"
+                  phx-value-field="text_content"
+                  onfocus="if(this.value === 'Texto') this.value = ''"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
+              </div>
+            <% end %>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-sm font-medium text-gray-700">Tamaño fuente</label>
