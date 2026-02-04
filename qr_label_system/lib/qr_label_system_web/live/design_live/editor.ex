@@ -40,19 +40,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Check if we need to auto-select an element (returning from data load)
       element_id = Map.get(params, "element_id")
       selected_element = if element_id do
-        element = Enum.find(design.elements || [], fn el ->
+        Enum.find(design.elements || [], fn el ->
           (Map.get(el, :id) || Map.get(el, "id")) == element_id
         end)
-        # Put element in binding mode (binding = "" instead of nil)
-        # so the UI shows "Vincular a columna" with the dropdown
-        if element do
-          %{element | binding: ""}
-        else
-          nil
-        end
       else
         nil
       end
+      # Flag to show binding mode UI when returning from data load
+      show_binding_mode = element_id != nil && selected_element != nil
 
       {:ok,
        socket
@@ -79,6 +74,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:renaming, false)
        |> assign(:rename_value, design.name)
        |> assign(:canvas_loaded, false)
+       |> assign(:show_binding_mode, show_binding_mode)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -194,7 +190,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if is_nil(element) && Map.get(socket.assigns, :pending_selection_id) == id do
       {:noreply, socket}
     else
-      {:noreply, assign(socket, :selected_element, element)}
+      {:noreply,
+       socket
+       |> assign(:selected_element, element)
+       |> assign(:show_binding_mode, false)}
     end
   end
 
@@ -394,6 +393,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           socket = socket
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
+            |> assign(:show_binding_mode, false)
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
@@ -414,6 +414,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           socket = socket
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
+            |> assign(:show_binding_mode, false)
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: nil})
@@ -1566,7 +1567,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -1792,7 +1793,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               type="button"
               phx-click="set_content_mode"
               phx-value-mode="binding"
-              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if has_binding?(@element), do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if has_binding?(@element) or @show_binding_mode, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
             >
               Vincular a columna
             </button>
@@ -1800,13 +1801,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               type="button"
               phx-click="set_content_mode"
               phx-value-mode="fixed"
-              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if !has_binding?(@element), do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if !has_binding?(@element) and !@show_binding_mode, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
             >
               Texto fijo
             </button>
           </div>
 
-          <%= if has_binding?(@element) do %>
+          <%= if has_binding?(@element) or @show_binding_mode do %>
             <!-- Modo: Vincular a columna -->
             <%= if length(@available_columns) > 0 do %>
               <form phx-change="update_element">
