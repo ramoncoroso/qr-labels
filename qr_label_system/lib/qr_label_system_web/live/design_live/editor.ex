@@ -86,10 +86,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if socket.assigns[:canvas_loaded] do
       {:noreply, socket}
     else
-      {:noreply,
-       socket
-       |> assign(:canvas_loaded, true)
-       |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})}
+      socket = socket
+        |> assign(:canvas_loaded, true)
+        |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})
+
+      # If we have a pending element to select (returning from data load), select it
+      socket = if socket.assigns.pending_selection_id && socket.assigns.selected_element do
+        push_event(socket, "select_element", %{id: socket.assigns.pending_selection_id})
+      else
+        socket
+      end
+
+      {:noreply, socket}
     end
   end
 
