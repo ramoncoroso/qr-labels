@@ -4,26 +4,46 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   alias QrLabelSystem.Designs
 
   @impl true
-  def mount(_params, _session, socket) do
-    # Get data from persistent store (data not yet associated with a design)
+  def mount(params, _session, socket) do
     user_id = socket.assigns.current_user.id
+    no_data_mode = Map.get(params, "no_data") == "true"
+
+    # Get data from persistent store (data not yet associated with a design)
     {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id, nil)
 
-    if is_nil(upload_data) or length(upload_data) == 0 do
-      {:ok,
-       socket
-       |> put_flash(:error, "No hay datos cargados. Por favor, carga los datos primero.")
-       |> push_navigate(to: ~p"/generate/data")}
-    else
-      designs = Designs.list_user_designs_by_type(socket.assigns.current_user.id, "multiple")
+    cond do
+      # Mode: designing without external data
+      no_data_mode ->
+        designs = Designs.list_user_designs_by_type(user_id, "multiple")
 
-      {:ok,
-       socket
-       |> assign(:page_title, "Elegir Diseño")
-       |> assign(:designs, designs)
-       |> assign(:upload_data, upload_data)
-       |> assign(:upload_columns, upload_columns)
-       |> assign(:selected_design_id, nil)}
+        {:ok,
+         socket
+         |> assign(:page_title, "Elegir Diseño")
+         |> assign(:designs, designs)
+         |> assign(:upload_data, [])
+         |> assign(:upload_columns, [])
+         |> assign(:no_data_mode, true)
+         |> assign(:selected_design_id, nil)}
+
+      # Mode: with uploaded data
+      not is_nil(upload_data) and length(upload_data) > 0 ->
+        designs = Designs.list_user_designs_by_type(user_id, "multiple")
+
+        {:ok,
+         socket
+         |> assign(:page_title, "Elegir Diseño")
+         |> assign(:designs, designs)
+         |> assign(:upload_data, upload_data)
+         |> assign(:upload_columns, upload_columns)
+         |> assign(:no_data_mode, false)
+         |> assign(:selected_design_id, nil)}
+
+      # No data and not in no_data mode - redirect
+      true ->
+        {:ok,
+         socket
+         |> put_flash(:error, "No hay datos cargados. Por favor, carga los datos primero.")
+         |> push_navigate(to: ~p"/generate/data")}
     end
   end
 
@@ -36,6 +56,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   def handle_event("use_design", _params, socket) do
     design_id = socket.assigns.selected_design_id
     user_id = socket.assigns.current_user.id
+    no_data_mode = socket.assigns.no_data_mode
 
     if design_id do
       design = Designs.get_design!(design_id)
@@ -44,15 +65,22 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
       if design.user_id != user_id do
         {:noreply, put_flash(socket, :error, "No tienes permiso para usar este diseño")}
       else
-        # Associate the data with this design
-        QrLabelSystem.UploadDataStore.associate_with_design(user_id, design.id)
+        if no_data_mode do
+          # No data mode - go directly to editor with no_data flag
+          {:noreply,
+           socket
+           |> put_flash(:info, "Diseñando sin datos externos - solo texto fijo disponible")
+           |> push_navigate(to: ~p"/designs/#{design.id}/edit?no_data=true")}
+        else
+          # Associate the data with this design
+          QrLabelSystem.UploadDataStore.associate_with_design(user_id, design.id)
 
-        # Navigate to editor - data is now associated with the design
-        # User can assign columns and preview labels before generating
-        {:noreply,
-         socket
-         |> put_flash(:info, "Asigna las columnas a los elementos y previsualiza el resultado")
-         |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
+          # Navigate to editor - data is now associated with the design
+          {:noreply,
+           socket
+           |> put_flash(:info, "Asigna las columnas a los elementos y previsualiza el resultado")
+           |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
+        end
       end
     else
       {:noreply, put_flash(socket, :error, "Selecciona un diseño primero")}
@@ -61,11 +89,21 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
   @impl true
   def handle_event("create_new", _params, socket) do
-    # Data is already in the persistent store, just navigate
-    {:noreply,
-     socket
-     |> put_flash(:return_to, "design_select")
-     |> push_navigate(to: ~p"/designs/new?type=multiple")}
+    no_data_mode = socket.assigns.no_data_mode
+
+    if no_data_mode do
+      # No data mode - pass no_data flag
+      {:noreply,
+       socket
+       |> put_flash(:return_to, "design_select")
+       |> push_navigate(to: ~p"/designs/new?type=multiple&no_data=true")}
+    else
+      # Data is already in the persistent store, just navigate
+      {:noreply,
+       socket
+       |> put_flash(:return_to, "design_select")
+       |> push_navigate(to: ~p"/designs/new?type=multiple")}
+    end
   end
 
   @impl true
@@ -80,7 +118,11 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
       <.header>
         Elegir diseño de etiqueta
         <:subtitle>
-          Selecciona un diseño existente o crea uno nuevo para tus <%= length(@upload_data) %> registros
+          <%= if @no_data_mode do %>
+            Selecciona un diseño existente o crea uno nuevo (solo texto fijo)
+          <% else %>
+            Selecciona un diseño existente o crea uno nuevo para tus <%= length(@upload_data) %> registros
+          <% end %>
         </:subtitle>
       </.header>
 
@@ -88,14 +130,25 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
         <!-- Progress Steps -->
         <div class="mb-8">
           <div class="flex items-center justify-center space-x-4">
-            <div class="flex items-center">
-              <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+            <%= if @no_data_mode do %>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <span class="ml-2 text-sm font-medium text-green-600">Sin datos</span>
               </div>
-              <span class="ml-2 text-sm font-medium text-green-600">Datos cargados</span>
-            </div>
+            <% else %>
+              <div class="flex items-center">
+                <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <span class="ml-2 text-sm font-medium text-green-600">Datos cargados</span>
+              </div>
+            <% end %>
             <div class="w-16 h-0.5 bg-indigo-600"></div>
             <div class="flex items-center">
               <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">2</div>
@@ -109,8 +162,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
           </div>
         </div>
 
-        <!-- Data Summary -->
-        <div class="bg-indigo-50 rounded-xl p-4 mb-8">
+        <!-- Data Summary (only when we have data) -->
+        <div :if={not @no_data_mode} class="bg-indigo-50 rounded-xl p-4 mb-8">
           <div class="flex items-center justify-between">
             <div class="flex items-center space-x-4">
               <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
@@ -129,6 +182,21 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
                   <%= col %>
                 </span>
               <% end %>
+            </div>
+          </div>
+        </div>
+
+        <!-- No Data Mode Info -->
+        <div :if={@no_data_mode} class="bg-amber-50 rounded-xl p-4 mb-8">
+          <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+              <svg class="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm text-amber-600">Modo diseño sin datos</p>
+              <p class="font-semibold text-amber-900">Solo texto fijo disponible</p>
             </div>
           </div>
         </div>

@@ -199,8 +199,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     user_id = socket.assigns.current_user.id
     QrLabelSystem.UploadDataStore.clear(user_id)
 
-    # Navigate to design selection with no_data flag
-    {:noreply, push_navigate(socket, to: ~p"/generate/design?no_data=true")}
+    # Navigate directly to new design form (skip design selection)
+    {:noreply, push_navigate(socket, to: ~p"/designs/new?type=multiple&no_data=true")}
   end
 
   @impl true

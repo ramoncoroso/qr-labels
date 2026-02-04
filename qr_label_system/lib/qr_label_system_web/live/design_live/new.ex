@@ -12,6 +12,9 @@ defmodule QrLabelSystemWeb.DesignLive.New do
     label_type = Map.get(params, "type", "single")
     label_type = if label_type in ["single", "multiple"], do: label_type, else: "single"
 
+    # Check if we're in no_data mode
+    no_data_mode = Map.get(params, "no_data") == "true"
+
     changeset = Designs.change_design(%Design{label_type: label_type})
 
     # Get upload data from persistent store (for data-first flow - data not yet associated)
@@ -27,6 +30,7 @@ defmodule QrLabelSystemWeb.DesignLive.New do
      |> assign(:upload_data, upload_data)
      |> assign(:upload_columns, upload_columns)
      |> assign(:return_to, return_to)
+     |> assign(:no_data_mode, no_data_mode)
      |> assign_form(changeset)}
   end
 
@@ -51,15 +55,22 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
     case Designs.create_design(design_params) do
       {:ok, design} ->
-        # For multiple designs, associate the data with the new design
-        if socket.assigns.label_type == "multiple" do
+        # For multiple designs with data, associate the data with the new design
+        if socket.assigns.label_type == "multiple" and not socket.assigns.no_data_mode do
           QrLabelSystem.UploadDataStore.associate_with_design(user_id, design.id)
+        end
+
+        # Navigate to editor, passing no_data flag if in no_data mode
+        redirect_url = if socket.assigns.no_data_mode do
+          ~p"/designs/#{design.id}/edit?no_data=true"
+        else
+          ~p"/designs/#{design.id}/edit"
         end
 
         {:noreply,
          socket
          |> put_flash(:info, "Diseño creado exitosamente")
-         |> push_navigate(to: ~p"/designs/#{design.id}/edit")}
+         |> push_navigate(to: redirect_url)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
