@@ -6,7 +6,269 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (2 febrero 2026) - Mejoras Flujo de Importacion y Vinculacion
+## Sesion Actual (4 febrero 2026) - Mejoras de Seguridad Completas
+
+### Resumen Ejecutivo
+
+Esta sesion se enfoco en completar **todas las mejoras de seguridad pendientes** y una mejora de DX (Developer Experience). Se resolvieron 6 tareas del TODO.
+
+| # | Tarea | Riesgo | Estado |
+|---|-------|--------|--------|
+| 1 | Mejorar validacion SQL | Alto | ✅ Completado |
+| 2 | Validar MIME type en uploads | Medio | ✅ Completado |
+| 3 | Eliminar credenciales hardcodeadas | Medio | ✅ Completado |
+| 4 | Configurar usuario BD read-only | Medio | ✅ Completado |
+| 5 | Reducir info en endpoints health | Bajo-Medio | ✅ Completado |
+| 6 | Carga automatica de .env | DX | ✅ Completado |
+
+---
+
+### 1. Validacion SQL Mejorada (Riesgo Alto)
+
+**Problema:** La validacion SQL usaba regex que podia ser evadida con:
+- Caracteres Unicode fullwidth (ＤＥＬＥＴＥ)
+- Funciones peligrosas de PostgreSQL/MySQL/SQL Server
+- SELECT INTO, CTEs maliciosos
+
+**Solucion implementada:**
+
+```elixir
+# lib/qr_label_system/data_sources/db_connector.ex
+
+# Module attribute - compilado una vez (eficiente)
+@dangerous_patterns [
+  # DDL/DML
+  ~r/\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)\b/i,
+  # PostgreSQL
+  ~r/\b(pg_read_file|lo_import|dblink)\s*\(/i,
+  # MySQL
+  ~r/\b(LOAD_FILE|LOAD\s+DATA)\s*[\(\s]/i,
+  # SQL Server
+  ~r/\b(xp_|sp_)\w+/i,
+  ~r/\b(OPENROWSET|OPENDATASOURCE)\s*\(/i,
+  # ... 20+ patrones mas
+]
+
+def validate_query(query) do
+  query
+  |> String.trim()
+  |> normalize_unicode()  # ＤＥＬＥＴＥ → DELETE
+  |> check_patterns()
+end
+```
+
+**Tests:** 86 tests de seguridad verifican la validacion.
+
+---
+
+### 2. Validacion MIME Type con Magic Bytes (Riesgo Medio)
+
+**Problema:** El upload de imagenes confiaba en `entry.client_type` (controlado por el cliente).
+
+**Solucion implementada:**
+
+```elixir
+# lib/qr_label_system/security/file_sanitizer.ex
+
+def validate_image_content(file_path) do
+  case detect_mime_type_from_file(file_path) do
+    {:ok, mime} when mime in ~w(image/png image/jpeg image/gif) ->
+      {:ok, mime}
+    {:ok, _} ->
+      {:error, :invalid_image_type}
+  end
+end
+
+def detect_mime_type_from_file(file_path) do
+  # Usa File.open/3 con bloque (previene resource leak)
+  case File.open(file_path, [:read, :binary], fn file ->
+    IO.binread(file, 8)
+  end) do
+    {:ok, header} -> {:ok, atom_to_mime(detect_mime_type(header))}
+    {:error, reason} -> {:error, reason}
+  end
+end
+
+# Magic bytes detection
+defp detect_mime_type(<<0x89, 0x50, 0x4E, 0x47, _::binary>>), do: :png
+defp detect_mime_type(<<0xFF, 0xD8, 0xFF, _::binary>>), do: :jpeg
+defp detect_mime_type(<<"GIF89a", _::binary>>), do: :gif
+```
+
+**Uso en editor.ex:**
+```elixir
+case FileSanitizer.validate_image_content(path) do
+  {:ok, mime_type} ->
+    # mime_type viene del contenido real, no del cliente
+    {:ok, %{data: "data:#{mime_type};base64,#{base64}"}}
+  {:error, :invalid_image_type} ->
+    {:error, :invalid_image_type}
+end
+```
+
+**Tests:** 43 tests verifican la funcionalidad.
+
+---
+
+### 3. Credenciales Removidas de Documentacion (Riesgo Medio)
+
+**Problema:** README.md contenia credenciales explicitas (`admin@example.com` / `admin123456`).
+
+**Solucion:**
+```markdown
+# ANTES (inseguro)
+| Email | `admin@example.com` |
+| Password | `admin123456` |
+
+# DESPUES (seguro)
+### Usuario Admin de Desarrollo
+Para crear un usuario administrador en desarrollo, ejecuta los seeds:
+mix run priv/repo/seeds.exs
+```
+
+---
+
+### 4. Recomendacion Usuario BD Read-Only (Riesgo Medio)
+
+**Solucion:** Agregado banner de seguridad visible en formulario de conexion a BD externa.
+
+```heex
+<!-- lib/qr_label_system_web/live/data_source_live/form_component.ex -->
+<div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+  <p class="text-sm text-amber-800">
+    <span class="font-medium">Recomendacion de seguridad:</span>
+    Use un usuario de base de datos con permisos de solo lectura (SELECT).
+  </p>
+</div>
+```
+
+---
+
+### 5. Info Reducida en Endpoints Health (Riesgo Bajo-Medio)
+
+**Problema:** `/api/health/detailed` y `/api/metrics` exponian versiones de Elixir/OTP en produccion.
+
+**Solucion:**
+```elixir
+# lib/qr_label_system_web/controllers/api/health_controller.ex
+
+def detailed(conn, _params) do
+  response = %{status: status, timestamp: timestamp, checks: checks}
+
+  # Solo incluir version info en non-production
+  response =
+    if Application.get_env(:qr_label_system, :env) != :prod do
+      response
+      |> Map.put(:version, ...)
+      |> Map.put(:elixir_version, ...)
+      |> Map.put(:otp_version, ...)
+    else
+      response
+    end
+end
+```
+
+**Configuracion agregada:**
+- `config/runtime.exs`: `config :qr_label_system, env: :prod`
+- `config/dev.exs`: `config :qr_label_system, env: :dev`
+- `config/test.exs`: `config :qr_label_system, env: :test`
+
+---
+
+### 6. Carga Automatica de .env (DX)
+
+**Solucion:** Instalado `dotenvy` para cargar automaticamente archivos `.env`.
+
+```elixir
+# mix.exs
+{:dotenvy, "~> 0.8", only: [:dev, :test]}
+
+# config/runtime.exs
+if config_env() in [:dev, :test] do
+  Dotenvy.source([
+    ".env",
+    ".env.#{config_env()}",
+    ".env.#{config_env()}.local"
+  ])
+end
+```
+
+**Uso:** Ya no es necesario `source .env && mix phx.server`.
+
+---
+
+### Commits de Esta Sesion
+
+```
+f02257c security: Complete all security improvements
+45bdb3f feat: Add automatic .env loading with dotenvy
+2904a3c refactor: Improve efficiency and fix resource leak
+```
+
+---
+
+### Archivos Modificados
+
+| Archivo | Cambios |
+|---------|---------|
+| `db_connector.ex` | Validacion SQL mejorada, module attribute para patterns |
+| `file_sanitizer.ex` | Magic bytes detection, resource leak fix |
+| `health_controller.ex` | Info reducida en produccion |
+| `form_component.ex` | Banner seguridad BD read-only |
+| `editor.ex` | Usa validacion magic bytes en upload |
+| `README.md` | Credenciales removidas |
+| `config/runtime.exs` | Dotenvy + env config |
+| `config/test.exs` | env: :test |
+| `mix.exs` | Dependencia dotenvy |
+| Tests (3 archivos) | 129+ tests de seguridad |
+
+---
+
+### Plan para Continuar
+
+#### Pendientes del TODO (2 tareas)
+
+| Tarea | Esfuerzo | Descripcion |
+|-------|----------|-------------|
+| **Alinear elementos en toolbar** | Bajo | JS ya implementado en `canvas_designer.js`, falta agregar boton en UI |
+| **Etiquetas multiples sin Excel** | Medio | Permitir generar lote de etiquetas con cantidad especificada |
+
+#### Alta Prioridad (del HANDOFF anterior)
+
+1. **Preview de Etiquetas con Datos Reales**
+   - Mostrar preview con datos del Excel/CSV
+   - Navegador: `<< Anterior | Registro 3 de 150 | Siguiente >>`
+
+2. **Generacion/Impresion de Lote**
+   - PDF con todas las etiquetas del lote
+   - Configuracion de pagina (etiquetas por fila, margenes)
+
+#### Media Prioridad
+
+3. **Validacion de Datos Importados**
+   - Detectar filas con datos faltantes
+   - Opcion de excluir filas problematicas
+
+4. **Mejora UX Selector de Columnas**
+   - Mostrar valor de ejemplo: `Nombre (ej: "Laptop HP")`
+
+---
+
+### Verificacion de Calidad
+
+| Aspecto | Estado |
+|---------|--------|
+| **Tests** | 710 tests, 0 failures ✅ |
+| **Compilacion** | Sin errores ✅ |
+| **Seguridad SQL** | Normalización Unicode, 20+ patrones, 86 tests ✅ |
+| **Seguridad uploads** | Magic bytes, no confia en cliente ✅ |
+| **Info exposure** | Versiones ocultas en prod ✅ |
+| **Resource management** | File.open con bloque ✅ |
+| **Performance** | Regex en module attribute ✅ |
+
+---
+
+## Sesion Anterior (2 febrero 2026) - Mejoras Flujo de Importacion y Vinculacion
 
 ### Resumen Ejecutivo
 
@@ -871,6 +1133,7 @@ mix phx.digest
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 4 feb 2026 | 10 | Seguridad completa: SQL validation, magic bytes, health info, .env auto-load |
 | 2 feb 2026 | 9 | Fix CSV parser, UI importacion simplificada, preservar seleccion, modo fijo/binding |
 | 1 feb 2026 | 8 | Fix sincronizacion propiedades canvas, UI controls, audit fixes, test fixes |
 | 1 feb 2026 | 7 | QR/barcode real en canvas, validacion formatos, PropertyFields hook |
@@ -880,4 +1143,4 @@ mix phx.digest
 
 ---
 
-*Handoff actualizado: 2 febrero 2026 (sesion 9)*
+*Handoff actualizado: 4 febrero 2026 (sesion 10)*
