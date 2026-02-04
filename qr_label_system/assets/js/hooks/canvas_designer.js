@@ -1972,7 +1972,17 @@ const CanvasDesigner = {
    * Immediate save without debouncing (used for explicit save actions)
    */
   saveElementsImmediate() {
-    if (this._isDestroyed || !this.elements) return
+    // Don't save if canvas is destroyed or not initialized
+    if (this._isDestroyed || !this.elements || !this._isInitialized) {
+      console.warn('saveElementsImmediate: Canvas not ready, skipping save')
+      return
+    }
+
+    // Don't save if canvas/labelBounds not set up
+    if (!this.canvas || !this.labelBounds) {
+      console.warn('saveElementsImmediate: Canvas or labelBounds not ready, skipping save')
+      return
+    }
 
     const elements = []
 

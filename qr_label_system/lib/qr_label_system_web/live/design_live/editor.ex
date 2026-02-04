@@ -89,18 +89,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if socket.assigns[:canvas_loaded] do
       {:noreply, socket}
     else
-      socket = socket
-        |> assign(:canvas_loaded, true)
-        |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})
-
-      # If we have a pending element to select (returning from data load), select it
-      socket = if socket.assigns.pending_selection_id && socket.assigns.selected_element do
-        push_event(socket, "select_element", %{id: socket.assigns.pending_selection_id})
-      else
-        socket
-      end
-
-      {:noreply, socket}
+      {:noreply,
+       socket
+       |> assign(:canvas_loaded, true)
+       |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})}
     end
   end
 
@@ -210,7 +202,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("element_modified", %{"elements" => elements_json}, socket) do
     design = socket.assigns.design
+    current_element_count = length(design.elements || [])
+    new_element_count = length(elements_json || [])
 
+    # Safety check: Don't accidentally delete all elements if canvas sends empty array
+    # This can happen if the canvas isn't fully initialized when save is triggered
+    if new_element_count == 0 and current_element_count > 0 do
+      Logger.warning("element_modified received empty array but design has #{current_element_count} elements - ignoring to prevent data loss")
+      show_flash = Map.get(socket.assigns, :pending_save_flash, false)
+      socket = if show_flash do
+        socket
+        |> assign(:pending_save_flash, false)
+        |> put_flash(:error, "El canvas no está listo. Intenta guardar de nuevo.")
+      else
+        assign(socket, :pending_save_flash, false)
+      end
+      {:noreply, socket}
+    else
+      do_save_elements(socket, design, elements_json)
+    end
+  end
+
+  defp do_save_elements(socket, design, elements_json) do
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
         # Get the ID of the element that should remain selected
