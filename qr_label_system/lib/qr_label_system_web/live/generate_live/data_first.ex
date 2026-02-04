@@ -194,6 +194,16 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   end
 
   @impl true
+  def handle_event("continue_no_data", _params, socket) do
+    # Clear any existing data for this user
+    user_id = socket.assigns.current_user.id
+    QrLabelSystem.UploadDataStore.clear(user_id)
+
+    # Navigate to design selection with no_data flag
+    {:noreply, push_navigate(socket, to: ~p"/generate/design?no_data=true")}
+  end
+
+  @impl true
   def handle_event("back", _params, socket) do
     if socket.assigns.design_id do
       {:noreply, push_navigate(socket, to: ~p"/designs")}
@@ -308,7 +318,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
         </div>
 
         <!-- Method Selection Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <button
             phx-click="select_method"
             phx-value-method="file"
@@ -341,6 +351,24 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
               <div>
                 <h3 class={"font-semibold #{if @active_method == "paste", do: "text-purple-900", else: "text-gray-900"}"}>Pegar datos</h3>
                 <p class={"text-sm #{if @active_method == "paste", do: "text-purple-700", else: "text-gray-500"}"}>Copiar desde Excel</p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            phx-click="select_method"
+            phx-value-method="no_data"
+            class={"rounded-xl p-6 text-left transition-all border-2 #{if @active_method == "no_data", do: "border-amber-500 bg-amber-50 ring-2 ring-amber-200", else: "border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/50"}"}
+          >
+            <div class="flex items-center space-x-4">
+              <div class={"w-14 h-14 rounded-xl flex items-center justify-center #{if @active_method == "no_data", do: "bg-amber-500", else: "bg-amber-100"}"}>
+                <svg class={"w-7 h-7 #{if @active_method == "no_data", do: "text-white", else: "text-amber-600"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <div>
+                <h3 class={"font-semibold #{if @active_method == "no_data", do: "text-amber-900", else: "text-gray-900"}"}>Diseñar sin datos</h3>
+                <p class={"text-sm #{if @active_method == "no_data", do: "text-amber-700", else: "text-gray-500"}"}>Solo texto fijo</p>
               </div>
             </div>
           </button>
@@ -404,6 +432,30 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
               </button>
             <% end %>
           </form>
+        </div>
+
+        <!-- No Data Area -->
+        <div :if={@active_method == "no_data"} class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div class="text-center py-6">
+            <div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">Crear etiquetas con texto fijo</h3>
+            <p class="text-gray-600 mb-6 max-w-md mx-auto">
+              Diseña etiquetas sin vincular datos externos. Ideal para etiquetas con contenido estatico o cuando quieras definir el texto manualmente.
+            </p>
+            <button
+              phx-click="continue_no_data"
+              class="px-8 py-3 rounded-xl bg-amber-600 text-white hover:bg-amber-700 font-medium transition flex items-center space-x-2 mx-auto"
+            >
+              <span>Continuar al diseño</span>
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Paste Area -->
