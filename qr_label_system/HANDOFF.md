@@ -6,7 +6,76 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (4 febrero 2026) - Seguridad Completa + 3 Fixes Adicionales
+## Sesion Actual (4 febrero 2026) - Funcionalidades Pendientes (Revertidas)
+
+### Resumen Ejecutivo
+
+Se intento implementar dos funcionalidades que fueron **revertidas** por causar errores en el editor:
+
+| # | Tarea | Estado |
+|---|-------|--------|
+| 1 | Opcion "Disenar sin datos" en /generate/data | ❌ Revertido |
+| 2 | Fix race condition en binding mode del editor | ❌ Revertido |
+
+---
+
+### Tareas Pendientes para Proxima Sesion
+
+#### 1. Opcion "Disenar sin datos" (`/generate/data`)
+
+**Objetivo:** Agregar tercera opcion en `/generate/data` para crear etiquetas multiples sin necesidad de cargar Excel/CSV.
+
+**Archivos a modificar:**
+- `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Implementacion sugerida:**
+- Agregar tercera tarjeta en el grid (cambiar de 2 a 3 columnas)
+- Modal para especificar cantidad de etiquetas
+- Crear data source tipo "manual" con datos vacios
+- Redirigir al editor con el diseno creado
+
+---
+
+#### 2. Fix Binding Mode en Editor (Race Condition)
+
+**Problema:** Al hacer clic en "Vincular a columna" en un elemento de texto sin datos cargados, el boton vuelve automaticamente a "Texto fijo".
+
+**Causa raiz:** Race condition donde el evento `element_modified` (del canvas JS) sobrescribe `selected_element` con datos de la BD donde `binding=nil`.
+
+**Archivos a modificar:**
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+
+**Solucion propuesta:**
+```elixir
+# 1. Agregar assign en mount:
+|> assign(:binding_mode_override, false)
+
+# 2. En set_content_mode cuando mode="binding" y no hay columnas:
+{:noreply, assign(socket, :binding_mode_override, true)}
+
+# 3. Reset en element_selected y element_deselected:
+|> assign(:binding_mode_override, false)
+
+# 4. IMPORTANTE: Pasar a element_properties component:
+<.element_properties ... binding_mode_override={@binding_mode_override} />
+
+# 5. En template, usar condicion combinada:
+<%= if has_binding?(@element) or @binding_mode_override do %>
+```
+
+**Error que causo reversion:** No se paso `binding_mode_override` al componente `element_properties`, causando `KeyError` al seleccionar elementos.
+
+---
+
+#### 3. UI "Cargar datos" cuando no hay columnas
+
+**Objetivo:** Cuando el usuario selecciona "Vincular a columna" pero no hay datos cargados, mostrar mensaje con boton "Cargar datos" que lleva a `/generate/data?design_id=X`.
+
+**Ubicacion en template:** Dentro del bloque de binding mode en `element_properties`.
+
+---
+
+## Sesion Anterior (4 febrero 2026) - Seguridad Completa + 3 Fixes Adicionales
 
 ### Resumen Ejecutivo
 
