@@ -189,15 +189,33 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       el_id == id
     end)
 
-    # If element not found but we have a pending_selection_id matching this ID,
-    # keep the current selected_element (element_modified will sync it)
-    if is_nil(element) && Map.get(socket.assigns, :pending_selection_id) == id do
-      {:noreply, socket}
-    else
-      {:noreply,
-       socket
-       |> assign(:selected_element, element)
-       |> assign(:show_binding_mode, false)}
+    pending_id = Map.get(socket.assigns, :pending_selection_id)
+
+    cond do
+      # If we have a pending operation for this element, keep current state
+      # This prevents race conditions where element_selected fires with stale data
+      # before element_modified completes the update
+      pending_id == id ->
+        {:noreply, socket}
+
+      # Element not found - might be transitional state
+      is_nil(element) ->
+        {:noreply, socket}
+
+      # Normal selection - update element but preserve show_binding_mode if element has binding
+      true ->
+        # Only reset show_binding_mode if the element doesn't have a binding
+        # This preserves binding mode when re-selecting an element in binding mode
+        new_show_binding_mode = if has_binding?(element) do
+          socket.assigns.show_binding_mode
+        else
+          false
+        end
+
+        {:noreply,
+         socket
+         |> assign(:selected_element, element)
+         |> assign(:show_binding_mode, new_show_binding_mode)}
     end
   end
 
@@ -449,10 +467,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           # For text elements, sync binding to canvas immediately
           # QR/barcode will sync when user selects a column (to avoid recreation issues)
+          # IMPORTANT: Set show_binding_mode=true to keep UI in binding mode
+          # even if element_selected fires with stale data before element_modified completes
           socket = socket
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
-            |> assign(:show_binding_mode, false)
+            |> assign(:show_binding_mode, true)
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
