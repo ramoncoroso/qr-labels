@@ -1252,3 +1252,93 @@ saveElementsImmediate() {
 7. Hacer clic en Rehacer (↪) - Texto vuelve
 8. Verificar que los cambios se reflejan tanto en canvas como en capas
 ```
+
+---
+
+## Cambios Implementados (2026-02-04 Continuación) - Reorganización Header
+
+### Resumen
+
+Se reorganizó completamente la barra superior del editor para mejorar la accesibilidad de los controles y optimizar el espacio.
+
+### ✅ Nueva estructura del Header (3 secciones)
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+```
+┌──────────────┬──────────────────────────────────────────────────────┬───────────────────────┐
+│  Izquierda   │                        Centro                        │       Derecha         │
+├──────────────┼──────────────────────────────────────────────────────┼───────────────────────┤
+│ ← Volver     │ [↩] [↪] | [🔍-] [100%] [🔍+] [⛶] | 100.0 × 100.0 mm │ Vista previa  Guardar │
+│ Nombre       │                                                      │                       │
+└──────────────┴──────────────────────────────────────────────────────┴───────────────────────┘
+```
+
+**Cambios realizados:**
+
+1. **Undo/Redo movidos al centro del header:**
+   - Botones con fondo `bg-gray-100`, iconos de 20px (w-5 h-5)
+   - Estados deshabilitados visualmente (`bg-gray-50 text-gray-300 cursor-not-allowed`)
+   - Tooltips con atajos de teclado (Ctrl+Z, Ctrl+Y)
+
+2. **Zoom movido al centro del header:**
+   - Mismos estilos que undo/redo para consistencia visual
+   - Separado de undo/redo por línea vertical
+   - Incluye: zoom out, porcentaje (clickeable para reset), zoom in, fit to view
+
+3. **Dimensiones movidas al centro:**
+   - A la derecha de los controles de zoom
+   - Separadas por línea vertical
+   - Formato: `100.0 × 100.0 mm`
+
+4. **Toolbar del canvas simplificada:**
+   - Eliminados undo/redo y zoom (ahora en header)
+   - Padding reducido de `p-8` a `p-4`
+   - Eliminado `justify-center` para subir el canvas
+   - Solo muestra controles de **alineación** cuando hay 2+ elementos seleccionados
+
+### Beneficios
+
+- **Mejor accesibilidad:** Controles principales siempre visibles en el header
+- **Más espacio para el canvas:** Toolbar simplificada, menos elementos flotantes
+- **Consistencia visual:** Todos los controles principales en la misma zona
+- **Información contextual:** Dimensiones siempre visibles junto a los controles
+
+---
+
+## Archivos Modificados (2026-02-04 Continuación)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system_web/live/design_live/editor.ex` | +73/-71 líneas: header 3 secciones, toolbar simplificada |
+
+---
+
+## Próximos Pasos (Plan de Continuación)
+
+### 🔴 Alta Prioridad
+
+1. **Reglas visuales (rulers)**
+   - Agregar reglas en mm alrededor del canvas
+   - Sincronizar con zoom del canvas
+
+2. **Probar los cambios del header**
+   - Verificar undo/redo funcionando desde el header
+   - Verificar zoom funcionando desde el header
+   - Verificar alineación aparece solo con 2+ elementos
+
+### 🟠 Media Prioridad
+
+3. **Mejorar feedback visual**
+   - Indicador de guardado automático
+   - Toast notifications para acciones
+
+4. **Atajos de teclado adicionales**
+   - Ctrl+S para guardar
+   - Delete para eliminar elemento seleccionado
+
+### 🟡 Baja Prioridad
+
+5. **Optimizaciones de rendimiento**
+   - Debounce en auto-save
+   - Lazy loading de elementos pesados

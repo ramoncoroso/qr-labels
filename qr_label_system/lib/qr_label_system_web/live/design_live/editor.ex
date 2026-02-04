@@ -1220,6 +1220,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     <div class="h-screen flex flex-col bg-gray-100" id="editor-container" phx-hook="KeyboardShortcuts">
       <!-- Header -->
       <div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
+        <!-- Left: Back + Name + Dimensions -->
         <div class="flex items-center space-x-4">
           <.link navigate={~p"/designs"} class="flex items-center space-x-2 text-gray-500 hover:text-gray-700">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1265,51 +1266,79 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </button>
               </div>
             <% end %>
-            <div class="flex items-center space-x-3 text-xs text-gray-500">
-              <span><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
-              <span class="text-gray-300">|</span>
-              <div class="flex items-center space-x-1">
-                <button
-                  phx-click="zoom_out"
-                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
-                  title="Alejar (-25%)"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                  </svg>
-                </button>
-                <button
-                  phx-click="zoom_reset"
-                  class="px-1.5 py-0.5 font-medium text-gray-600 hover:bg-gray-100 rounded transition min-w-[40px] text-center"
-                  title="Restablecer al 100%"
-                >
-                  <%= @zoom %>%
-                </button>
-                <button
-                  phx-click="zoom_in"
-                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
-                  title="Acercar (+25%)"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                  </svg>
-                </button>
-                <button
-                  phx-click="fit_to_view"
-                  class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
-                  title="Ajustar a la vista"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                  </svg>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 
+        <!-- Center: Undo/Redo + Zoom Controls -->
+        <div class="flex items-center space-x-1">
+          <!-- Undo/Redo -->
+          <button
+            phx-click="undo"
+            disabled={!@can_undo}
+            class={"p-2 rounded-lg transition #{if @can_undo, do: "bg-gray-100 hover:bg-gray-200 text-gray-700", else: "bg-gray-50 text-gray-300 cursor-not-allowed"}"}
+            title="Deshacer (Ctrl+Z)"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+          </button>
+          <button
+            phx-click="redo"
+            disabled={!@can_redo}
+            class={"p-2 rounded-lg transition #{if @can_redo, do: "bg-gray-100 hover:bg-gray-200 text-gray-700", else: "bg-gray-50 text-gray-300 cursor-not-allowed"}"}
+            title="Rehacer (Ctrl+Y)"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+            </svg>
+          </button>
+
+          <div class="w-px h-6 bg-gray-300 mx-2"></div>
+
+          <!-- Zoom -->
+          <button
+            phx-click="zoom_out"
+            class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+            title="Alejar (-25%)"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+            </svg>
+          </button>
+          <button
+            phx-click="zoom_reset"
+            class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm min-w-[60px] transition"
+            title="Restablecer al 100%"
+          >
+            <%= @zoom %>%
+          </button>
+          <button
+            phx-click="zoom_in"
+            class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+            title="Acercar (+25%)"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+            </svg>
+          </button>
+          <button
+            phx-click="fit_to_view"
+            class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+            title="Ajustar a la vista"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+
+          <div class="w-px h-6 bg-gray-300 mx-2"></div>
+
+          <!-- Dimensions -->
+          <span class="text-sm text-gray-500 font-medium"><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
+        </div>
+
+        <!-- Right: Preview + Save -->
         <div class="flex items-center space-x-2">
-          <!-- Preview Toggle -->
           <button
             phx-click="toggle_preview"
             class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_preview, do: "bg-indigo-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
@@ -1422,35 +1451,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
 
         <!-- Canvas Area - grows but doesn't push sidebars -->
-        <div class="flex-1 min-w-0 overflow-auto p-8 flex flex-col items-center justify-center">
-          <!-- Toolbar -->
-          <div class="mb-4 flex items-center space-x-2 flex-wrap gap-y-2">
-            <!-- Undo/Redo Controls -->
-            <div class="flex items-center space-x-1 bg-white rounded-lg shadow-md px-3 py-2">
-              <button
-                phx-click="undo"
-                disabled={!@can_undo}
-                class={"p-1.5 rounded-md transition #{if @can_undo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
-                title="Deshacer (Ctrl+Z)"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-              </button>
-              <button
-                phx-click="redo"
-                disabled={!@can_redo}
-                class={"p-1.5 rounded-md transition #{if @can_redo, do: "hover:bg-gray-100 text-gray-600", else: "text-gray-300 cursor-not-allowed"}"}
-                title="Rehacer (Ctrl+Y)"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                </svg>
-              </button>
-            </div>
-
-            <!-- Alignment Controls (shown when multiple elements selected) -->
-            <div :if={length(@selected_elements) > 1} class="flex items-center space-x-1 bg-white rounded-lg shadow-md px-3 py-2">
+        <div class="flex-1 min-w-0 overflow-auto p-4 flex flex-col items-center">
+          <!-- Alignment Toolbar (shown when multiple elements selected) -->
+          <div :if={length(@selected_elements) > 1} class="mb-3 flex items-center space-x-1 bg-white rounded-lg shadow-md px-3 py-2">
               <span class="text-xs text-gray-500 font-medium mr-1">ALINEAR</span>
               <button phx-click="align_elements" phx-value-direction="left" class="p-1.5 rounded hover:bg-gray-100" title="Alinear izquierda">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16M8 8h12M8 16h8" /></svg>
@@ -1478,7 +1481,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <button :if={length(@selected_elements) > 2} phx-click="distribute_elements" phx-value-direction="vertical" class="p-1.5 rounded hover:bg-gray-100" title="Distribuir vertical">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16M6 12h12M4 20h16" /></svg>
               </button>
-            </div>
           </div>
 
           <div class="relative max-w-full max-h-full overflow-hidden">
