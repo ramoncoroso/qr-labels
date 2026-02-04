@@ -16,7 +16,7 @@ defmodule QrLabelSystem.Security.FileSanitizer do
   - File size validation
   """
 
-  @allowed_extensions ~w(.xlsx .xls .csv .png .jpg .jpeg .gif .svg)
+  @allowed_extensions ~w(.xlsx .xls .csv .png .jpg .jpeg .gif)  # SVG blocked for XSS security
   @max_filename_length 255
   @max_file_size_mb 10
 
@@ -292,8 +292,7 @@ defmodule QrLabelSystem.Security.FileSanitizer do
   defp mime_matches?(:jpeg, ".jpg"), do: true
   defp mime_matches?(:jpeg, ".jpeg"), do: true
   defp mime_matches?(:gif, ".gif"), do: true
-  defp mime_matches?(:svg, ".svg"), do: true
-  defp mime_matches?(:xml, ".svg"), do: true  # SVG can start with XML declaration
+  # SVG blocked for XSS security - no mime_matches for .svg
   # CSV is plain text
   defp mime_matches?(:text, ".csv"), do: true
   defp mime_matches?(:unknown, ".csv"), do: true

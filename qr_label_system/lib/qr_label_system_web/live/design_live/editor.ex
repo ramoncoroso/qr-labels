@@ -1,6 +1,8 @@
 defmodule QrLabelSystemWeb.DesignLive.Editor do
   use QrLabelSystemWeb, :live_view
 
+  require Logger
+
   alias QrLabelSystem.Designs
   alias QrLabelSystem.Designs.Design
 
@@ -60,7 +62,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:rename_value, design.name)
        |> assign(:canvas_loaded, false)
        |> allow_upload(:element_image,
-         accept: ~w(.png .jpg .jpeg .gif .svg),
+         accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
          max_file_size: 2_000_000,
          auto_upload: true)}
@@ -225,8 +227,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         {:noreply, socket}
 
       {:error, changeset} ->
-        IO.puts("[SAVE ERROR] Failed to save design #{design.id}")
-        IO.inspect(changeset.errors, label: "Changeset errors")
+        Logger.error("Failed to save design #{design.id}: #{inspect(changeset.errors)}")
         {:noreply,
          socket
          |> assign(:pending_save_flash, false)
@@ -601,7 +602,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("upload_element_image", %{"element_id" => element_id}, socket) do
-    IO.puts("[DEBUG] upload_element_image called with element_id: #{inspect(element_id)}")
+    Logger.debug("upload_element_image called with element_id: #{inspect(element_id)}")
 
     # Handle empty element_id
     if element_id == "" or is_nil(element_id) do
@@ -613,15 +614,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           {:ok, binary} = File.read(path)
           base64 = Base.encode64(binary)
           mime_type = entry.client_type || "image/png"
-          IO.puts("[DEBUG] Processed file: #{entry.client_name}, type: #{mime_type}")
+          Logger.debug("Processed file: #{entry.client_name}, type: #{mime_type}")
           {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
         end)
 
-      IO.puts("[DEBUG] uploaded_files count: #{length(uploaded_files)}")
+      Logger.debug("uploaded_files count: #{length(uploaded_files)}")
 
       case uploaded_files do
         [{:ok, %{data: image_data, filename: filename}}] ->
-          IO.puts("[DEBUG] Pushing update_element_image event for element: #{element_id}")
+          Logger.debug("Pushing update_element_image event for element: #{element_id}")
           {:noreply,
            socket
            |> push_event("update_element_image", %{

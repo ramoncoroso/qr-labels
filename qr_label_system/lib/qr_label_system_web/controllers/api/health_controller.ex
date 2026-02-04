@@ -21,14 +21,14 @@ defmodule QrLabelSystemWeb.API.HealthController do
     status = if db_status == :ok, do: :ok, else: :error
     http_status = if status == :ok, do: 200, else: 503
 
+    # Note: Version intentionally omitted from public endpoint for security
     json(conn |> put_status(http_status), %{
       status: status,
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
       checks: %{
         database: db_status,
         application: :ok
-      },
-      version: Application.spec(:qr_label_system, :vsn) |> to_string()
+      }
     })
   end
 
@@ -106,12 +106,11 @@ defmodule QrLabelSystemWeb.API.HealthController do
   end
 
   defp get_pool_info do
-    try do
-      # Get pool status from DBConnection
-      %{size: 10, checked_out: 0}  # Default values
-    rescue
-      _ -> %{size: 0, checked_out: 0}
-    end
+    # Pool metrics are not reliably available via public APIs
+    # Return configured pool size from repo config, not simulated values
+    repo_config = Application.get_env(:qr_label_system, QrLabelSystem.Repo, [])
+    pool_size = Keyword.get(repo_config, :pool_size, 10)
+    %{size: pool_size, checked_out: :unavailable}
   end
 
   defp check_cache do

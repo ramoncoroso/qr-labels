@@ -31,7 +31,7 @@ defmodule QrLabelSystemWeb.DesignLive.EditorDebug do
      |> assign(:snap_enabled, true)
      |> assign(:snap_threshold, 5)
      |> allow_upload(:element_image,
-       accept: ~w(.png .jpg .jpeg .gif .svg),
+       accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
        max_entries: 1,
        max_file_size: 2_000_000)}
   end

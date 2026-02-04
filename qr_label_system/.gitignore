@@ -49,3 +49,7 @@ qr_label_system-*.tar
 # OS files
 .DS_Store
 Thumbs.db
+
+# Credentials/Secrets
+cookie.txt
+*.cookie

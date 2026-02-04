@@ -164,11 +164,17 @@ defmodule QrLabelSystemWeb.Router do
     post "/data-sources/test-connection", DataSourceController, :test_connection
   end
 
-  # Health check endpoint (public, no auth required)
+  # Health check endpoint (public, minimal info for load balancers)
   scope "/api", QrLabelSystemWeb.API do
     pipe_through :api
 
     get "/health", HealthController, :check
+  end
+
+  # Detailed health/metrics (admin only - exposes system info)
+  scope "/api", QrLabelSystemWeb.API do
+    pipe_through [:api_auth, :admin_only]
+
     get "/health/detailed", HealthController, :detailed
     get "/metrics", HealthController, :metrics
   end
