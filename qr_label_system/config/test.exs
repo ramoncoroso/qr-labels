@@ -1,5 +1,8 @@
 import Config
 
+# Mark this as test environment
+config :qr_label_system, env: :test
+
 # Configure your database
 config :qr_label_system, QrLabelSystem.Repo,
   username: "coroso",

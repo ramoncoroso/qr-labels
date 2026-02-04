@@ -35,48 +35,32 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   @doc """
   Validates a SQL query with comprehensive security checks.
   Only allows safe SELECT queries.
+
+  IMPORTANT: For production use, also configure the database connection
+  with a read-only user that only has SELECT privileges on specific tables.
+  This provides defense-in-depth against SQL injection.
   """
   def validate_query(query) when is_binary(query) do
-    query = String.trim(query)
-
-    # Define dangerous patterns that should never appear in queries
-    dangerous_patterns = [
-      # DDL statements
-      ~r/\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE|GRANT|REVOKE)\b/i,
-      # Command execution
-      ~r/\b(EXEC|EXECUTE|xp_|sp_)\b/i,
-      # Comments (can be used to bypass filters)
-      ~r/(--|\/\*|\*\/|#)/,
-      # UNION-based injection attempts
-      ~r/\bUNION\s+(ALL\s+)?SELECT\b/i,
-      # Stacked queries
-      ~r/;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC)/i,
-      # Sleep/benchmark attacks
-      ~r/\b(SLEEP|BENCHMARK|WAITFOR|PG_SLEEP)\s*\(/i,
-      # File operations
-      ~r/\b(LOAD_FILE|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b/i,
-      # Information schema exploitation
-      ~r/\bINFORMATION_SCHEMA\b/i,
-      # Hex encoding (bypass attempts)
-      ~r/0x[0-9a-fA-F]+/,
-      # Char/chr functions (bypass attempts)
-      ~r/\b(CHAR|CHR|CONCAT)\s*\(/i
-    ]
+    # Normalize Unicode to prevent bypass with fullwidth characters (e.g., ＤＥＬＥＴＥ)
+    normalized_query =
+      query
+      |> String.trim()
+      |> normalize_unicode()
 
     cond do
-      String.length(query) == 0 ->
+      String.length(normalized_query) == 0 ->
         {:error, "Query cannot be empty"}
 
-      String.length(query) > 10_000 ->
+      String.length(normalized_query) > 10_000 ->
         {:error, "Query is too long (max 10,000 characters)"}
 
-      not String.match?(query, ~r/^\s*SELECT\b/i) ->
+      not String.match?(normalized_query, ~r/^\s*SELECT\b/i) ->
         {:error, "Only SELECT queries are allowed"}
 
-      String.match?(query, ~r/;\s*\w/i) ->
+      String.match?(normalized_query, ~r/;\s*\w/i) ->
         {:error, "Multiple statements are not allowed"}
 
-      Enum.any?(dangerous_patterns, &String.match?(query, &1)) ->
+      has_dangerous_pattern?(normalized_query) ->
         {:error, "Query contains potentially dangerous patterns"}
 
       true ->
@@ -85,6 +69,80 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   end
 
   def validate_query(_), do: {:error, "Query must be a string"}
+
+  # Normalize fullwidth Unicode characters to ASCII equivalents
+  # Prevents bypass attempts using characters like Ａ-Ｚ (U+FF21-U+FF3A)
+  defp normalize_unicode(query) do
+    query
+    |> String.to_charlist()
+    |> Enum.map(&normalize_char/1)
+    |> List.to_string()
+  end
+
+  # Fullwidth ASCII variants (U+FF01-U+FF5E) map to ASCII (U+0021-U+007E)
+  defp normalize_char(char) when char >= 0xFF01 and char <= 0xFF5E do
+    char - 0xFF01 + 0x0021
+  end
+  defp normalize_char(char), do: char
+
+  defp has_dangerous_pattern?(query) do
+    Enum.any?(dangerous_patterns(), &String.match?(query, &1))
+  end
+
+  defp dangerous_patterns do
+    [
+      # DDL/DML statements
+      ~r/\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|MERGE)\b/i,
+
+      # SELECT INTO (creates tables)
+      ~r/\bSELECT\b[^;]*\bINTO\s+(OUTFILE|DUMPFILE|TEMPORARY|TABLE|\w+\.\w+|\w+)\b/i,
+
+      # CTEs can wrap dangerous operations
+      ~r/\bWITH\s+\w+\s+(AS\s*)?\(/i,
+
+      # Comments (bypass filters)
+      ~r/(--|\/\*|\*\/|#)/,
+
+      # UNION-based injection
+      ~r/\bUNION\s+(ALL\s+)?SELECT\b/i,
+
+      # Stacked queries
+      ~r/;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|WITH)/i,
+
+      # PostgreSQL dangerous functions
+      ~r/\b(pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file)\s*\(/i,
+      ~r/\b(lo_import|lo_export|lo_get|lo_put)\s*\(/i,
+      ~r/\b(pg_sleep|pg_terminate_backend|pg_cancel_backend)\s*\(/i,
+      ~r/\b(dblink|dblink_exec|dblink_connect)\s*\(/i,
+      ~r/\bCOPY\s+\w+\s+(FROM|TO)\b/i,
+
+      # MySQL dangerous functions and operations
+      ~r/\b(LOAD_FILE|LOAD\s+DATA)\s*[\(\s]/i,
+      ~r/\bINTO\s+(OUTFILE|DUMPFILE)\b/i,
+      ~r/\b(BENCHMARK|SLEEP)\s*\(/i,
+
+      # SQL Server dangerous operations
+      ~r/\b(xp_|sp_)\w+/i,
+      ~r/\b(EXEC|EXECUTE)\s*[\(\s@]/i,
+      ~r/\b(OPENROWSET|OPENDATASOURCE|OPENQUERY)\s*\(/i,
+      ~r/\bWAITFOR\s+(DELAY|TIME)\b/i,
+      ~r/\bBULK\s+INSERT\b/i,
+
+      # Information schema (recon)
+      ~r/\bINFORMATION_SCHEMA\b/i,
+      ~r/\bpg_catalog\b/i,
+      ~r/\bsys\.(databases|tables|columns|objects)\b/i,
+
+      # Hex encoding (bypass attempts)
+      ~r/0x[0-9a-fA-F]{4,}/,
+
+      # String manipulation functions (often used for bypass)
+      ~r/\b(CHAR|CHR|UNHEX|CONV)\s*\(/i,
+
+      # Dynamic SQL construction
+      ~r/\b(PREPARE|DEALLOCATE)\s+\w+/i
+    ]
+  end
 
   # Connection functions
 

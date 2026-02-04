@@ -298,4 +298,59 @@ defmodule QrLabelSystem.Security.FileSanitizer do
   defp mime_matches?(:unknown, ".csv"), do: true
   # Reject mismatches
   defp mime_matches?(_, _), do: false
+
+  @doc """
+  Detects the MIME type of a file by reading its magic bytes.
+  Returns `{:ok, mime_type}` or `{:error, reason}`.
+
+  ## Examples
+
+      iex> detect_mime_type_from_file("/path/to/image.png")
+      {:ok, "image/png"}
+
+      iex> detect_mime_type_from_file("/path/to/unknown")
+      {:ok, "application/octet-stream"}
+  """
+  def detect_mime_type_from_file(file_path) do
+    case File.open(file_path, [:read, :binary]) do
+      {:ok, file} ->
+        header = IO.binread(file, 8)
+        File.close(file)
+        {:ok, atom_to_mime(detect_mime_type(header))}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Validates that a file's content matches one of the allowed image types.
+  Returns `{:ok, mime_type}` if valid, `{:error, reason}` otherwise.
+
+  Allowed image types: PNG, JPEG, GIF
+  """
+  def validate_image_content(file_path) do
+    case detect_mime_type_from_file(file_path) do
+      {:ok, mime} when mime in ~w(image/png image/jpeg image/gif) ->
+        {:ok, mime}
+
+      {:ok, _other} ->
+        {:error, :invalid_image_type}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Convert internal atom to MIME type string
+  defp atom_to_mime(:png), do: "image/png"
+  defp atom_to_mime(:jpeg), do: "image/jpeg"
+  defp atom_to_mime(:gif), do: "image/gif"
+  defp atom_to_mime(:xlsx), do: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  defp atom_to_mime(:xls), do: "application/vnd.ms-excel"
+  defp atom_to_mime(:text), do: "text/plain"
+  defp atom_to_mime(:csv), do: "text/csv"
+  defp atom_to_mime(:xml), do: "application/xml"
+  defp atom_to_mime(:svg), do: "image/svg+xml"
+  defp atom_to_mime(_), do: "application/octet-stream"
 end

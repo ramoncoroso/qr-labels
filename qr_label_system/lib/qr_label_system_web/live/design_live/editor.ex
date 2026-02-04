@@ -5,6 +5,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.Designs.Design
+  alias QrLabelSystem.Security.FileSanitizer
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -610,12 +611,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     else
       uploaded_files =
         consume_uploaded_entries(socket, :element_image, fn %{path: path}, entry ->
-          # Read file and convert to base64
-          {:ok, binary} = File.read(path)
-          base64 = Base.encode64(binary)
-          mime_type = entry.client_type || "image/png"
-          Logger.debug("Processed file: #{entry.client_name}, type: #{mime_type}")
-          {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
+          # Validate file content using magic bytes (not client-provided MIME type)
+          case FileSanitizer.validate_image_content(path) do
+            {:ok, mime_type} ->
+              {:ok, binary} = File.read(path)
+              base64 = Base.encode64(binary)
+              Logger.debug("Processed file: #{entry.client_name}, validated type: #{mime_type}")
+              {:ok, %{data: "data:#{mime_type};base64,#{base64}", filename: entry.client_name}}
+
+            {:error, :invalid_image_type} ->
+              Logger.warning("Rejected file #{entry.client_name}: invalid image type (magic bytes mismatch)")
+              {:error, :invalid_image_type}
+
+            {:error, reason} ->
+              Logger.warning("Failed to validate file #{entry.client_name}: #{inspect(reason)}")
+              {:error, reason}
+          end
         end)
 
       Logger.debug("uploaded_files count: #{length(uploaded_files)}")
@@ -631,6 +642,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
              image_filename: filename
            })
            |> put_flash(:info, "Imagen subida correctamente")}
+
+        [{:error, :invalid_image_type}] ->
+          {:noreply, put_flash(socket, :error, "Tipo de archivo no válido. Solo se permiten imágenes PNG, JPEG o GIF.")}
 
         _ ->
           {:noreply, put_flash(socket, :error, "Error al subir la imagen")}

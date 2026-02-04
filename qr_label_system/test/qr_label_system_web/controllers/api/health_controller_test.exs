@@ -11,7 +11,8 @@ defmodule QrLabelSystemWeb.API.HealthControllerTest do
       assert is_binary(response["timestamp"])
       assert is_map(response["checks"])
       assert response["checks"]["application"] == "ok"
-      assert is_binary(response["version"])
+      # Version intentionally omitted from public endpoint for security
+      refute Map.has_key?(response, "version")
     end
 
     test "does not require authentication", %{conn: conn} do
@@ -32,14 +33,6 @@ defmodule QrLabelSystemWeb.API.HealthControllerTest do
 
       # Timestamp should be parseable
       assert {:ok, _, _} = DateTime.from_iso8601(response["timestamp"])
-    end
-
-    test "returns correct version format", %{conn: conn} do
-      conn = get(conn, ~p"/api/health")
-      response = json_response(conn, 200)
-
-      # Version should be a semantic version string
-      assert response["version"] =~ ~r/^\d+\.\d+\.\d+$/
     end
 
     test "includes database check in response", %{conn: conn} do

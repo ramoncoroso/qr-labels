@@ -195,12 +195,15 @@ mix phx.server
 
 Abrir [http://localhost:4000](http://localhost:4000)
 
-### Credenciales de Desarrollo
+### Usuario Admin de Desarrollo
 
-| Campo | Valor |
-|-------|-------|
-| Email | `admin@example.com` |
-| Password | `admin123456` |
+Para crear un usuario administrador en desarrollo, ejecuta los seeds:
+
+```bash
+mix run priv/repo/seeds.exs
+```
+
+Los seeds crean un usuario admin con credenciales configurables. Ver `priv/repo/seeds.exs` para detalles.
 
 ---
 

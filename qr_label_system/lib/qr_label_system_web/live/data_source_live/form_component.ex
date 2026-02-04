@@ -58,6 +58,14 @@ defmodule QrLabelSystemWeb.DataSourceLive.FormComponent do
               placeholder="SELECT * FROM tabla WHERE ..."
             />
 
+            <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <p class="text-sm text-amber-800">
+                <span class="font-medium">Recomendación de seguridad:</span>
+                Use un usuario de base de datos con permisos de solo lectura (SELECT).
+                Esto protege sus datos aunque las credenciales sean comprometidas.
+              </p>
+            </div>
+
             <div class="mt-4">
               <button
                 type="button"

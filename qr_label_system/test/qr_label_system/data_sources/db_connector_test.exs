@@ -208,8 +208,9 @@ defmodule QrLabelSystem.DataSources.DbConnectorTest do
       assert {:error, _} = DbConnector.validate_query("SELECT CHR(65)")
     end
 
-    test "rejects CONCAT function" do
-      assert {:error, _} = DbConnector.validate_query("SELECT CONCAT('ad', 'min')")
+    test "allows CONCAT function (legitimate SQL)" do
+      # CONCAT is a legitimate SQL function, not a security risk by itself
+      assert :ok = DbConnector.validate_query("SELECT CONCAT(first_name, ' ', last_name) FROM users")
     end
   end
 
@@ -256,6 +257,148 @@ defmodule QrLabelSystem.DataSources.DbConnectorTest do
 
     test "accepts leading whitespace" do
       assert :ok = DbConnector.validate_query("   SELECT * FROM users")
+    end
+  end
+
+  describe "validate_query/1 - Unicode bypass prevention" do
+    test "rejects fullwidth DELETE" do
+      # ＤＥＬＥＴＥ in fullwidth characters
+      assert {:error, _} = DbConnector.validate_query("ＳＥＬＥＣＴ 1; ＤＥＬＥＴＥ FROM users")
+    end
+
+    test "rejects fullwidth DROP" do
+      # ＤＲＯＰ in fullwidth characters
+      assert {:error, _} = DbConnector.validate_query("ＳＥＬＥＣＴ 1; ＤＲＯＰ TABLE users")
+    end
+
+    test "normalizes fullwidth SELECT correctly" do
+      # ＳＥＬＥＣＴ should be normalized to SELECT and accepted
+      assert :ok = DbConnector.validate_query("ＳＥＬＥＣＴ * FROM users")
+    end
+  end
+
+  describe "validate_query/1 - PostgreSQL specific prevention" do
+    test "rejects pg_read_file" do
+      assert {:error, _} = DbConnector.validate_query("SELECT pg_read_file('/etc/passwd')")
+    end
+
+    test "rejects pg_read_binary_file" do
+      assert {:error, _} = DbConnector.validate_query("SELECT pg_read_binary_file('/etc/passwd')")
+    end
+
+    test "rejects pg_ls_dir" do
+      assert {:error, _} = DbConnector.validate_query("SELECT pg_ls_dir('/tmp')")
+    end
+
+    test "rejects lo_import" do
+      assert {:error, _} = DbConnector.validate_query("SELECT lo_import('/etc/passwd')")
+    end
+
+    test "rejects lo_export" do
+      assert {:error, _} = DbConnector.validate_query("SELECT lo_export(12345, '/tmp/out.txt')")
+    end
+
+    test "rejects COPY command" do
+      assert {:error, _} = DbConnector.validate_query("COPY users FROM '/tmp/data.csv'")
+    end
+
+    test "rejects dblink" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM dblink('host=attacker.com', 'SELECT 1')")
+    end
+
+    test "rejects pg_catalog access" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM pg_catalog.pg_tables")
+    end
+
+    test "rejects pg_terminate_backend" do
+      assert {:error, _} = DbConnector.validate_query("SELECT pg_terminate_backend(12345)")
+    end
+  end
+
+  describe "validate_query/1 - SQL Server specific prevention" do
+    test "rejects OPENROWSET" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM OPENROWSET('SQLOLEDB', 'Server=attacker')")
+    end
+
+    test "rejects OPENDATASOURCE" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM OPENDATASOURCE('SQLOLEDB', 'Server=attacker').db.dbo.users")
+    end
+
+    test "rejects OPENQUERY" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM OPENQUERY(linkedserver, 'SELECT 1')")
+    end
+
+    test "rejects BULK INSERT" do
+      assert {:error, _} = DbConnector.validate_query("BULK INSERT users FROM '/tmp/data.csv'")
+    end
+
+    test "rejects sys.databases access" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM sys.databases")
+    end
+
+    test "rejects sys.tables access" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * FROM sys.tables")
+    end
+
+    test "rejects WAITFOR DELAY" do
+      assert {:error, _} = DbConnector.validate_query("SELECT 1; WAITFOR DELAY '00:00:05'")
+    end
+
+    test "rejects WAITFOR TIME" do
+      assert {:error, _} = DbConnector.validate_query("SELECT 1; WAITFOR TIME '23:00'")
+    end
+  end
+
+  describe "validate_query/1 - SELECT INTO prevention" do
+    test "rejects SELECT INTO table" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * INTO new_table FROM users")
+    end
+
+    test "rejects SELECT INTO with schema" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * INTO dbo.new_table FROM users")
+    end
+
+    test "rejects SELECT INTO TEMPORARY" do
+      assert {:error, _} = DbConnector.validate_query("SELECT * INTO TEMPORARY temp_users FROM users")
+    end
+  end
+
+  describe "validate_query/1 - CTE prevention" do
+    test "rejects WITH clause (CTE)" do
+      assert {:error, _} = DbConnector.validate_query("WITH cte AS (SELECT 1) SELECT * FROM cte")
+    end
+
+    test "rejects WITH recursive CTE" do
+      assert {:error, _} = DbConnector.validate_query("WITH RECURSIVE r AS (SELECT 1) SELECT * FROM r")
+    end
+
+    test "rejects WITH used for malicious operations" do
+      # CTEs can wrap DELETE operations in some databases
+      assert {:error, _} = DbConnector.validate_query("WITH x AS (DELETE FROM users RETURNING *) SELECT * FROM x")
+    end
+  end
+
+  describe "validate_query/1 - MySQL specific prevention" do
+    test "rejects LOAD DATA" do
+      assert {:error, _} = DbConnector.validate_query("LOAD DATA INFILE '/tmp/data.csv' INTO TABLE users")
+    end
+
+    test "rejects UNHEX function" do
+      assert {:error, _} = DbConnector.validate_query("SELECT UNHEX('414243')")
+    end
+
+    test "rejects CONV function" do
+      assert {:error, _} = DbConnector.validate_query("SELECT CONV('a', 16, 10)")
+    end
+  end
+
+  describe "validate_query/1 - dynamic SQL prevention" do
+    test "rejects PREPARE statement" do
+      assert {:error, _} = DbConnector.validate_query("PREPARE stmt FROM 'SELECT * FROM users'")
+    end
+
+    test "rejects DEALLOCATE statement" do
+      assert {:error, _} = DbConnector.validate_query("DEALLOCATE PREPARE stmt")
     end
   end
 end

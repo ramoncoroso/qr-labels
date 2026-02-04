@@ -14,6 +14,9 @@ config :hammer,
   ]}
 
 if config_env() == :prod do
+  # Mark this as production environment (used by health controller to hide sensitive info)
+  config :qr_label_system, env: :prod
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise """

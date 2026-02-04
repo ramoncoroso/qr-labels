@@ -51,85 +51,81 @@ El archivo `.env` fue creado con el nuevo `SECRET_KEY_BASE`, pero el proyecto no
 
 ## [SEGURIDAD] Validar MIME type con magic bytes en uploads
 
-**Estado**: Pendiente
+**Estado**: ✅ Completado
 **Riesgo**: Medio
 **Esfuerzo**: Bajo
 
-**Problema**:
-El upload de imágenes en `editor.ex:616` confía en `entry.client_type` (controlado por el cliente). Un atacante podría enviar archivos polyglot con extensión válida pero contenido malicioso.
+**Solución implementada**:
+1. Añadida función `FileSanitizer.validate_image_content/1` que valida magic bytes
+2. Añadida función `FileSanitizer.detect_mime_type_from_file/1` para detección de MIME type
+3. Modificado handler de upload en `editor.ex` para usar validación de magic bytes
+4. El MIME type ahora se detecta del contenido real, no del `client_type` enviado por el cliente
+5. Solo se permiten imágenes PNG, JPEG y GIF (SVG bloqueado por riesgo XSS)
+6. 43 tests verifican la funcionalidad
 
-**Solución**:
-Usar `FileSanitizer.validate_file_content/2` que ya existe pero no se usa en el flujo de upload de imágenes.
-
-**Archivos a modificar**:
-- `lib/qr_label_system_web/live/design_live/editor.ex` - agregar validación de magic bytes antes de procesar
+**Archivos modificados**:
+- `lib/qr_label_system/security/file_sanitizer.ex` - nuevas funciones de validación
+- `lib/qr_label_system_web/live/design_live/editor.ex` - usa validación de magic bytes
+- `test/qr_label_system/security/file_sanitizer_test.exs` - tests para nuevas funciones
 
 ## [SEGURIDAD] Reducir información en endpoints de health (producción)
 
-**Estado**: Pendiente
+**Estado**: ✅ Completado
 **Riesgo**: Bajo-Medio
 **Esfuerzo**: Bajo
 
-**Problema**:
-Los endpoints `/api/health/detailed` y `/api/metrics` (ahora protegidos por admin) aún exponen versiones de Elixir/OTP, uptime y memoria. Si credenciales admin se comprometen, facilita ataques dirigidos.
+**Solución implementada**:
+1. En producción, `/api/health/detailed` omite: `uptime_seconds`, `version`, `elixir_version`, `otp_version`
+2. En producción, `/api/metrics` omite: `uptime_seconds`, métricas detalladas de memoria
+3. Se agregó configuración `config :qr_label_system, env: :prod|:dev|:test` para detectar entorno
 
-**Opciones**:
-1. Reducir información en `config_env() == :prod`
-2. Mover a red privada/observabilidad interna (Prometheus, Grafana)
-3. Eliminar versiones y mantener solo métricas operacionales
-
-**Archivos a modificar**:
+**Archivos modificados**:
 - `lib/qr_label_system_web/controllers/api/health_controller.ex`
+- `config/runtime.exs` - agregado `env: :prod`
+- `config/test.exs` - agregado `env: :test`
 
 ## [SEGURIDAD] Mejorar validación SQL (reemplazar regex)
 
-**Estado**: Pendiente
+**Estado**: ✅ Completado
 **Riesgo**: Alto
 **Esfuerzo**: Alto
 
-**Problema**:
-La validación SQL en `db_connector.ex:39-85` usa regex que puede ser evadida:
-- `SELECT * INTO new_table` (no bloqueado)
-- CTEs maliciosos: `WITH x AS (...) DELETE FROM users`
-- Funciones peligrosas: `pg_read_file()`, `lo_import()`
-- Unicode bypass: `ＤＥＬＥＴＥ`
+**Solución implementada**:
+La validación SQL fue mejorada significativamente con:
+1. **Normalización Unicode** - Previene bypass con caracteres fullwidth (ＤＥＬＥＴＥ → DELETE)
+2. **Patrones específicos por BD**:
+   - PostgreSQL: `pg_read_file`, `pg_ls_dir`, `lo_import`, `lo_export`, `COPY`, `dblink`
+   - MySQL: `LOAD DATA`, `UNHEX`, `CONV`
+   - SQL Server: `OPENROWSET`, `OPENDATASOURCE`, `BULK INSERT`, `sys.tables`
+3. **Bloqueo de SELECT INTO** - Previene creación de tablas
+4. **Bloqueo de CTEs (WITH)** - Previene wrapping de operaciones maliciosas
+5. **86 tests de seguridad** verifican la validación
 
-**Opciones**:
-1. **Parser SQL real** - Usar librería que parsee AST del SQL
-2. **Vistas predefinidas** - Solo permitir queries a vistas creadas por el backend
-3. **Usuario BD read-only** - Ejecutar con usuario que solo tenga SELECT en tablas específicas
-
-**Recomendación**: Opción 2 o 3 son más seguras que mejorar el regex.
-
-**Archivos a modificar**:
+**Archivos modificados**:
 - `lib/qr_label_system/data_sources/db_connector.ex`
+- `test/qr_label_system/data_sources/db_connector_test.exs`
 
-## [SEGURIDAD] Eliminar credenciales hardcodeadas de documentación
+## [SEGURIDAD] Configurar usuario BD read-only para data sources externos
 
-**Estado**: Pendiente
+**Estado**: ✅ Completado
 **Riesgo**: Medio
 **Esfuerzo**: Bajo
 
-**Problema**:
-Los archivos README.md y HANDOFF.md contienen credenciales de desarrollo explícitas (`admin@example.com` / `admin123456`). Estas pueden:
-- Copiarse accidentalmente a producción
-- Usarse por atacantes que encuentren el repositorio
-- Crear falsa sensación de seguridad
+**Solución implementada**:
+Se agregó nota de seguridad visible en el formulario de conexión a BD externa que recomienda usar usuario con permisos de solo lectura (SELECT).
 
-**Ubicación**:
-- `README.md` líneas 202-203
-- `qr_label_system/README.md` líneas 202-203
-- `HANDOFF.md` líneas 333-334
+**Archivos modificados**:
+- `lib/qr_label_system_web/live/data_source_live/form_component.ex` - banner de advertencia en UI
 
-**Solución**:
-Reemplazar credenciales explícitas por instrucciones genéricas:
-```markdown
-# Crear usuario admin en desarrollo
-mix run -e "QrLabelSystem.Accounts.create_admin_user()"
-# O usar seeds: mix run priv/repo/seeds.exs
-```
+## [SEGURIDAD] Eliminar credenciales hardcodeadas de documentación
 
-**Archivos a modificar**:
-- `README.md`
-- `qr_label_system/README.md`
-- `HANDOFF.md`
+**Estado**: ✅ Completado
+**Riesgo**: Medio
+**Esfuerzo**: Bajo
+
+**Solución implementada**:
+Reemplazadas credenciales explícitas por instrucción de ejecutar seeds.
+Las credenciales ahora están solo en `priv/repo/seeds.exs` (no en documentación pública).
+
+**Archivos modificados**:
+- `README.md` - removidas credenciales, agregada instrucción de seeds

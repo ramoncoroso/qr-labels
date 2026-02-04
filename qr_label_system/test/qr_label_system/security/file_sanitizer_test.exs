@@ -147,12 +147,17 @@ defmodule QrLabelSystem.Security.FileSanitizerTest do
   describe "valid_extension?/1" do
     test "accepts valid extensions" do
       assert FileSanitizer.valid_extension?("file.xlsx")
+      assert FileSanitizer.valid_extension?("file.xls")
       assert FileSanitizer.valid_extension?("file.csv")
       assert FileSanitizer.valid_extension?("file.png")
       assert FileSanitizer.valid_extension?("file.jpg")
       assert FileSanitizer.valid_extension?("file.jpeg")
       assert FileSanitizer.valid_extension?("file.gif")
-      assert FileSanitizer.valid_extension?("file.svg")
+    end
+
+    test "rejects SVG for XSS security" do
+      # SVG is blocked because it can contain embedded JavaScript
+      refute FileSanitizer.valid_extension?("file.svg")
     end
 
     test "rejects invalid extensions" do
@@ -210,6 +215,110 @@ defmodule QrLabelSystem.Security.FileSanitizerTest do
 
     test "returns error for non-existent file" do
       assert {:error, :enoent} = FileSanitizer.validate_file_size("/nonexistent/file.txt", 10)
+    end
+  end
+
+  describe "detect_mime_type_from_file/1" do
+    test "detects PNG files" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.png")
+      # PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+      File.write!(path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, "rest of file">>)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "image/png"} = FileSanitizer.detect_mime_type_from_file(path)
+    end
+
+    test "detects JPEG files" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.jpg")
+      # JPEG magic bytes: FF D8 FF
+      File.write!(path, <<0xFF, 0xD8, 0xFF, 0xE0, "rest of file">>)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "image/jpeg"} = FileSanitizer.detect_mime_type_from_file(path)
+    end
+
+    test "detects GIF files" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.gif")
+      # GIF magic bytes: GIF89a or GIF87a
+      File.write!(path, "GIF89a" <> "rest of file")
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "image/gif"} = FileSanitizer.detect_mime_type_from_file(path)
+    end
+
+    test "detects XLSX files (ZIP-based)" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.xlsx")
+      # ZIP/XLSX magic bytes: PK (50 4B 03 04)
+      File.write!(path, <<0x50, 0x4B, 0x03, 0x04, "rest of file">>)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"} =
+               FileSanitizer.detect_mime_type_from_file(path)
+    end
+
+    test "returns octet-stream for unknown types" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.bin")
+      File.write!(path, <<0x00, 0x01, 0x02, 0x03>>)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "application/octet-stream"} = FileSanitizer.detect_mime_type_from_file(path)
+    end
+
+    test "returns error for non-existent file" do
+      assert {:error, :enoent} = FileSanitizer.detect_mime_type_from_file("/nonexistent/file.bin")
+    end
+  end
+
+  describe "validate_image_content/1" do
+    test "accepts valid PNG" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.png")
+      File.write!(path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A>>)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "image/png"} = FileSanitizer.validate_image_content(path)
+    end
+
+    test "accepts valid JPEG" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.jpg")
+      File.write!(path, <<0xFF, 0xD8, 0xFF, 0xE0>>)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "image/jpeg"} = FileSanitizer.validate_image_content(path)
+    end
+
+    test "accepts valid GIF" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.gif")
+      File.write!(path, "GIF89a")
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, "image/gif"} = FileSanitizer.validate_image_content(path)
+    end
+
+    test "rejects non-image files" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.txt")
+      File.write!(path, "This is just text, not an image")
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:error, :invalid_image_type} = FileSanitizer.validate_image_content(path)
+    end
+
+    test "rejects polyglot files (fake extension, wrong content)" do
+      # File named .png but contains XLSX content
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.png")
+      File.write!(path, <<0x50, 0x4B, 0x03, 0x04, "fake xlsx">>)
+      on_exit(fn -> File.rm(path) end)
+
+      # validate_image_content checks magic bytes, not extension
+      # This should reject because XLSX is not a valid image type
+      assert {:error, :invalid_image_type} = FileSanitizer.validate_image_content(path)
+    end
+
+    test "rejects SVG (XSS risk)" do
+      path = Path.join(System.tmp_dir!(), "test_#{System.unique_integer()}.svg")
+      File.write!(path, "<svg xmlns='http://www.w3.org/2000/svg'><script>alert('xss')</script></svg>")
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:error, :invalid_image_type} = FileSanitizer.validate_image_content(path)
     end
   end
 end

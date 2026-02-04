@@ -34,6 +34,8 @@ defmodule QrLabelSystemWeb.API.HealthController do
 
   @doc """
   Returns detailed health information including all system components.
+  In production, sensitive version information is omitted to prevent
+  attackers from identifying specific vulnerabilities.
   """
   def detailed(conn, _params) do
     checks = %{
@@ -47,22 +49,34 @@ defmodule QrLabelSystemWeb.API.HealthController do
     all_healthy = Enum.all?(checks, fn {_k, v} -> v.status == :ok end)
     http_status = if all_healthy, do: 200, else: 503
 
-    json(conn |> put_status(http_status), %{
+    response = %{
       status: if(all_healthy, do: :healthy, else: :degraded),
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-      uptime_seconds: get_uptime(),
-      checks: checks,
-      version: Application.spec(:qr_label_system, :vsn) |> to_string(),
-      elixir_version: System.version(),
-      otp_version: :erlang.system_info(:otp_release) |> to_string()
-    })
+      checks: checks
+    }
+
+    # Only include version info in non-production environments
+    response =
+      if Application.get_env(:qr_label_system, :env) != :prod do
+        response
+        |> Map.put(:uptime_seconds, get_uptime())
+        |> Map.put(:version, Application.spec(:qr_label_system, :vsn) |> to_string())
+        |> Map.put(:elixir_version, System.version())
+        |> Map.put(:otp_version, :erlang.system_info(:otp_release) |> to_string())
+      else
+        response
+      end
+
+    json(conn |> put_status(http_status), response)
   end
 
   @doc """
   Returns Prometheus-compatible metrics.
+  In production, only operational metrics are included (no version info).
   """
   def metrics(conn, _params) do
-    metrics = build_prometheus_metrics()
+    is_prod = Application.get_env(:qr_label_system, :env) == :prod
+    metrics = build_prometheus_metrics(is_prod)
 
     conn
     |> put_resp_content_type("text/plain")
@@ -200,11 +214,10 @@ defmodule QrLabelSystemWeb.API.HealthController do
     div(uptime_ms, 1000)
   end
 
-  defp build_prometheus_metrics do
+  defp build_prometheus_metrics(is_prod \\ false) do
     memory = :erlang.memory()
     process_count = :erlang.system_info(:process_count)
     {:total, run_queue} = :erlang.statistics(:total_run_queue_lengths)
-    {uptime_ms, _} = :erlang.statistics(:wall_clock)
 
     cache_stats = try do
       Cache.stats()
@@ -215,22 +228,11 @@ defmodule QrLabelSystemWeb.API.HealthController do
     cache_entries = Enum.reduce(cache_stats, 0, fn {_ns, s}, acc -> acc + s.size end)
     cache_memory = Enum.reduce(cache_stats, 0, fn {_ns, s}, acc -> acc + s.memory end)
 
-    """
+    # Base metrics (always included)
+    base_metrics = """
     # HELP qr_label_system_up Is the application running
     # TYPE qr_label_system_up gauge
     qr_label_system_up 1
-
-    # HELP qr_label_system_uptime_seconds Application uptime in seconds
-    # TYPE qr_label_system_uptime_seconds counter
-    qr_label_system_uptime_seconds #{div(uptime_ms, 1000)}
-
-    # HELP erlang_memory_bytes Erlang VM memory usage
-    # TYPE erlang_memory_bytes gauge
-    erlang_memory_bytes{type="total"} #{Keyword.get(memory, :total, 0)}
-    erlang_memory_bytes{type="processes"} #{Keyword.get(memory, :processes, 0)}
-    erlang_memory_bytes{type="binary"} #{Keyword.get(memory, :binary, 0)}
-    erlang_memory_bytes{type="ets"} #{Keyword.get(memory, :ets, 0)}
-    erlang_memory_bytes{type="atom"} #{Keyword.get(memory, :atom, 0)}
 
     # HELP erlang_process_count Current number of processes
     # TYPE erlang_process_count gauge
@@ -248,5 +250,26 @@ defmodule QrLabelSystemWeb.API.HealthController do
     # TYPE qr_label_system_cache_memory_bytes gauge
     qr_label_system_cache_memory_bytes #{cache_memory}
     """
+
+    # Extended metrics (only in non-production - detailed memory and uptime)
+    if is_prod do
+      base_metrics
+    else
+      {uptime_ms, _} = :erlang.statistics(:wall_clock)
+
+      base_metrics <> """
+      # HELP qr_label_system_uptime_seconds Application uptime in seconds
+      # TYPE qr_label_system_uptime_seconds counter
+      qr_label_system_uptime_seconds #{div(uptime_ms, 1000)}
+
+      # HELP erlang_memory_bytes Erlang VM memory usage
+      # TYPE erlang_memory_bytes gauge
+      erlang_memory_bytes{type="total"} #{Keyword.get(memory, :total, 0)}
+      erlang_memory_bytes{type="processes"} #{Keyword.get(memory, :processes, 0)}
+      erlang_memory_bytes{type="binary"} #{Keyword.get(memory, :binary, 0)}
+      erlang_memory_bytes{type="ets"} #{Keyword.get(memory, :ets, 0)}
+      erlang_memory_bytes{type="atom"} #{Keyword.get(memory, :atom, 0)}
+      """
+    end
   end
 end
