@@ -8,7 +8,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   alias QrLabelSystem.Security.FileSanitizer
 
   @impl true
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(%{"id" => id} = params, _session, socket) do
     case Designs.get_design(id) do
       nil ->
         {:ok,
@@ -37,13 +37,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         _ -> %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"}
       end
 
+      # Check if we need to auto-select an element (returning from data load)
+      element_id = Map.get(params, "element_id")
+      selected_element = if element_id do
+        Enum.find(design.elements || [], fn el ->
+          (Map.get(el, :id) || Map.get(el, "id")) == element_id
+        end)
+      else
+        nil
+      end
+
       {:ok,
        socket
        |> assign(:page_title, "Editor: #{design.name}")
        |> assign(:design, design)
-       |> assign(:selected_element, nil)
+       |> assign(:selected_element, selected_element)
        |> assign(:selected_elements, [])
-       |> assign(:pending_selection_id, nil)
+       |> assign(:pending_selection_id, element_id)
        |> assign(:clipboard, [])
        |> assign(:available_columns, available_columns)
        |> assign(:upload_data, upload_data)
@@ -1812,7 +1822,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       Para vincular a una columna, primero debes cargar un archivo de datos.
                     </p>
                     <.link
-                      navigate={~p"/generate/data?design_id=#{@design_id}"}
+                      navigate={~p"/generate/data?design_id=#{@design_id}&element_id=#{@element.id}"}
                       class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
                     >
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

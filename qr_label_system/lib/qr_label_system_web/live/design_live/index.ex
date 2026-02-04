@@ -11,13 +11,15 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     designs = Designs.list_user_designs(socket.assigns.current_user.id)
     {:ok,
      socket
+     |> assign(:all_designs, designs)
      |> assign(:has_designs, length(designs) > 0)
-     |> assign(:page_title, "Diseños de etiquetas")
+     |> assign(:page_title, "Mis diseños")
      |> assign(:import_error, nil)
      |> assign(:renaming_id, nil)
      |> assign(:rename_value, "")
      |> assign(:show_data_modal, false)
      |> assign(:pending_edit_design, nil)
+     |> assign(:filter, "all")
      |> allow_upload(:backup_file,
        accept: ~w(.json),
        max_entries: 1,
@@ -39,7 +41,12 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       design when design.user_id == socket.assigns.current_user.id ->
         {:ok, _} = Designs.delete_design(design)
-        {:noreply, stream_delete(socket, :designs, design)}
+        updated_all = Enum.reject(socket.assigns.all_designs, &(&1.id == design.id))
+        {:noreply,
+         socket
+         |> assign(:all_designs, updated_all)
+         |> assign(:has_designs, length(updated_all) > 0)
+         |> stream_delete(:designs, design)}
 
       _design ->
         {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar este diseño")}
@@ -55,10 +62,17 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       design ->
         case Designs.duplicate_design(design, socket.assigns.current_user.id) do
           {:ok, new_design} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Diseño duplicado exitosamente")
-             |> stream_insert(:designs, new_design)}
+            updated_all = [new_design | socket.assigns.all_designs]
+            # Only show in stream if it matches current filter
+            socket = socket
+              |> assign(:all_designs, updated_all)
+              |> put_flash(:info, "Diseño duplicado exitosamente")
+
+            if should_show_design?(new_design, socket.assigns.filter) do
+              {:noreply, stream_insert(socket, :designs, new_design, at: 0)}
+            else
+              {:noreply, socket}
+            end
 
           {:error, _changeset} ->
             {:noreply, put_flash(socket, :error, "Error al duplicar el diseño")}
@@ -102,8 +116,12 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       design when design.user_id == socket.assigns.current_user.id and new_name != "" ->
         case Designs.update_design(design, %{name: new_name}) do
           {:ok, updated_design} ->
+            updated_all = Enum.map(socket.assigns.all_designs, fn d ->
+              if d.id == updated_design.id, do: updated_design, else: d
+            end)
             {:noreply,
              socket
+             |> assign(:all_designs, updated_all)
              |> assign(:renaming_id, nil)
              |> assign(:rename_value, "")
              |> stream_insert(:designs, updated_design)}
@@ -222,11 +240,32 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   end
 
   @impl true
+  def handle_event("filter", %{"type" => filter_type}, socket) do
+    filtered_designs = filter_designs(socket.assigns.all_designs, filter_type)
+
+    {:noreply,
+     socket
+     |> assign(:filter, filter_type)
+     |> stream(:designs, filtered_designs, reset: true)}
+  end
+
+  defp filter_designs(designs, "all"), do: designs
+  defp filter_designs(designs, "single"), do: Enum.filter(designs, &(&1.label_type == "single"))
+  defp filter_designs(designs, "multiple"), do: Enum.filter(designs, &(&1.label_type == "multiple"))
+
+  defp count_by_type(designs, type) do
+    Enum.count(designs, &(&1.label_type == type))
+  end
+
+  defp should_show_design?(design, "all"), do: true
+  defp should_show_design?(design, filter), do: design.label_type == filter
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div>
       <.header>
-        Diseños de etiquetas
+        Mis diseños
         <:subtitle>Crea y administra tus diseños de etiquetas personalizadas</:subtitle>
         <:actions>
           <div class="flex items-center gap-2">
@@ -287,6 +326,52 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </.link>
 
+        <!-- Filter Tabs -->
+        <div :if={@has_designs} class="mb-4 border-b border-gray-200">
+          <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+            <button
+              phx-click="filter"
+              phx-value-type="all"
+              class={"whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors #{if @filter == "all", do: "border-blue-500 text-blue-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}"}
+            >
+              Todas
+              <span class={"ml-2 py-0.5 px-2 rounded-full text-xs #{if @filter == "all", do: "bg-blue-100 text-blue-600", else: "bg-gray-100 text-gray-600"}"}>
+                <%= length(@all_designs) %>
+              </span>
+            </button>
+            <button
+              phx-click="filter"
+              phx-value-type="single"
+              class={"whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors #{if @filter == "single", do: "border-blue-500 text-blue-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}"}
+            >
+              <span class="inline-flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                Únicas
+              </span>
+              <span class={"ml-2 py-0.5 px-2 rounded-full text-xs #{if @filter == "single", do: "bg-blue-100 text-blue-600", else: "bg-gray-100 text-gray-600"}"}>
+                <%= count_by_type(@all_designs, "single") %>
+              </span>
+            </button>
+            <button
+              phx-click="filter"
+              phx-value-type="multiple"
+              class={"whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors #{if @filter == "multiple", do: "border-blue-500 text-blue-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}"}
+            >
+              <span class="inline-flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                </svg>
+                Múltiples
+              </span>
+              <span class={"ml-2 py-0.5 px-2 rounded-full text-xs #{if @filter == "multiple", do: "bg-blue-100 text-blue-600", else: "bg-gray-100 text-gray-600"}"}>
+                <%= count_by_type(@all_designs, "multiple") %>
+              </span>
+            </button>
+          </nav>
+        </div>
+
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
           <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
             <div class="flex items-center justify-between">
@@ -343,6 +428,22 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
               </div>
 
               <div class="flex items-center gap-3">
+                <!-- Label Type Badge -->
+                <%= if design.label_type == "single" do %>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-slate-50 to-gray-50 text-slate-600 border border-slate-200/50 shadow-sm">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                    </svg>
+                    Única
+                  </span>
+                <% else %>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 border border-purple-200/50 shadow-sm">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                    </svg>
+                    Múltiple
+                  </span>
+                <% end %>
                 <%= if design.is_template do %>
                   <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200/50 shadow-sm">
                     <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

@@ -12,12 +12,13 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   def mount(params, _session, socket) do
     # Check if we're loading data for a specific design
     design_id = Map.get(params, "design_id")
+    element_id = Map.get(params, "element_id")
     user_id = socket.assigns.current_user.id
 
     # Validate design ownership if design_id is provided
     case validate_design(design_id, user_id) do
       {:ok, design} ->
-        mount_with_design(socket, design)
+        mount_with_design(socket, design, element_id)
 
       {:error, :not_found} ->
         {:ok,
@@ -45,12 +46,13 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     end
   end
 
-  defp mount_with_design(socket, design) do
+  defp mount_with_design(socket, design, element_id) do
     {:ok,
      socket
      |> assign(:page_title, "Cargar Datos - #{design.name}")
      |> assign(:design_id, design.id)
      |> assign(:design_name, design.name)
+     |> assign(:element_id, element_id)
      |> assign(:active_method, nil)
      |> assign(:upload_data, nil)
      |> assign(:upload_columns, [])
@@ -70,6 +72,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
      |> assign(:page_title, "Cargar Datos")
      |> assign(:design_id, nil)
      |> assign(:design_name, nil)
+     |> assign(:element_id, nil)
      |> assign(:active_method, nil)
      |> assign(:upload_data, nil)
      |> assign(:upload_columns, [])
@@ -182,8 +185,14 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
       # Navigate based on whether we have a design_id
       if design_id do
-        # Coming from /designs, go to editor
-        {:noreply, push_navigate(socket, to: ~p"/designs/#{design_id}/edit")}
+        # Coming from editor, go back with element_id if present
+        element_id = socket.assigns.element_id
+        redirect_url = if element_id do
+          ~p"/designs/#{design_id}/edit?element_id=#{element_id}"
+        else
+          ~p"/designs/#{design_id}/edit"
+        end
+        {:noreply, push_navigate(socket, to: redirect_url)}
       else
         # Data-first flow, go to design selection
         {:noreply, push_navigate(socket, to: ~p"/generate/design")}
