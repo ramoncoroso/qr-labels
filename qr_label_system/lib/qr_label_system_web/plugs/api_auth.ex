@@ -17,10 +17,20 @@ defmodule QrLabelSystemWeb.Plugs.ApiAuth do
   - Only Base64 URL-encoded tokens are accepted (no raw tokens)
   - Token validation is constant-time to prevent timing attacks
   """
+  @behaviour Plug
+
   import Plug.Conn
   import Phoenix.Controller
 
   alias QrLabelSystem.Accounts
+
+  @impl Plug
+  def init(opts), do: opts
+
+  @impl Plug
+  def call(conn, _opts) do
+    authenticate_api(conn, [])
+  end
 
   @doc """
   Authenticates API requests using Bearer token.
