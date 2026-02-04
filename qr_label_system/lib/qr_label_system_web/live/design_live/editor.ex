@@ -1541,7 +1541,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
