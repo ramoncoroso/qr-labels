@@ -181,22 +181,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         {:noreply, put_flash(socket, :error, "No tienes permiso para editar este diseño")}
 
       design ->
-        # For single designs, navigate directly to editor
-        if design.label_type == "single" do
-          {:noreply, push_navigate(socket, to: ~p"/designs/#{design.id}/edit")}
-        else
-          # For multiple designs, check if data exists
-          if UploadDataStore.has_data?(user_id, design.id) do
-            # Show modal asking whether to use existing or load new
-            {:noreply,
-             socket
-             |> assign(:show_data_modal, true)
-             |> assign(:pending_edit_design, design)}
-          else
-            # No data, redirect to data loading
-            {:noreply, push_navigate(socket, to: ~p"/generate/data/#{design.id}")}
-          end
-        end
+        # Navigate directly to editor for all design types
+        # If data is needed, the editor will show "Cargar datos" button
+        {:noreply, push_navigate(socket, to: ~p"/designs/#{design.id}/edit")}
     end
   end
 
