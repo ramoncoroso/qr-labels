@@ -49,7 +49,14 @@ config :phoenix, :json_library, Jason
 # Oban configuration
 config :qr_label_system, Oban,
   repo: QrLabelSystem.Repo,
-  plugins: [Oban.Plugins.Pruner],
+  plugins: [
+    Oban.Plugins.Pruner,
+    # Run upload cleanup every hour
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"0 * * * *", QrLabelSystem.Workers.UploadCleanupWorker}
+     ]}
+  ],
   queues: [default: 10, cleanup: 5]
 
 # Cloak encryption vault is configured per-environment:

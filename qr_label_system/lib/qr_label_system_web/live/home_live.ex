@@ -154,8 +154,6 @@ defmodule QrLabelSystemWeb.HomeLive do
 
   @impl true
   def mount(params, _session, socket) do
-    require Logger
-    Logger.info("=== HomeLive MOUNT === connected?=#{connected?(socket)}")
 
     # Check if redirected from fallback POST
     magic_link_sent = params["sent"] == "true"
@@ -179,31 +177,28 @@ defmodule QrLabelSystemWeb.HomeLive do
   def handle_event("send_magic_link", %{"email" => email}, socket) do
     require Logger
     email = String.trim(email)
-    Logger.info("=== MAGIC LINK REQUEST for email: #{email} ===")
 
     if email != "" do
+      # Log with anonymized email (only domain visible) for debugging
+      Logger.debug("Magic link request for: #{anonymize_email(email)}")
+
       # Always send magic link (even if user doesn't exist, to prevent enumeration)
       # If user doesn't exist, create them
-      result = case Accounts.get_user_by_email(email) do
+      _result = case Accounts.get_user_by_email(email) do
         nil ->
-          Logger.info("User not found, creating new user...")
           # Create new user
           case Accounts.register_user_passwordless(%{"email" => email}) do
-            {:ok, user} ->
-              Logger.info("User created: #{user.id}")
+            {:ok, _user} ->
               Accounts.deliver_magic_link_instructions(email, &url(~p"/users/magic_link/#{&1}"))
-            {:error, changeset} ->
-              Logger.error("Failed to create user: #{inspect(changeset.errors)}")
-              # Still show success to prevent enumeration
+            {:error, _changeset} ->
+              # Log failure without exposing details, still show success to prevent enumeration
+              Logger.warning("Magic link: user registration failed")
               :ok
           end
 
-        user ->
-          Logger.info("User found: #{user.id}, sending magic link...")
+        _user ->
           Accounts.deliver_magic_link_instructions(email, &url(~p"/users/magic_link/#{&1}"))
       end
-
-      Logger.info("Magic link result: #{inspect(result)}")
 
       {:noreply,
        socket
@@ -221,5 +216,16 @@ defmodule QrLabelSystemWeb.HomeLive do
        magic_link_sent: false,
        sent_to_email: nil
      )}
+  end
+
+  # Anonymize email for logging: "user@example.com" -> "u***@example.com"
+  defp anonymize_email(email) do
+    case String.split(email, "@") do
+      [local, domain] when byte_size(local) > 0 ->
+        first_char = String.first(local)
+        "#{first_char}***@#{domain}"
+      _ ->
+        "***@***"
+    end
   end
 end

@@ -11,10 +11,12 @@ defmodule QrLabelSystemWeb.DataSourceControllerTest do
   end
 
   describe "upload/2" do
-    test "redirects to details with valid file", %{conn: conn} do
-      # Create a temporary test file
+    test "redirects to details with valid xlsx file", %{conn: conn} do
+      # Create a temporary test file with valid XLSX magic bytes (ZIP format: PK..)
       path = Path.join(System.tmp_dir!(), "test_upload.xlsx")
-      File.write!(path, "fake xlsx content")
+      # XLSX files are ZIP archives - minimal valid ZIP header
+      xlsx_magic = <<0x50, 0x4B, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00>>
+      File.write!(path, xlsx_magic <> "fake content")
 
       upload = %Plug.Upload{
         path: path,
@@ -34,6 +36,7 @@ defmodule QrLabelSystemWeb.DataSourceControllerTest do
     end
 
     test "detects csv file type", %{conn: conn} do
+      # CSV files are text - content starts with printable ASCII
       path = Path.join(System.tmp_dir!(), "test_upload.csv")
       File.write!(path, "a,b,c\n1,2,3")
 
@@ -45,7 +48,45 @@ defmodule QrLabelSystemWeb.DataSourceControllerTest do
 
       conn = post(conn, ~p"/data-sources/upload", %{"file" => upload})
 
+      assert redirected_to(conn) == ~p"/data-sources/new/details"
       assert get_session(conn, :detected_type) == "csv"
+
+      File.rm!(path)
+    end
+
+    test "rejects file with invalid extension", %{conn: conn} do
+      path = Path.join(System.tmp_dir!(), "test_upload.exe")
+      File.write!(path, "malicious content")
+
+      upload = %Plug.Upload{
+        path: path,
+        filename: "malware.exe",
+        content_type: "application/octet-stream"
+      }
+
+      conn = post(conn, ~p"/data-sources/upload", %{"file" => upload})
+
+      assert redirected_to(conn) == ~p"/data-sources/new"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no permitido"
+
+      File.rm!(path)
+    end
+
+    test "rejects file with mismatched content", %{conn: conn} do
+      # File claims to be xlsx but has text content
+      path = Path.join(System.tmp_dir!(), "test_upload.xlsx")
+      File.write!(path, "this is plain text, not xlsx")
+
+      upload = %Plug.Upload{
+        path: path,
+        filename: "fake.xlsx",
+        content_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      }
+
+      conn = post(conn, ~p"/data-sources/upload", %{"file" => upload})
+
+      assert redirected_to(conn) == ~p"/data-sources/new"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no coincide"
 
       File.rm!(path)
     end

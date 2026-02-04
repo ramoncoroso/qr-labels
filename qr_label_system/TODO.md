@@ -124,3 +124,51 @@ Las credenciales ahora están solo en `priv/repo/seeds.exs` (no en documentació
 
 **Archivos modificados**:
 - `README.md` - removidas credenciales, agregada instrucción de seeds
+
+## [SEGURIDAD] Anonimizar PII en logs (HomeLive)
+
+**Estado**: ✅ Completado
+**Riesgo**: Medio
+**Esfuerzo**: Bajo
+
+**Solución implementada**:
+1. Removidos logs innecesarios del mount
+2. Emails anonimizados en logs: `user@example.com` → `u***@example.com`
+3. Cambiado nivel de log a `debug` para información de depuración
+4. Removida exposición de errores de changeset en logs
+
+**Archivos modificados**:
+- `lib/qr_label_system_web/live/home_live.ex`
+
+## [SEGURIDAD] Sanitizar uploads en DataSourceController
+
+**Estado**: ✅ Completado
+**Riesgo**: Alto
+**Esfuerzo**: Medio
+
+**Solución implementada**:
+1. Validación de extensión contra whitelist (`.xlsx`, `.xls`, `.csv`)
+2. Validación de tamaño máximo (10MB)
+3. Validación de contenido con magic bytes via `FileSanitizer`
+4. Sanitización del nombre de archivo
+5. Tests adicionales para casos de rechazo
+
+**Archivos modificados**:
+- `lib/qr_label_system_web/controllers/data_source_controller.ex`
+- `test/qr_label_system_web/controllers/data_source_controller_test.exs`
+
+## [SEGURIDAD] Limpieza automática de archivos huérfanos
+
+**Estado**: ✅ Completado
+**Riesgo**: Medio
+**Esfuerzo**: Medio
+
+**Solución implementada**:
+1. Worker de Oban `UploadCleanupWorker` que elimina archivos > 24h
+2. Ejecuta automáticamente cada hora via Oban Cron plugin
+3. Configurable via `ttl_hours` parameter
+4. Logs de operaciones para auditoría
+
+**Archivos modificados**:
+- `lib/qr_label_system/workers/upload_cleanup_worker.ex` (nuevo)
+- `config/config.exs` - agregado Oban.Plugins.Cron

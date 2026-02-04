@@ -2,39 +2,93 @@ defmodule QrLabelSystemWeb.DataSourceController do
   use QrLabelSystemWeb, :controller
 
   alias QrLabelSystem.DataSources
+  alias QrLabelSystem.Security.FileSanitizer
+
+  require Logger
+
+  # Allowed extensions for data source files
+  @allowed_extensions ~w(.xlsx .xls .csv)
+  # Max file size: 10MB
+  @max_file_size_mb 10
 
   @doc """
   Handles file upload and redirects to the details form.
+  Validates file extension, size, and content before saving.
   """
   def upload(conn, %{"file" => upload}) do
-    # Detect type from file extension
-    ext = Path.extname(upload.filename) |> String.downcase()
-    detected_type = detect_type(ext)
+    # Sanitize filename and get extension
+    sanitized_name = FileSanitizer.sanitize_filename(upload.filename)
+    ext = Path.extname(sanitized_name) |> String.downcase()
 
-    # Save the uploaded file
-    uploads_dir = Path.join([:code.priv_dir(:qr_label_system), "uploads", "data_sources"])
-    File.mkdir_p!(uploads_dir)
+    with :ok <- validate_extension(ext),
+         :ok <- validate_file_size(upload.path),
+         :ok <- validate_file_content(upload.path, ext) do
+      # File is valid, save it
+      detected_type = detect_type(ext)
 
-    dest_filename = "#{Ecto.UUID.generate()}#{ext}"
-    dest_path = Path.join(uploads_dir, dest_filename)
+      uploads_dir = Path.join([:code.priv_dir(:qr_label_system), "uploads", "data_sources"])
+      File.mkdir_p!(uploads_dir)
 
-    File.cp!(upload.path, dest_path)
+      dest_filename = "#{Ecto.UUID.generate()}#{ext}"
+      dest_path = Path.join(uploads_dir, dest_filename)
 
-    # Suggest name based on filename (without extension)
-    suggested_name = Path.basename(upload.filename, ext)
+      File.cp!(upload.path, dest_path)
 
-    conn
-    |> put_session(:uploaded_file_path, dest_path)
-    |> put_session(:uploaded_file_name, upload.filename)
-    |> put_session(:detected_type, detected_type)
-    |> put_session(:suggested_name, suggested_name)
-    |> redirect(to: ~p"/data-sources/new/details")
+      # Suggest name based on original filename (without extension)
+      suggested_name = Path.basename(sanitized_name, ext)
+
+      conn
+      |> put_session(:uploaded_file_path, dest_path)
+      |> put_session(:uploaded_file_name, sanitized_name)
+      |> put_session(:detected_type, detected_type)
+      |> put_session(:suggested_name, suggested_name)
+      |> redirect(to: ~p"/data-sources/new/details")
+    else
+      {:error, :invalid_extension} ->
+        Logger.warning("Upload rejected: invalid extension #{ext}")
+        conn
+        |> put_flash(:error, "Tipo de archivo no permitido. Solo se aceptan: #{Enum.join(@allowed_extensions, ", ")}")
+        |> redirect(to: ~p"/data-sources/new")
+
+      {:error, :file_too_large} ->
+        Logger.warning("Upload rejected: file too large")
+        conn
+        |> put_flash(:error, "El archivo es demasiado grande. Máximo: #{@max_file_size_mb}MB")
+        |> redirect(to: ~p"/data-sources/new")
+
+      {:error, :mime_type_mismatch} ->
+        Logger.warning("Upload rejected: MIME type mismatch for extension #{ext}")
+        conn
+        |> put_flash(:error, "El contenido del archivo no coincide con su extensión")
+        |> redirect(to: ~p"/data-sources/new")
+
+      {:error, reason} ->
+        Logger.warning("Upload rejected: #{inspect(reason)}")
+        conn
+        |> put_flash(:error, "Error al procesar el archivo")
+        |> redirect(to: ~p"/data-sources/new")
+    end
   end
 
   def upload(conn, _params) do
     conn
     |> put_flash(:error, "Por favor selecciona un archivo")
     |> redirect(to: ~p"/data-sources/new")
+  end
+
+  defp validate_extension(ext) when ext in @allowed_extensions, do: :ok
+  defp validate_extension(_ext), do: {:error, :invalid_extension}
+
+  defp validate_file_size(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} when size <= @max_file_size_mb * 1024 * 1024 -> :ok
+      {:ok, _} -> {:error, :file_too_large}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_file_content(path, ext) do
+    FileSanitizer.validate_file_content(path, ext)
   end
 
   defp detect_type(".xlsx"), do: "excel"
