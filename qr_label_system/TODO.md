@@ -35,3 +35,12 @@ El archivo `.env` fue creado con el nuevo `SECRET_KEY_BASE`, pero el proyecto no
 **Archivos a modificar**:
 - `lib/qr_label_system_web/live/design_live/editor.ex` - añadir botón en toolbar
 - `assets/js/hooks/canvas_designer.js` - ya tiene funciones `alignElements()` implementadas
+
+## Etiquetas múltiples sin conexión a Excel
+
+**Estado**: Pendiente
+
+**Funcionalidad**:
+- Añadir botón/opción para crear etiquetas múltiples sin necesidad de conectar un archivo Excel
+- Permitir al usuario especificar cantidad de etiquetas a generar
+- Útil para etiquetas con datos estáticos o códigos secuenciales
