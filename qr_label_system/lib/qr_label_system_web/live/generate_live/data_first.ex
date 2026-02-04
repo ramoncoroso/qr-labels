@@ -318,7 +318,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
         </div>
 
         <!-- Method Selection Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class={"grid grid-cols-1 gap-6 mb-8 #{if @design_id, do: "md:grid-cols-2", else: "md:grid-cols-3"}"}>
           <button
             phx-click="select_method"
             phx-value-method="file"
@@ -355,7 +355,9 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
             </div>
           </button>
 
+          <!-- Solo mostrar "Diseñar sin datos" cuando NO hay design_id (flujo nuevo) -->
           <button
+            :if={is_nil(@design_id)}
             phx-click="select_method"
             phx-value-method="no_data"
             class={"rounded-xl p-6 text-left transition-all border-2 #{if @active_method == "no_data", do: "border-amber-500 bg-amber-50 ring-2 ring-amber-200", else: "border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/50"}"}
