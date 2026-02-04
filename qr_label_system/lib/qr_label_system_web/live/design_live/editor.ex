@@ -206,24 +206,50 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("element_modified", %{"elements" => elements_json}, socket) do
     design = socket.assigns.design
-    current_element_count = length(design.elements || [])
+    current_elements = design.elements || []
+    current_element_count = length(current_elements)
     new_element_count = length(elements_json || [])
 
-    # Safety check: Don't accidentally delete all elements if canvas sends empty array
-    # This can happen if the canvas isn't fully initialized when save is triggered
-    if new_element_count == 0 and current_element_count > 0 do
-      Logger.warning("element_modified received empty array but design has #{current_element_count} elements - ignoring to prevent data loss")
-      show_flash = Map.get(socket.assigns, :pending_save_flash, false)
-      socket = if show_flash do
-        socket
-        |> assign(:pending_save_flash, false)
-        |> put_flash(:error, "El canvas no está listo. Intenta guardar de nuevo.")
-      else
-        assign(socket, :pending_save_flash, false)
-      end
-      {:noreply, socket}
-    else
-      do_save_elements(socket, design, elements_json)
+    # Get IDs of current elements
+    current_ids = MapSet.new(Enum.map(current_elements, fn el ->
+      Map.get(el, :id) || Map.get(el, "id")
+    end))
+
+    # Get IDs of incoming elements
+    new_ids = MapSet.new(Enum.map(elements_json || [], fn el ->
+      Map.get(el, "id")
+    end))
+
+    # Check for suspicious element loss
+    # Case 1: Empty array but we have elements
+    # Case 2: Significant element count decrease (more than 1 element lost unexpectedly)
+    # Case 3: Element IDs don't match (possible stale data from old canvas instance)
+    missing_ids = MapSet.difference(current_ids, new_ids)
+    elements_lost = MapSet.size(missing_ids)
+
+    cond do
+      # Empty array when we have elements - definitely wrong
+      new_element_count == 0 and current_element_count > 0 ->
+        Logger.warning("element_modified received empty array but design has #{current_element_count} elements - ignoring to prevent data loss")
+        show_flash = Map.get(socket.assigns, :pending_save_flash, false)
+        socket = if show_flash do
+          socket
+          |> assign(:pending_save_flash, false)
+          |> put_flash(:error, "El canvas no está listo. Intenta guardar de nuevo.")
+        else
+          assign(socket, :pending_save_flash, false)
+        end
+        {:noreply, socket}
+
+      # Multiple elements lost unexpectedly (not a delete operation)
+      # If more than 1 element is missing and we're not explicitly deleting, something is wrong
+      elements_lost > 1 and new_element_count < current_element_count ->
+        Logger.warning("element_modified would lose #{elements_lost} elements (#{current_element_count} -> #{new_element_count}). Missing IDs: #{inspect(MapSet.to_list(missing_ids))}. Ignoring to prevent data loss.")
+        {:noreply, assign(socket, :pending_save_flash, false)}
+
+      # Normal operation - save the elements
+      true ->
+        do_save_elements(socket, design, elements_json)
     end
   end
 

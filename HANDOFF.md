@@ -1064,3 +1064,191 @@ Siempre verificar que el pattern matching coincida con lo que realmente retorna 
 | 2025-01-31 | **CORRECCIONES DEL EDITOR DE ETIQUETAS** (5 fixes) |
 | 2026-01-31 | **MEJORAS EN FLUJO DE GENERACIÓN Y EDITOR** |
 | 2026-02-02 | **FIX: consume_uploaded_entries pattern matching** (3 archivos) |
+| 2026-02-04 | **MEJORAS EN CLASIFICACIÓN, GUARDADO Y UNDO/REDO** |
+
+---
+
+## Cambios Implementados (2026-02-04) - Clasificación y Undo/Redo
+
+### Resumen
+
+Se implementaron mejoras significativas en la organización de diseños, protección del guardado, y sistema de deshacer/rehacer.
+
+### 1. ✅ Clasificación de etiquetas en "Mis diseños"
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+**Funcionalidad:**
+- **Pestañas de filtro** en la parte superior: Todas | Únicas | Múltiples
+- **Badges** en cada tarjeta indicando el tipo de etiqueta:
+  - "Única" (gris) - etiquetas sin vinculación de datos
+  - "Múltiple" (púrpura) - etiquetas con data binding
+- **Contadores** en cada pestaña mostrando cantidad de diseños
+- **Renombrado** de "Diseños de etiquetas" a "Mis diseños"
+
+**Cambios en navegación:**
+- Header del layout actualizado de "Diseños" a "Mis diseños"
+
+**Archivos modificados:**
+- `lib/qr_label_system_web/live/design_live/index.ex` - Pestañas, filtros, badges
+- `lib/qr_label_system_web/components/layouts/app.html.heex` - Navegación
+
+### 2. ✅ Protección del guardado contra pérdida de datos
+
+**Archivos:**
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+- `assets/js/hooks/canvas_designer.js`
+
+**Problema:** El botón "Guardar" a veces enviaba un array vacío de elementos, borrando todos los elementos existentes. Esto ocurría cuando el canvas no estaba completamente inicializado.
+
+**Solución en el servidor (editor.ex):**
+```elixir
+def handle_event("element_modified", %{"elements" => elements_json}, socket) do
+  current_element_count = length(design.elements || [])
+  new_element_count = length(elements_json || [])
+
+  # Rechazar arrays vacíos si el diseño tiene elementos
+  if new_element_count == 0 and current_element_count > 0 do
+    Logger.warning("element_modified received empty array - ignoring")
+    {:noreply, put_flash(socket, :error, "El canvas no está listo. Intenta guardar de nuevo.")}
+  else
+    do_save_elements(socket, design, elements_json)
+  end
+end
+```
+
+**Solución en JavaScript (canvas_designer.js):**
+```javascript
+saveElementsImmediate() {
+  // No guardar si el canvas no está inicializado
+  if (this._isDestroyed || !this.elements || !this._isInitialized) {
+    console.warn('Canvas not ready, skipping save')
+    return
+  }
+  if (!this.canvas || !this.labelBounds) {
+    console.warn('Canvas or labelBounds not ready, skipping save')
+    return
+  }
+  // ... resto del guardado
+}
+```
+
+### 3. ✅ Sistema Undo/Redo mejorado
+
+**Archivos:**
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+- `assets/js/hooks/canvas_designer.js`
+
+**Cambios realizados:**
+
+1. **Botones movidos al toolbar** - De la parte inferior del sidebar izquierdo al toolbar superior, junto a los controles de zoom:
+   ```
+   [ ↩ ↪ ]  [ ZOOM  -  100%  +  |  ⛶ ]  [ ALINEAR... ]
+   ```
+
+2. **Historial inicializado correctamente** - El estado inicial del diseño se guarda al montar:
+   ```elixir
+   # Antes: history vacío, undo nunca funcionaba
+   |> assign(:history, [])
+   |> assign(:history_index, -1)
+
+   # Ahora: estado inicial guardado
+   |> assign(:history, [design.elements || []])
+   |> assign(:history_index, 0)
+   ```
+
+3. **Nuevo evento `reload_design`** - Fuerza la recarga del canvas en undo/redo:
+   ```javascript
+   // JavaScript
+   this.handleEvent("reload_design", ({ design }) => {
+     if (design && !this._isDestroyed) {
+       this.loadDesign(design)  // Forzado, sin condiciones
+     }
+   })
+   ```
+
+   ```elixir
+   # Elixir - undo/redo usan reload_design
+   |> push_event("reload_design", %{design: Design.to_json(updated_design)})
+   ```
+
+4. **Historial guardado antes de añadir elementos**:
+   ```elixir
+   def handle_event("add_element", %{"type" => type}, socket) do
+     design = socket.assigns.design
+     # ... crear elemento ...
+     case Designs.update_design(design, %{elements: new_elements}) do
+       {:ok, updated_design} ->
+         socket
+         |> push_to_history(design)  # Guardar estado ANTERIOR
+         |> assign(:design, updated_design)
+         # ...
+     end
+   end
+   ```
+
+5. **Límite reducido a 10 estados**:
+   ```elixir
+   @max_history_size 10  # Antes era 50
+   ```
+
+**Flujo de undo/redo:**
+- Cada acción (añadir elemento, mover, redimensionar, eliminar) guarda el estado anterior
+- Máximo 10 acciones memorizadas
+- Deshacer restaura el estado anterior y actualiza el canvas
+- Rehacer vuelve al estado siguiente
+
+---
+
+## Archivos Modificados (2026-02-04)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system_web/live/design_live/index.ex` | +70 líneas: pestañas, filtros, badges, contadores |
+| `lib/qr_label_system_web/components/layouts/app.html.heex` | Renombrado "Diseños" → "Mis diseños" |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | +30 líneas: protección guardado, undo/redo mejorado |
+| `assets/js/hooks/canvas_designer.js` | +15 líneas: verificaciones save, evento reload_design |
+
+---
+
+## Commits (2026-02-04)
+
+| Hash | Descripción |
+|------|-------------|
+| (varios) | feat: Classify designs as single/multiple with tabs and badges |
+| (varios) | feat: Rename to "Mis diseños" in header and navigation |
+| `eafeec8` | feat: Improve undo/redo system and move buttons to toolbar |
+
+---
+
+## Tests Recomendados
+
+### Test 1: Clasificación de diseños
+```
+1. Ir a /designs (Mis diseños)
+2. Verificar que aparecen pestañas: Todas | Únicas | Múltiples
+3. Crear diseño "single" y verificar que tiene badge "Única"
+4. Crear diseño "multiple" y verificar que tiene badge "Múltiple"
+5. Filtrar por cada pestaña y verificar que muestra correctamente
+```
+
+### Test 2: Protección del guardado
+```
+1. Abrir editor de una etiqueta con elementos
+2. Hacer clic en "Guardar" inmediatamente
+3. Verificar que los elementos NO se borran
+4. Añadir un QR y guardar inmediatamente
+5. Ir a Mis diseños y volver a abrir - QR debe estar presente
+```
+
+### Test 3: Undo/Redo
+```
+1. Abrir editor de una etiqueta vacía
+2. Añadir QR (estado 1)
+3. Añadir Texto (estado 2)
+4. Añadir Barcode (estado 3)
+5. Hacer clic en Deshacer (↩) - Barcode desaparece
+6. Hacer clic en Deshacer (↩) - Texto desaparece
+7. Hacer clic en Rehacer (↪) - Texto vuelve
+8. Verificar que los cambios se reflejan tanto en canvas como en capas
+```
