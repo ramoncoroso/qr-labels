@@ -53,3 +53,6 @@ Thumbs.db
 # Credentials/Secrets
 cookie.txt
 *.cookie
+
+# User uploaded files (should not be in repo)
+/priv/uploads/
