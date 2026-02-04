@@ -40,9 +40,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Check if we need to auto-select an element (returning from data load)
       element_id = Map.get(params, "element_id")
       selected_element = if element_id do
-        Enum.find(design.elements || [], fn el ->
+        element = Enum.find(design.elements || [], fn el ->
           (Map.get(el, :id) || Map.get(el, "id")) == element_id
         end)
+        # Put element in binding mode (binding = "" instead of nil)
+        # so the UI shows "Vincular a columna" with the dropdown
+        if element do
+          %{element | binding: ""}
+        else
+          nil
+        end
       else
         nil
       end
