@@ -23,6 +23,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
          |> push_navigate(to: ~p"/designs")}
 
       design ->
+      # Debug: Log design elements on mount
+      element_count = length(design.elements || [])
+      element_ids = Enum.map(design.elements || [], fn el ->
+        Map.get(el, :id) || Map.get(el, "id")
+      end)
+      Logger.info("Editor mount - Design #{id}: #{element_count} elements, IDs: #{inspect(element_ids)}")
+
       # Load available columns from persistent store (from data-first flow)
       user_id = socket.assigns.current_user.id
       {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id, design.id)
@@ -75,6 +82,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:rename_value, design.name)
        |> assign(:canvas_loaded, false)
        |> assign(:show_binding_mode, show_binding_mode)
+       |> assign(:pending_deletes, MapSet.new())  # Track pending delete operations
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -209,6 +217,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     current_elements = design.elements || []
     current_element_count = length(current_elements)
     new_element_count = length(elements_json || [])
+    pending_deletes = socket.assigns.pending_deletes
 
     # Get IDs of current elements
     current_ids = MapSet.new(Enum.map(current_elements, fn el ->
@@ -221,15 +230,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end))
 
     # Check for suspicious element loss
-    # Case 1: Empty array but we have elements
-    # Case 2: Significant element count decrease (more than 1 element lost unexpectedly)
-    # Case 3: Element IDs don't match (possible stale data from old canvas instance)
     missing_ids = MapSet.difference(current_ids, new_ids)
     elements_lost = MapSet.size(missing_ids)
 
+    # Check if all missing elements are expected deletions
+    unexpected_missing = MapSet.difference(missing_ids, pending_deletes)
+    unexpected_loss_count = MapSet.size(unexpected_missing)
+
     cond do
-      # Empty array when we have elements - definitely wrong
-      new_element_count == 0 and current_element_count > 0 ->
+      # Empty array when we have elements and no pending deletes - definitely wrong
+      new_element_count == 0 and current_element_count > 0 and MapSet.size(pending_deletes) == 0 ->
         Logger.warning("element_modified received empty array but design has #{current_element_count} elements - ignoring to prevent data loss")
         show_flash = Map.get(socket.assigns, :pending_save_flash, false)
         socket = if show_flash do
@@ -241,19 +251,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         end
         {:noreply, socket}
 
-      # Multiple elements lost unexpectedly (not a delete operation)
-      # If more than 1 element is missing and we're not explicitly deleting, something is wrong
-      elements_lost > 1 and new_element_count < current_element_count ->
-        Logger.warning("element_modified would lose #{elements_lost} elements (#{current_element_count} -> #{new_element_count}). Missing IDs: #{inspect(MapSet.to_list(missing_ids))}. Ignoring to prevent data loss.")
+      # Elements lost that were NOT explicitly deleted - this is unexpected
+      unexpected_loss_count > 0 ->
+        Logger.warning("element_modified would unexpectedly lose #{unexpected_loss_count} elements. Expected deletes: #{inspect(MapSet.to_list(pending_deletes))}. Missing IDs: #{inspect(MapSet.to_list(missing_ids))}. Unexpected missing: #{inspect(MapSet.to_list(unexpected_missing))}. Ignoring to prevent data loss.")
         {:noreply, assign(socket, :pending_save_flash, false)}
 
-      # Normal operation - save the elements
+      # Normal operation - save the elements and clear pending deletes
       true ->
         do_save_elements(socket, design, elements_json)
     end
   end
 
   defp do_save_elements(socket, design, elements_json) do
+    # Debug: Log what we're about to save
+    current_count = length(design.elements || [])
+    new_count = length(elements_json || [])
+    new_ids = Enum.map(elements_json || [], fn el -> Map.get(el, "id") end)
+    Logger.info("do_save_elements - Design #{design.id}: #{current_count} -> #{new_count} elements. New IDs: #{inspect(new_ids)}")
+
     case Designs.update_design(design, %{elements: elements_json}) do
       {:ok, updated_design} ->
         # Get the ID of the element that should remain selected
@@ -283,6 +298,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           |> assign(:selected_element, updated_selected)
           |> assign(:pending_selection_id, nil)  # Clear pending selection after sync
           |> assign(:pending_save_flash, false)
+          |> assign(:pending_deletes, MapSet.new())  # Clear pending deletes after successful save
 
         socket = if show_flash do
           socket
@@ -479,6 +495,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   def handle_event("delete_element", _params, socket) do
     selected_elements = socket.assigns.selected_elements || []
     selected_element = socket.assigns.selected_element
+    pending_deletes = socket.assigns.pending_deletes
 
     cond do
       # Multiple elements selected - delete all
@@ -486,8 +503,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         ids = Enum.map(selected_elements, fn el ->
           Map.get(el, :id) || Map.get(el, "id")
         end)
+        # Track pending deletes so element_modified knows these deletions are expected
+        new_pending_deletes = MapSet.union(pending_deletes, MapSet.new(ids))
         {:noreply,
          socket
+         |> assign(:pending_deletes, new_pending_deletes)
          |> push_event("delete_elements", %{ids: ids})
          |> assign(:selected_element, nil)
          |> assign(:selected_elements, [])}
@@ -495,8 +515,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Single element selected
       selected_element != nil ->
         id = Map.get(selected_element, :id) || Map.get(selected_element, "id")
+        # Track pending delete
+        new_pending_deletes = MapSet.put(pending_deletes, id)
         {:noreply,
          socket
+         |> assign(:pending_deletes, new_pending_deletes)
          |> push_event("delete_elements", %{ids: [id]})
          |> assign(:selected_element, nil)
          |> assign(:selected_elements, [])}
