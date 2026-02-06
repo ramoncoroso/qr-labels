@@ -24,7 +24,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
          |> assign(:upload_data, [])
          |> assign(:upload_columns, [])
          |> assign(:no_data_mode, true)
-         |> assign(:selected_design_id, nil)}
+         |> assign(:selected_design_id, nil)
+         |> assign(:preview_design, nil)}
 
       # Mode: with uploaded data
       not is_nil(upload_data) and length(upload_data) > 0 ->
@@ -37,7 +38,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
          |> assign(:upload_data, upload_data)
          |> assign(:upload_columns, upload_columns)
          |> assign(:no_data_mode, false)
-         |> assign(:selected_design_id, nil)}
+         |> assign(:selected_design_id, nil)
+         |> assign(:preview_design, nil)}
 
       # No data and not in no_data mode - redirect
       true ->
@@ -110,6 +112,17 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   @impl true
   def handle_event("back", _params, socket) do
     {:noreply, push_navigate(socket, to: ~p"/generate/data")}
+  end
+
+  @impl true
+  def handle_event("preview_design", %{"id" => design_id}, socket) do
+    design = Enum.find(socket.assigns.designs, fn d -> to_string(d.id) == design_id end)
+    {:noreply, assign(socket, :preview_design, design)}
+  end
+
+  @impl true
+  def handle_event("close_preview", _params, socket) do
+    {:noreply, assign(socket, :preview_design, nil)}
   end
 
   @impl true
@@ -220,14 +233,15 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
           <!-- Existing Designs -->
           <%= for design <- @designs do %>
-            <button
+            <% is_selected = @selected_design_id == to_string(design.id) %>
+            <div
               phx-click="select_design"
               phx-value-id={design.id}
-              class={"bg-white rounded-xl shadow-sm p-6 cursor-pointer transition-all text-left border-2 #{if @selected_design_id == to_string(design.id), do: "border-indigo-500 ring-2 ring-indigo-200", else: "border-transparent hover:border-indigo-300"}"}
+              class={"bg-white rounded-xl shadow-sm p-6 cursor-pointer transition-all text-left border-2 #{if is_selected, do: "border-indigo-500 ring-2 ring-indigo-200", else: "border-transparent hover:border-indigo-300"}"}
             >
               <div class="flex items-center justify-between mb-3">
                 <h3 class="text-lg font-semibold text-gray-900 truncate"><%= design.name %></h3>
-                <%= if @selected_design_id == to_string(design.id) do %>
+                <%= if is_selected do %>
                   <div class="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center flex-shrink-0">
                     <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -248,24 +262,51 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
                 <%= raw(SvgPreview.generate(design, max_width: 140, max_height: 90)) %>
               </div>
 
-              <!-- Show binding info -->
-              <% bindings = get_bindings(design.elements) %>
-              <%= if length(bindings) > 0 do %>
-                <div class="mt-3 pt-3 border-t border-gray-100">
-                  <p class="text-xs text-gray-500 mb-1">Campos vinculados:</p>
-                  <div class="flex flex-wrap gap-1">
-                    <%= for binding <- Enum.take(bindings, 4) do %>
-                      <span class={"text-xs px-1.5 py-0.5 rounded #{if binding in @upload_columns, do: "bg-green-100 text-green-700", else: "bg-gray-100 text-gray-600"}"}>
-                        <%= binding %>
-                      </span>
-                    <% end %>
-                    <%= if length(bindings) > 4 do %>
-                      <span class="text-xs text-gray-400">+<%= length(bindings) - 4 %></span>
-                    <% end %>
-                  </div>
+              <!-- Action buttons when selected -->
+              <%= if is_selected do %>
+                <div class="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    phx-click="preview_design"
+                    phx-value-id={design.id}
+                    class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                    </svg>
+                    Ampliar
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="use_design"
+                    class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Usar diseño
+                  </button>
                 </div>
+              <% else %>
+                <!-- Show binding info only when not selected -->
+                <% bindings = get_bindings(design.elements) %>
+                <%= if length(bindings) > 0 do %>
+                  <div class="mt-3 pt-3 border-t border-gray-100">
+                    <p class="text-xs text-gray-500 mb-1">Campos vinculados:</p>
+                    <div class="flex flex-wrap gap-1">
+                      <%= for binding <- Enum.take(bindings, 4) do %>
+                        <span class={"text-xs px-1.5 py-0.5 rounded #{if binding in @upload_columns, do: "bg-green-100 text-green-700", else: "bg-gray-100 text-gray-600"}"}>
+                          <%= binding %>
+                        </span>
+                      <% end %>
+                      <%= if length(bindings) > 4 do %>
+                        <span class="text-xs text-gray-400">+<%= length(bindings) - 4 %></span>
+                      <% end %>
+                    </div>
+                  </div>
+                <% end %>
               <% end %>
-            </button>
+            </div>
           <% end %>
         </div>
 
@@ -276,26 +317,84 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
         <% end %>
 
         <!-- Action Buttons -->
-        <div class="mt-8 flex justify-between items-center">
+        <div class="mt-8 flex justify-start">
           <button
             phx-click="back"
             class="px-6 py-3 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition"
           >
             Volver
           </button>
-
-          <button
-            :if={@selected_design_id}
-            phx-click="use_design"
-            class="px-8 py-3 rounded-xl font-medium transition flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white"
-          >
-            <span>Usar este diseño</span>
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
-          </button>
         </div>
       </div>
+
+      <!-- Preview Modal -->
+      <%= if @preview_design do %>
+        <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" phx-click="close_preview">
+          <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto" phx-click-away="close_preview">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 class="text-lg font-semibold text-gray-900"><%= @preview_design.name %></h3>
+                <p class="text-sm text-gray-500"><%= @preview_design.width_mm %> × <%= @preview_design.height_mm %> mm</p>
+              </div>
+              <button
+                type="button"
+                phx-click="close_preview"
+                class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition"
+              >
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Modal Body - Large Preview -->
+            <div class="p-6 bg-gray-100 flex justify-center">
+              <%= raw(SvgPreview.generate(@preview_design, max_width: 400, max_height: 300)) %>
+            </div>
+
+            <!-- Design Info -->
+            <div class="p-4 border-t">
+              <p class="text-sm text-gray-600 mb-3"><%= @preview_design.description || "Sin descripción" %></p>
+
+              <% bindings = get_bindings(@preview_design.elements) %>
+              <%= if length(bindings) > 0 do %>
+                <div class="mb-4">
+                  <p class="text-xs text-gray-500 mb-2">Campos vinculados:</p>
+                  <div class="flex flex-wrap gap-1">
+                    <%= for binding <- bindings do %>
+                      <span class={"text-xs px-2 py-1 rounded #{if binding in @upload_columns, do: "bg-green-100 text-green-700", else: "bg-gray-100 text-gray-600"}"}>
+                        <%= binding %>
+                      </span>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+
+              <!-- Modal Actions -->
+              <div class="flex gap-3">
+                <button
+                  type="button"
+                  phx-click="close_preview"
+                  class="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                >
+                  Cerrar
+                </button>
+                <button
+                  type="button"
+                  phx-click="use_design"
+                  class="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition flex items-center justify-center gap-2"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Usar este diseño
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
