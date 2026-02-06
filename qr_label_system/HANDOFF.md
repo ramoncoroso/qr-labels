@@ -6,137 +6,118 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (6 febrero 2026) - Fixes Compilacion y Modal Importacion
+## Sesion Actual (6 febrero 2026) - SVG Previews y Sistema de Categorias
 
 ### Resumen Ejecutivo
 
 | # | Tarea | Estado |
 |---|-------|--------|
-| 1 | Fix errores criticos de compilacion | Completado |
-| 2 | Fix warnings de compilacion | Completado |
-| 3 | Fix bug importacion de disenos | Completado |
-| 4 | Simplificar navbar (eliminar +Generar) | Completado |
-| 5 | Modal de importacion con seleccion de disenos | Completado |
+| 1 | SVG thumbnails en pagina de seleccion de diseno | Completado |
+| 2 | Botones de accion en tarjetas de diseno | Completado |
+| 3 | Modal de previsualizacion ampliada | Completado |
+| 4 | Sistema de categorias para organizar disenos | Completado |
 
 ---
 
-### 1. Fix Errores Criticos de Compilacion
+### 1. SVG Thumbnails para Disenos
 
-**Problemas encontrados:**
+**Problema:** La pagina `/generate/design` solo mostraba un rectangulo vacio como preview.
 
-| Error | Ubicacion | Solucion |
-|-------|-----------|----------|
-| `API.DesignController` no existe | router.ex:159-160 | Creado controlador con export/import |
-| `API.DataSourceController` no existe | router.ex:163-164 | Creado controlador con preview/test_connection |
-| `DbConnector.test_connection/1` no existe | edit.ex, form_component.ex | Agregada funcion wrapper que extrae :type del config |
-| `DataSources.get_data_from_source/2` no existe | show.ex | Agregada funcion conveniente |
+**Solucion:** Crear modulo `SvgPreview` que genera SVG con representacion visual de elementos.
 
-**Archivos creados:**
-- `lib/qr_label_system_web/controllers/api/design_controller.ex`
-- `lib/qr_label_system_web/controllers/api/data_source_controller.ex`
+**Archivo creado:** `lib/qr_label_system/designs/svg_preview.ex`
 
-**Archivos modificados:**
-- `lib/qr_label_system/data_sources/db_connector.ex` - agregada `test_connection/1`
-- `lib/qr_label_system/data_sources.ex` - agregadas `get_data_from_source/2` y `import_designs_list/2`
-
----
-
-### 2. Fix Warnings de Compilacion
-
-| Warning | Solucion |
-|---------|----------|
-| Variables no usadas | Prefijadas con `_` |
-| Funciones no usadas | Eliminadas (`change_user_role`, `error_to_string`, `barcode_format_example`) |
-| `@max_retries` no usado | Eliminado de db_connector.ex |
-| `@doc` duplicados en rbac.ex | Consolidados con function head |
-| `@impl true` faltante en editor_debug.ex | Agregados |
-| Default values en multiples clausulas | Agregados function heads en data_sources.ex |
-| `preferred_cli_env` deprecado | Movido a `def cli` en mix.exs |
-
----
-
-### 3. Fix Bug Importacion de Disenos
-
-**Problema:** Al importar un archivo JSON, el servidor crasheaba con `CaseClauseError`.
-
-**Causa raiz:** `consume_uploaded_entries` devuelve el contenido directamente, no envuelto en `{:ok, content}`.
-
-**Solucion:**
 ```elixir
-# Antes (incorrecto):
-case uploaded_files do
-  [{:ok, content}] -> ...
-
-# Despues (correcto):
-case uploaded_files do
-  [content] when is_binary(content) -> ...
+defmodule QrLabelSystem.Designs.SvgPreview do
+  def generate(design, opts \\ []) do
+    # Genera SVG escalado con:
+    # - QR: patron simplificado con esquinas
+    # - Barcode: lineas verticales
+    # - Text: texto real con fuente y color
+    # - Image: placeholder gris con icono
+  end
+end
 ```
+
+**Nota importante:** El SVG necesita `style="pointer-events: none;"` para que los clics pasen al elemento padre.
 
 ---
 
-### 4. Simplificar Navbar
+### 2. Botones de Accion en Tarjetas (Opcion B)
 
-**Cambios:**
-- Eliminado boton "+Generar" de todas las paginas (redundante, app es sencilla)
-- Boton "Mis disenos" ahora es azul (`bg-blue-600`) para mayor visibilidad
+**Antes:** Boton "Usar este diseno" en la parte inferior de la pagina.
 
-**Archivo modificado:** `lib/qr_label_system_web/components/layouts/app.html.heex`
+**Despues:** Botones dentro de la tarjeta seleccionada:
+- **Ampliar** - Abre modal con preview grande
+- **Usar diseno** - Continua al siguiente paso
+
+**Archivo modificado:** `lib/qr_label_system_web/live/generate_live/design_select.ex`
+
+**Fix de tipos:** Comparacion `@selected_design_id == to_string(design.id)` porque phx-value devuelve strings.
 
 ---
 
-### 5. Modal de Importacion con Seleccion de Disenos
+### 3. Sistema de Categorias
 
-**Nuevo flujo de importacion:**
-
-```
-1. Usuario click en "Importar" -> selecciona archivo JSON
-2. Se abre modal con lista de disenos del archivo
-3. Checkbox para cada diseno + "Seleccionar todas"
-4. Contador: "3 de 5 seleccionadas"
-5. Click "Importar X diseno(s)" para confirmar
-```
+**Caso de uso:** Almacen con etiquetas para estanterias, materiales, equipos, etc.
 
 **Implementacion:**
 
-```elixir
-# En mount():
-|> assign(:show_import_modal, false)
-|> assign(:import_preview_designs, [])
-|> assign(:import_selected_ids, MapSet.new())
-|> allow_upload(:backup_file, auto_upload: true, progress: &__MODULE__.handle_progress/3)
+| Componente | Descripcion |
+|------------|-------------|
+| **Modelo Category** | name, color, user_id |
+| **Relacion** | Design belongs_to Category (opcional) |
+| **Migracion** | `design_categories` + `category_id` en `label_designs` |
 
-# Callback cuando archivo termina de subir:
-def handle_progress(:backup_file, entry, socket) do
-  if entry.done? do
-    [content] = consume_uploaded_entries(...)
-    {:ok, designs} = parse_import_file(content)
-    socket
-    |> assign(:show_import_modal, true)
-    |> assign(:import_preview_designs, designs)
-    |> assign(:import_selected_ids, MapSet.new(0..length(designs)-1))
-  end
-end
-
-# Importar solo seleccionados:
-def handle_event("confirm_import", _, socket) do
-  selected_designs = filter_by_selected_ids(designs, selected_ids)
-  Designs.import_designs_list(selected_designs, user_id)
-end
-```
+**Archivos creados:**
+- `lib/qr_label_system/designs/category.ex`
+- `priv/repo/migrations/20260206212231_create_categories.exs`
 
 **Archivos modificados:**
-- `lib/qr_label_system_web/live/design_live/index.ex` - modal y logica
-- `lib/qr_label_system/designs.ex` - nueva funcion `import_designs_list/2`
+- `lib/qr_label_system/designs/design.ex` - belongs_to :category
+- `lib/qr_label_system/designs.ex` - funciones CRUD de categorias
+- `lib/qr_label_system_web/live/design_live/index.ex` - UI completa
+
+**Funciones agregadas en Designs:**
+```elixir
+list_user_categories/1
+create_category/1, update_category/2, delete_category/1
+list_user_designs_by_category/2
+preload_category/1
+```
+
+---
+
+### 4. Fix: Modal de Categorias con Streams
+
+**Problema:** El dropdown de asignar categoria no aparecia al hacer clic.
+
+**Causa raiz:** Con `phx-update="stream"`, los elementos dentro del stream NO se re-renderizan cuando cambia un assign externo.
+
+**Solucion:** Usar modal global fuera del stream en lugar de dropdown dentro de cada tarjeta.
+
+```elixir
+# INCORRECTO - dentro del stream:
+<%= if @assigning_category_to == design.id do %>
+  <div class="dropdown">...</div>  # Nunca se renderiza
+<% end %>
+
+# CORRECTO - fuera del stream:
+<%= if @assigning_category_to do %>
+  <% design = Enum.find(@all_designs, ...) %>
+  <div class="modal">...</div>  # Se renderiza correctamente
+<% end %>
+```
 
 ---
 
 ### Commits de Esta Sesion
 
 ```
-32a50c6 feat: Add import modal with design selection
-8881842 refactor: Simplify navbar by removing +Generar button
-ee3f4a4 fix: Fix design import by correcting consume_uploaded_entries pattern match
-72c97cf fix: Resolve compilation errors and warnings
+d385ba1 fix: Use modal instead of dropdown for category assignment
+0e23ce0 feat: Add category system for organizing designs
+bf45afa feat: Add action buttons and preview modal to design cards
+88b3440 feat: Add SVG thumbnail previews for designs in selection page
 ```
 
 ---
@@ -153,6 +134,10 @@ ee3f4a4 fix: Fix design import by correcting consume_uploaded_entries pattern ma
  UploadDataStore.put()        │              UploadDataStore.get()
 ```
 
+### Streams y Assigns en LiveView
+
+**Importante:** Los elementos renderizados con `phx-update="stream"` solo se actualizan cuando el stream cambia, NO cuando otros assigns cambian. Para UI interactiva dentro de streams, usar modales globales fuera del stream.
+
 ### Mecanismo pending_selection_id
 
 Previene deseleccion durante operaciones asincronas:
@@ -165,30 +150,26 @@ Previene deseleccion durante operaciones asincronas:
 5. element_modified completa, limpia pending_selection_id
 ```
 
-### Mecanismo pending_deletes
-
-Previene perdida accidental de elementos:
-
-```
-1. Usuario elimina elemento
-2. ID agregado a pending_deletes
-3. Canvas envia element_modified sin ese elemento
-4. Handler verifica: missing_ids todos en pending_deletes?
-   - Si: guardar normalmente
-   - No: rechazar, log warning
-5. Despues de guardar, limpiar pending_deletes
-```
-
 ---
 
-## Verificacion de Calidad
+## UI de Categorias
 
-| Aspecto | Estado |
-|---------|--------|
-| **Compilacion** | 1 warning cosmetico (handle_event clauses) |
-| **Element loss protection** | pending_deletes + validacion IDs |
-| **Binding mode stability** | show_binding_mode + pending_selection_id |
-| **Import flow** | Modal con seleccion de disenos |
+```
+┌─────────────────────────────────────┐
+│  Filtrar por categoría  ▼  │ ⚙️    │
+├─────────────────────────────────────┤
+│  ○ Todas las categorías             │
+│  ○ Sin categoría                    │
+│  ──────────────────────             │
+│  ● Estanterías                      │
+│  ○ Materiales                       │
+│  ○ Equipos                          │
+└─────────────────────────────────────┘
+
+Cada diseño muestra:
+- Badge de categoria con color personalizado
+- Boton de etiqueta para asignar/cambiar categoria
+```
 
 ---
 
@@ -197,6 +178,9 @@ Previene perdida accidental de elementos:
 ```bash
 # Servidor de desarrollo
 cd qr_label_system && mix phx.server
+
+# Ejecutar migracion de categorias
+mix ecto.migrate
 
 # Tests
 mix test
@@ -211,8 +195,8 @@ mix compile
 
 ### Problemas Conocidos
 
-1. **Warning cosmetico:** `handle_event/3` clauses no agrupadas en editor.ex
-   - Requiere refactor extenso del archivo (~1200 lineas)
+1. **Warning cosmetico:** `handle_event/3` clauses no agrupadas
+   - En editor.ex e index.ex
    - No afecta funcionalidad
 
 ### Tareas Pendientes
@@ -221,7 +205,7 @@ mix compile
 |-------|----------|-------------|
 | **Preview de etiquetas con datos** | Alto | Navegar registros del Excel en editor |
 | **Generacion PDF de lote** | Alto | PDF con todas las etiquetas |
-| **Alinear elementos en toolbar** | Bajo | JS ya implementado, falta UI |
+| **Subcategorias** | Medio | Jerarquia de categorias (parent_id) |
 
 ---
 
@@ -229,11 +213,11 @@ mix compile
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 6 feb 2026 | 14 | SVG previews, botones en tarjetas, sistema categorias |
 | 6 feb 2026 | 13 | Fix compilacion, modal importacion con seleccion |
 | 4 feb 2026 | 12 | Fix element loss, binding mode, UI texto duplicado |
 | 4 feb 2026 | 11 | PII anonimizado, sanitizacion uploads, cleanup job |
-| 4 feb 2026 | 10 | Seguridad: SQL validation, magic bytes, .env auto-load |
 
 ---
 
-*Handoff actualizado: 6 febrero 2026 (sesion 13)*
+*Handoff actualizado: 6 febrero 2026 (sesion 14)*
