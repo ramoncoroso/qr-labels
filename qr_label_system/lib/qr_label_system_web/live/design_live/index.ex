@@ -1,6 +1,8 @@
 defmodule QrLabelSystemWeb.DesignLive.Index do
   use QrLabelSystemWeb, :live_view
 
+  import QrLabelSystemWeb.DesignComponents
+
   alias QrLabelSystem.Designs
   alias QrLabelSystem.UploadDataStore
 
@@ -379,10 +381,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
             <div class="flex items-center justify-between">
               <div class="flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 flex items-center justify-center">
-                  <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
-                  </svg>
+                <div class="flex-shrink-0 rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                  <.design_thumbnail design={design} max_width={80} max_height={64} />
                 </div>
                 <div class="min-w-0 flex-1">
                   <%= if @renaming_id == design.id do %>
