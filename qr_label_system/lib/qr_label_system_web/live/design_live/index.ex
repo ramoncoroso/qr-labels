@@ -549,21 +549,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                 <% end %>
 
                 <div class="flex items-center gap-2">
-                  <!-- Edit Button - Primary Action -->
-                  <button
-                    phx-click="edit_design"
-                    phx-value-id={design.id}
-                    class="group relative inline-flex items-center justify-center w-10 h-10 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 hover:border-blue-300 transition-all duration-200 hover:shadow-sm"
-                  >
-                    <svg class="w-5 h-5 text-blue-600 group-hover:text-blue-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
-                    </svg>
-                    <span class="sr-only">Editar</span>
-                    <span class="absolute -bottom-9 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                      Editar
-                    </span>
-                  </button>
-
                   <!-- Duplicate Button -->
                   <button
                     phx-click="duplicate"
