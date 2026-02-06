@@ -740,48 +740,17 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
               <div class="flex items-center gap-2">
                 <!-- Category Button -->
-                <div class="relative">
-                  <button
-                    phx-click="open_assign_category"
-                    phx-value-id={design.id}
-                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-700 text-sm font-medium transition-all duration-200"
-                    title="Asignar categoría"
-                  >
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
-                  </button>
-                  <!-- Category dropdown -->
-                  <%= if @assigning_category_to == design.id do %>
-                    <div class="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
-                      <button
-                        phx-click="assign_category"
-                        phx-value-category=""
-                        class={"block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 #{if is_nil(design.category_id), do: "bg-blue-50 text-blue-700", else: "text-gray-700"}"}
-                      >
-                        Sin categoría
-                      </button>
-                      <%= for cat <- @categories do %>
-                        <button
-                          phx-click="assign_category"
-                          phx-value-category={cat.id}
-                          class={"block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 #{if design.category_id == cat.id, do: "bg-blue-50 text-blue-700", else: "text-gray-700"}"}
-                        >
-                          <span class="inline-block w-3 h-3 rounded-full mr-2" style={"background-color: #{cat.color};"}></span>
-                          <%= cat.name %>
-                        </button>
-                      <% end %>
-                      <div class="border-t border-gray-100 mt-1 pt-1">
-                        <button
-                          phx-click="close_assign_category"
-                          class="block w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  <% end %>
-                </div>
+                <button
+                  type="button"
+                  phx-click="open_assign_category"
+                  phx-value-id={design.id}
+                  class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-700 text-sm font-medium transition-all duration-200"
+                  title="Asignar categoría"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                </button>
 
                 <!-- Duplicate Button -->
                 <button
@@ -865,6 +834,62 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </div>
       </div>
+
+      <!-- Assign Category Modal -->
+      <%= if @assigning_category_to do %>
+        <% design = Enum.find(@all_designs, fn d -> to_string(d.id) == @assigning_category_to end) %>
+        <%= if design do %>
+          <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="assign-category-modal" role="dialog" aria-modal="true">
+            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" phx-click="close_assign_category"></div>
+              <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+              <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-sm sm:w-full">
+                <div class="bg-white px-6 pt-6 pb-4">
+                  <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Asignar categoría</h3>
+                    <button phx-click="close_assign_category" class="text-gray-400 hover:text-gray-600 transition">
+                      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <p class="text-sm text-gray-500 mb-4">Selecciona una categoría para "<%= design.name %>"</p>
+
+                  <div class="space-y-1">
+                    <button
+                      phx-click="assign_category"
+                      phx-value-category=""
+                      class={"w-full text-left px-4 py-3 rounded-lg text-sm transition #{if is_nil(design.category_id), do: "bg-blue-50 text-blue-700 border-2 border-blue-200", else: "hover:bg-gray-100 text-gray-700"}"}
+                    >
+                      Sin categoría
+                    </button>
+                    <%= for cat <- @categories do %>
+                      <button
+                        phx-click="assign_category"
+                        phx-value-category={cat.id}
+                        class={"w-full text-left px-4 py-3 rounded-lg text-sm transition flex items-center #{if design.category_id == cat.id, do: "bg-blue-50 text-blue-700 border-2 border-blue-200", else: "hover:bg-gray-100 text-gray-700"}"}
+                      >
+                        <span class="inline-block w-4 h-4 rounded-full mr-3" style={"background-color: #{cat.color};"}></span>
+                        <%= cat.name %>
+                      </button>
+                    <% end %>
+                  </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4">
+                  <button
+                    phx-click="close_assign_category"
+                    class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
 
       <!-- Category Management Modal -->
       <div :if={@show_category_modal} class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="category-modal-title" role="dialog" aria-modal="true">
