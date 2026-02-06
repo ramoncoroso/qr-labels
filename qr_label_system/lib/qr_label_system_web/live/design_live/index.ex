@@ -373,7 +373,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     <div>
       <.header>
         Mis diseños
-        <:subtitle>Crea y administra tus diseños de etiquetas personalizadas</:subtitle>
+        <:subtitle>Pulsa sobre un diseño para editarlo en el canvas. Usa los botones para duplicar o eliminar.</:subtitle>
         <:actions>
           <div class="flex items-center gap-2">
             <!-- Import Button -->
