@@ -2,6 +2,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Designs
+  alias QrLabelSystem.Designs.SvgPreview
 
   @impl true
   def mount(params, _session, socket) do
@@ -222,11 +223,11 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
             <button
               phx-click="select_design"
               phx-value-id={design.id}
-              class={"bg-white rounded-xl shadow-sm p-6 cursor-pointer transition-all text-left border-2 #{if @selected_design_id == design.id, do: "border-indigo-500 ring-2 ring-indigo-200", else: "border-transparent hover:border-indigo-300"}"}
+              class={"bg-white rounded-xl shadow-sm p-6 cursor-pointer transition-all text-left border-2 #{if @selected_design_id == to_string(design.id), do: "border-indigo-500 ring-2 ring-indigo-200", else: "border-transparent hover:border-indigo-300"}"}
             >
               <div class="flex items-center justify-between mb-3">
                 <h3 class="text-lg font-semibold text-gray-900 truncate"><%= design.name %></h3>
-                <%= if @selected_design_id == design.id do %>
+                <%= if @selected_design_id == to_string(design.id) do %>
                   <div class="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center flex-shrink-0">
                     <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -243,12 +244,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
               </div>
 
               <!-- Mini Preview -->
-              <div class="bg-gray-100 rounded-lg p-3 flex justify-center">
-                <div
-                  class="bg-white shadow-sm rounded"
-                  style={"width: #{min(design.width_mm * 2, 120)}px; height: #{min(design.height_mm * 2, 80)}px; background-color: #{design.background_color}; border: 1px solid #{design.border_color};"}
-                >
-                </div>
+              <div class="bg-gray-100 rounded-lg p-3 flex justify-center items-center min-h-[80px]">
+                <%= raw(SvgPreview.generate(design, max_width: 140, max_height: 90)) %>
               </div>
 
               <!-- Show binding info -->
