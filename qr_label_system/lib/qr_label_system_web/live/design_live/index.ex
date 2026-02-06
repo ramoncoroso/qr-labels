@@ -472,7 +472,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
           <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
             <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-4">
+              <.link navigate={~p"/designs/#{design.id}/edit"} class="flex items-center space-x-4 min-w-0 flex-1 cursor-pointer">
                 <div class="flex-shrink-0 rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <.design_thumbnail design={design} max_width={80} max_height={64} />
                 </div>
@@ -520,7 +520,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                     </span>
                   </p>
                 </div>
-              </div>
+              </.link>
 
               <div class="flex items-center gap-3">
                 <!-- Label Type Badge -->
