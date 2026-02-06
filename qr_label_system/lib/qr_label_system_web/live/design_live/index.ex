@@ -167,7 +167,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       end)
 
     case uploaded_files do
-      [{:ok, content}] ->
+      [content] when is_binary(content) ->
         case Designs.import_designs_from_json(content, user_id) do
           {:ok, imported_designs} ->
             {:noreply,
@@ -184,6 +184,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       [] ->
         {:noreply, socket}
+
+      _other ->
+        {:noreply, put_flash(socket, :error, "Error al procesar el archivo")}
     end
   end
 
