@@ -1328,8 +1328,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <span class="text-sm text-gray-500 font-medium"><%= @design.width_mm %> × <%= @design.height_mm %> mm</span>
         </div>
 
-        <!-- Right: Preview + Save -->
+        <!-- Right: Data + Preview + Save -->
         <div class="flex items-center space-x-2">
+          <.link
+            :if={@design.label_type == "multiple"}
+            navigate={~p"/generate/data/#{@design.id}"}
+            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if length(@upload_data) > 0, do: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200", else: "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"}"}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+            </svg>
+            <span><%= if length(@upload_data) > 0, do: "Cambiar datos", else: "Vincular datos" %></span>
+          </.link>
           <button
             phx-click="toggle_preview"
             class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_preview, do: "bg-indigo-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
