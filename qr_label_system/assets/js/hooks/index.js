@@ -11,6 +11,7 @@ import AutoHideFlash from "./auto_hide_flash"
 import AutoUploadSubmit from "./auto_upload_submit"
 import PropertyFields from "./property_fields"
 import BorderRadiusSlider from "./border_radius_slider"
+import ScrollTo from "./scroll_to"
 
 const Hooks = {
   CanvasDesigner,
@@ -25,7 +26,8 @@ const Hooks = {
   AutoHideFlash,
   AutoUploadSubmit,
   PropertyFields,
-  BorderRadiusSlider
+  BorderRadiusSlider,
+  ScrollTo
 }
 
 export default Hooks

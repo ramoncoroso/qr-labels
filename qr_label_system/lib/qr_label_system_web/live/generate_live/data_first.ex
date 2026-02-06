@@ -132,7 +132,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
              socket
              |> assign(:upload_data, rows)
              |> assign(:upload_columns, headers)
-             |> assign(:upload_error, nil)}
+             |> assign(:upload_error, nil)
+             |> push_event("scroll_to", %{id: "data-preview"})}
 
           {:error, reason} ->
             File.rm(file_path)
@@ -162,7 +163,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
          socket
          |> assign(:upload_data, data)
          |> assign(:upload_columns, columns)
-         |> assign(:upload_error, nil)}
+         |> assign(:upload_error, nil)
+         |> push_event("scroll_to", %{id: "data-preview"})}
 
       {:error, reason} ->
         {:noreply, assign(socket, :upload_error, reason)}
@@ -265,7 +267,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="max-w-4xl mx-auto">
+    <div id="data-first-page" class="max-w-4xl mx-auto" phx-hook="ScrollTo">
       <.header>
         <%= if @design_name do %>
           Cargar datos para "<%= @design_name %>"
@@ -508,7 +510,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
         <!-- Data Preview -->
         <%= if @upload_data && length(@upload_data) > 0 do %>
-          <div class="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div id="data-preview" class="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="px-6 py-4 bg-green-50 border-b border-green-100 flex items-center justify-between">
               <div class="flex items-center space-x-3">
                 <div class="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
