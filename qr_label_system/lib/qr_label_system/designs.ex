@@ -10,6 +10,7 @@ defmodule QrLabelSystem.Designs do
   alias QrLabelSystem.Repo
   alias QrLabelSystem.Cache
   alias QrLabelSystem.Designs.Design
+  alias QrLabelSystem.Designs.Category
 
   @cache_ttl 30_000  # 30 seconds - reduced to prevent stale data issues
 
@@ -449,5 +450,94 @@ defmodule QrLabelSystem.Designs do
     }
 
     create_design(attrs)
+  end
+
+  # ==========================================
+  # CATEGORY FUNCTIONS
+  # ==========================================
+
+  @doc """
+  Returns the list of categories for a specific user.
+  """
+  def list_user_categories(user_id) do
+    Repo.all(
+      from c in Category,
+        where: c.user_id == ^user_id,
+        order_by: [asc: c.name]
+    )
+  end
+
+  @doc """
+  Gets a single category.
+  """
+  def get_category(id), do: Repo.get(Category, id)
+
+  @doc """
+  Gets a single category, raises if not found.
+  """
+  def get_category!(id), do: Repo.get!(Category, id)
+
+  @doc """
+  Creates a category.
+  """
+  def create_category(attrs \\ %{}) do
+    %Category{}
+    |> Category.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Updates a category.
+  """
+  def update_category(%Category{} = category, attrs) do
+    category
+    |> Category.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Deletes a category.
+  Designs with this category will have their category_id set to null.
+  """
+  def delete_category(%Category{} = category) do
+    Repo.delete(category)
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking category changes.
+  """
+  def change_category(%Category{} = category, attrs \\ %{}) do
+    Category.changeset(category, attrs)
+  end
+
+  @doc """
+  Returns the list of designs for a user, optionally filtered by category.
+  """
+  def list_user_designs_by_category(user_id, nil) do
+    # No filter - return all designs
+    list_user_designs(user_id)
+  end
+
+  def list_user_designs_by_category(user_id, "uncategorized") do
+    Repo.all(
+      from d in Design,
+        where: d.user_id == ^user_id and is_nil(d.category_id),
+        order_by: [desc: d.updated_at]
+    )
+  end
+
+  def list_user_designs_by_category(user_id, category_id) do
+    Repo.all(
+      from d in Design,
+        where: d.user_id == ^user_id and d.category_id == ^category_id,
+        order_by: [desc: d.updated_at]
+    )
+  end
+
+  @doc """
+  Preloads category for a design or list of designs.
+  """
+  def preload_category(design_or_designs) do
+    Repo.preload(design_or_designs, :category)
   end
 end

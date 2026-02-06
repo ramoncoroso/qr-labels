@@ -4,13 +4,17 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   import QrLabelSystemWeb.DesignComponents
 
   alias QrLabelSystem.Designs
+  alias QrLabelSystem.Designs.Category
   alias QrLabelSystem.UploadDataStore
 
   @max_file_size 5 * 1024 * 1024
 
   @impl true
   def mount(_params, _session, socket) do
-    designs = Designs.list_user_designs(socket.assigns.current_user.id)
+    user_id = socket.assigns.current_user.id
+    designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
+    categories = Designs.list_user_categories(user_id)
+
     {:ok,
      socket
      |> assign(:all_designs, designs)
@@ -22,6 +26,14 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:show_data_modal, false)
      |> assign(:pending_edit_design, nil)
      |> assign(:filter, "all")
+     |> assign(:category_filter, nil)
+     |> assign(:categories, categories)
+     # Category management modal
+     |> assign(:show_category_modal, false)
+     |> assign(:editing_category, nil)
+     |> assign(:category_form, to_form(Designs.change_category(%Designs.Category{})))
+     # Assign category to design
+     |> assign(:assigning_category_to, nil)
      # Import modal state
      |> assign(:show_import_modal, false)
      |> assign(:import_preview_designs, [])
@@ -348,7 +360,11 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("filter", %{"type" => filter_type}, socket) do
-    filtered_designs = filter_designs(socket.assigns.all_designs, filter_type)
+    filtered_designs = apply_filters(
+      socket.assigns.all_designs,
+      filter_type,
+      socket.assigns.category_filter
+    )
 
     {:noreply,
      socket
@@ -359,6 +375,155 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   defp filter_designs(designs, "all"), do: designs
   defp filter_designs(designs, "single"), do: Enum.filter(designs, &(&1.label_type == "single"))
   defp filter_designs(designs, "multiple"), do: Enum.filter(designs, &(&1.label_type == "multiple"))
+
+  # Category filter event
+  @impl true
+  def handle_event("filter_category", %{"category" => category_id}, socket) do
+    category_filter = if category_id == "", do: nil, else: category_id
+
+    filtered = apply_filters(
+      socket.assigns.all_designs,
+      socket.assigns.filter,
+      category_filter
+    )
+
+    {:noreply,
+     socket
+     |> assign(:category_filter, category_filter)
+     |> stream(:designs, filtered, reset: true)}
+  end
+
+  # Category management
+  @impl true
+  def handle_event("open_category_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_category_modal, true)
+     |> assign(:editing_category, nil)
+     |> assign(:category_form, to_form(Designs.change_category(%Category{})))}
+  end
+
+  @impl true
+  def handle_event("close_category_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_category_modal, false)
+     |> assign(:editing_category, nil)}
+  end
+
+  @impl true
+  def handle_event("edit_category", %{"id" => id}, socket) do
+    category = Designs.get_category!(id)
+    changeset = Designs.change_category(category)
+
+    {:noreply,
+     socket
+     |> assign(:editing_category, category)
+     |> assign(:category_form, to_form(changeset))}
+  end
+
+  @impl true
+  def handle_event("save_category", %{"category" => params}, socket) do
+    user_id = socket.assigns.current_user.id
+
+    result =
+      if socket.assigns.editing_category do
+        Designs.update_category(socket.assigns.editing_category, params)
+      else
+        Designs.create_category(Map.put(params, "user_id", user_id))
+      end
+
+    case result do
+      {:ok, _category} ->
+        categories = Designs.list_user_categories(user_id)
+        designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
+
+        {:noreply,
+         socket
+         |> assign(:categories, categories)
+         |> assign(:all_designs, designs)
+         |> assign(:editing_category, nil)
+         |> assign(:category_form, to_form(Designs.change_category(%Category{})))
+         |> stream(:designs, apply_filters(designs, socket.assigns.filter, socket.assigns.category_filter), reset: true)
+         |> put_flash(:info, "Categoría guardada")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :category_form, to_form(changeset))}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_category", %{"id" => id}, socket) do
+    category = Designs.get_category!(id)
+    {:ok, _} = Designs.delete_category(category)
+
+    user_id = socket.assigns.current_user.id
+    categories = Designs.list_user_categories(user_id)
+    designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
+
+    # Reset category filter if deleted category was selected
+    category_filter =
+      if socket.assigns.category_filter == to_string(id),
+        do: nil,
+        else: socket.assigns.category_filter
+
+    {:noreply,
+     socket
+     |> assign(:categories, categories)
+     |> assign(:all_designs, designs)
+     |> assign(:category_filter, category_filter)
+     |> stream(:designs, apply_filters(designs, socket.assigns.filter, category_filter), reset: true)
+     |> put_flash(:info, "Categoría eliminada")}
+  end
+
+  # Assign category to design
+  @impl true
+  def handle_event("open_assign_category", %{"id" => id}, socket) do
+    {:noreply, assign(socket, :assigning_category_to, id)}
+  end
+
+  @impl true
+  def handle_event("close_assign_category", _params, socket) do
+    {:noreply, assign(socket, :assigning_category_to, nil)}
+  end
+
+  @impl true
+  def handle_event("assign_category", %{"category" => category_id}, socket) do
+    design_id = socket.assigns.assigning_category_to
+    design = Designs.get_design!(design_id)
+
+    category_id = if category_id == "", do: nil, else: category_id
+
+    case Designs.update_design(design, %{category_id: category_id}) do
+      {:ok, updated_design} ->
+        updated_design = Designs.preload_category(updated_design)
+        user_id = socket.assigns.current_user.id
+        designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
+
+        {:noreply,
+         socket
+         |> assign(:all_designs, designs)
+         |> assign(:assigning_category_to, nil)
+         |> stream(:designs, apply_filters(designs, socket.assigns.filter, socket.assigns.category_filter), reset: true)}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Error al asignar categoría")}
+    end
+  end
+
+  defp apply_filters(designs, type_filter, category_filter) do
+    designs
+    |> filter_designs(type_filter)
+    |> filter_by_category(category_filter)
+  end
+
+  defp filter_by_category(designs, nil), do: designs
+  defp filter_by_category(designs, "uncategorized") do
+    Enum.filter(designs, &is_nil(&1.category_id))
+  end
+  defp filter_by_category(designs, category_id) do
+    Enum.filter(designs, &(to_string(&1.category_id) == category_id))
+  end
 
   defp count_by_type(designs, type) do
     Enum.count(designs, &(&1.label_type == type))
@@ -425,6 +590,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
         <!-- Filter Tabs -->
         <div :if={@has_designs} class="mb-4 border-b border-gray-200">
+          <div class="flex items-center justify-between">
           <nav class="-mb-px flex space-x-6" aria-label="Tabs">
             <button
               phx-click="filter"
@@ -467,6 +633,33 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
               </span>
             </button>
           </nav>
+
+          <!-- Category Filter -->
+          <div class="flex items-center gap-2 mb-px">
+            <select
+              phx-change="filter_category"
+              name="category"
+              class="text-sm border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 py-1.5"
+            >
+              <option value="">Todas las categorías</option>
+              <option value="uncategorized" selected={@category_filter == "uncategorized"}>Sin categoría</option>
+              <%= for cat <- @categories do %>
+                <option value={cat.id} selected={@category_filter == to_string(cat.id)}>
+                  <%= cat.name %>
+                </option>
+              <% end %>
+            </select>
+            <button
+              phx-click="open_category_modal"
+              class="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+              title="Gestionar categorías"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+              </svg>
+            </button>
+          </div>
+          </div>
         </div>
 
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
@@ -533,11 +726,63 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                         Plantilla
                       </span>
                     <% end %>
+                    <%= if design.category do %>
+                      <span
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={"background-color: #{design.category.color}20; color: #{design.category.color};"}
+                      >
+                        <%= design.category.name %>
+                      </span>
+                    <% end %>
                   </p>
                 </div>
               </.link>
 
               <div class="flex items-center gap-2">
+                <!-- Category Button -->
+                <div class="relative">
+                  <button
+                    phx-click="open_assign_category"
+                    phx-value-id={design.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-700 text-sm font-medium transition-all duration-200"
+                    title="Asignar categoría"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                  </button>
+                  <!-- Category dropdown -->
+                  <%= if @assigning_category_to == design.id do %>
+                    <div class="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                      <button
+                        phx-click="assign_category"
+                        phx-value-category=""
+                        class={"block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 #{if is_nil(design.category_id), do: "bg-blue-50 text-blue-700", else: "text-gray-700"}"}
+                      >
+                        Sin categoría
+                      </button>
+                      <%= for cat <- @categories do %>
+                        <button
+                          phx-click="assign_category"
+                          phx-value-category={cat.id}
+                          class={"block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 #{if design.category_id == cat.id, do: "bg-blue-50 text-blue-700", else: "text-gray-700"}"}
+                        >
+                          <span class="inline-block w-3 h-3 rounded-full mr-2" style={"background-color: #{cat.color};"}></span>
+                          <%= cat.name %>
+                        </button>
+                      <% end %>
+                      <div class="border-t border-gray-100 mt-1 pt-1">
+                        <button
+                          phx-click="close_assign_category"
+                          class="block w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+
                 <!-- Duplicate Button -->
                 <button
                   phx-click="duplicate"
@@ -615,6 +860,109 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                 class="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-gray-500 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:w-auto sm:text-sm transition"
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category Management Modal -->
+      <div :if={@show_category_modal} class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="category-modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" phx-click="close_category_modal"></div>
+          <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+          <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full">
+            <div class="bg-white px-6 pt-6 pb-4">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900" id="category-modal-title">
+                  Gestionar categorías
+                </h3>
+                <button phx-click="close_category_modal" class="text-gray-400 hover:text-gray-600 transition">
+                  <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Category Form -->
+              <.form for={@category_form} phx-submit="save_category" class="mb-4">
+                <div class="flex gap-2">
+                  <div class="flex-1">
+                    <.input field={@category_form[:name]} placeholder="Nueva categoría..." class="text-sm" />
+                  </div>
+                  <div class="w-16">
+                    <.input field={@category_form[:color]} type="color" class="h-10 p-1 cursor-pointer" />
+                  </div>
+                  <button
+                    type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition"
+                  >
+                    <%= if @editing_category, do: "Guardar", else: "Añadir" %>
+                  </button>
+                </div>
+                <%= if @editing_category do %>
+                  <button
+                    type="button"
+                    phx-click="close_category_modal"
+                    phx-click="edit_category"
+                    phx-value-id=""
+                    class="mt-2 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Cancelar edición
+                  </button>
+                <% end %>
+              </.form>
+
+              <!-- Category List -->
+              <div class="border-t border-gray-200 pt-4">
+                <h4 class="text-sm font-medium text-gray-700 mb-2">Categorías existentes</h4>
+                <%= if length(@categories) == 0 do %>
+                  <p class="text-sm text-gray-500 py-4 text-center">No hay categorías creadas</p>
+                <% else %>
+                  <div class="space-y-2 max-h-48 overflow-y-auto">
+                    <%= for category <- @categories do %>
+                      <div class="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center gap-2">
+                          <span class="w-4 h-4 rounded-full" style={"background-color: #{category.color};"}></span>
+                          <span class="text-sm font-medium text-gray-900"><%= category.name %></span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                          <button
+                            phx-click="edit_category"
+                            phx-value-id={category.id}
+                            class="p-1 text-gray-400 hover:text-blue-600 transition"
+                            title="Editar"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <button
+                            phx-click="delete_category"
+                            phx-value-id={category.id}
+                            data-confirm="¿Eliminar esta categoría? Los diseños asociados quedarán sin categoría."
+                            class="p-1 text-gray-400 hover:text-red-600 transition"
+                            title="Eliminar"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+            </div>
+
+            <div class="bg-gray-50 px-6 py-4">
+              <button
+                phx-click="close_category_modal"
+                class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cerrar
               </button>
             </div>
           </div>
