@@ -5,7 +5,6 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   """
 
   @timeout 30_000
-  @max_retries 3
 
   # Compiled once at module load - more efficient than creating on each call
   @dangerous_patterns [
@@ -63,12 +62,20 @@ defmodule QrLabelSystem.DataSources.DbConnector do
 
   @doc """
   Tests a database connection.
-  Returns {:ok, :connected} or {:error, reason}
+  Returns :ok or {:error, reason}
+
+  Accepts either:
+  - `test_connection(type, config)` - explicit type and config
+  - `test_connection(config)` - config map with :type key
   """
+  def test_connection(%{type: type} = config) do
+    test_connection(type, config)
+  end
+
   def test_connection(type, config) do
     with {:ok, conn} <- connect(type, config) do
       disconnect(type, conn)
-      {:ok, :connected}
+      :ok
     end
   end
 

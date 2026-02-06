@@ -5,7 +5,6 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Accounts
-  alias QrLabelSystem.Accounts.User
   alias QrLabelSystem.Audit
 
   @impl true
@@ -136,10 +135,6 @@ defmodule QrLabelSystemWeb.Admin.UsersLive do
 
   defp list_users(params \\ %{}) do
     Accounts.list_users(params)
-  end
-
-  defp change_user_role(user) do
-    User.role_changeset(user, %{})
   end
 
   @impl true

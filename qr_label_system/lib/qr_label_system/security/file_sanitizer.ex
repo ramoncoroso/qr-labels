@@ -350,7 +350,6 @@ defmodule QrLabelSystem.Security.FileSanitizer do
   defp atom_to_mime(:xlsx), do: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   defp atom_to_mime(:xls), do: "application/vnd.ms-excel"
   defp atom_to_mime(:text), do: "text/plain"
-  defp atom_to_mime(:csv), do: "text/csv"
   defp atom_to_mime(:xml), do: "application/xml"
   defp atom_to_mime(:svg), do: "image/svg+xml"
   defp atom_to_mime(_), do: "application/octet-stream"

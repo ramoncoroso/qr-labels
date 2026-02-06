@@ -74,13 +74,37 @@ defmodule QrLabelSystem.DataSources do
   # ==========================================
 
   @doc """
+  Convenience function to get data from a data source using its stored file_path.
+  For database sources, file_path is not needed.
+
+  Returns {:ok, %{columns: [...], rows: [...], total: n}} or {:error, reason}
+  """
+  def get_data_from_source(%DataSource{} = source, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 100)
+    result = get_data(source, source.file_path, max_rows: limit)
+
+    case result do
+      {:ok, %{headers: headers} = data} ->
+        {:ok, %{columns: headers, rows: data.rows, total: data.total}}
+
+      {:ok, data} ->
+        {:ok, data}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   Retrieves data from a data source.
   For Excel sources, parses the uploaded file.
   For database sources, executes the configured query.
 
   Returns {:ok, %{headers: [...], rows: [...], total: n}} or {:error, reason}
   """
-  def get_data(%DataSource{type: "excel"} = _source, file_path, opts \\ []) do
+  def get_data(source, file_path, opts \\ [])
+
+  def get_data(%DataSource{type: "excel"} = _source, file_path, opts) do
     ExcelParser.parse_file(file_path, opts)
   end
 
@@ -102,7 +126,9 @@ defmodule QrLabelSystem.DataSources do
   @doc """
   Gets a preview of data from a data source (first few rows).
   """
-  def preview_data(%DataSource{type: "excel"} = _source, file_path, opts \\ []) do
+  def preview_data(source, file_path, opts \\ [])
+
+  def preview_data(%DataSource{type: "excel"} = _source, file_path, opts) do
     preview_rows = Keyword.get(opts, :preview_rows, 5)
     ExcelParser.preview_file(file_path, preview_rows: preview_rows)
   end

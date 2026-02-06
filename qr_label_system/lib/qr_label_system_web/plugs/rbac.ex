@@ -80,8 +80,14 @@ defmodule QrLabelSystemWeb.Plugs.RBAC do
   # LiveView on_mount callbacks for RBAC
 
   @doc """
-  LiveView on_mount callback for admin-only routes.
+  LiveView on_mount callbacks for role-based access control.
+
+  - `:require_admin` - Only allows admin users
+  - `:require_operator` - Only allows operator users (includes admins)
+  - `:require_viewer` - Any authenticated user
   """
+  def on_mount(role, params, session, socket)
+
   def on_mount(:require_admin, _params, _session, socket) do
     if socket.assigns[:current_user] && User.admin?(socket.assigns.current_user) do
       {:cont, socket}
@@ -95,9 +101,6 @@ defmodule QrLabelSystemWeb.Plugs.RBAC do
     end
   end
 
-  @doc """
-  LiveView on_mount callback for operator routes.
-  """
   def on_mount(:require_operator, _params, _session, socket) do
     if socket.assigns[:current_user] && User.operator?(socket.assigns.current_user) do
       {:cont, socket}
@@ -111,9 +114,6 @@ defmodule QrLabelSystemWeb.Plugs.RBAC do
     end
   end
 
-  @doc """
-  LiveView on_mount callback for viewer routes (any authenticated user).
-  """
   def on_mount(:require_viewer, _params, _session, socket) do
     if socket.assigns[:current_user] do
       {:cont, socket}

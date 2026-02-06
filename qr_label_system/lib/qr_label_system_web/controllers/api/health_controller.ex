@@ -214,7 +214,7 @@ defmodule QrLabelSystemWeb.API.HealthController do
     div(uptime_ms, 1000)
   end
 
-  defp build_prometheus_metrics(is_prod \\ false) do
+  defp build_prometheus_metrics(is_prod) do
     memory = :erlang.memory()
     process_count = :erlang.system_info(:process_count)
     {:total, run_queue} = :erlang.statistics(:total_run_queue_lengths)

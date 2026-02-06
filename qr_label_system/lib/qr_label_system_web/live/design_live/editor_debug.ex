@@ -37,6 +37,9 @@ defmodule QrLabelSystemWeb.DesignLive.EditorDebug do
   end
 
   # Delegate all other callbacks to the main Editor module
+  @impl true
   defdelegate handle_event(event, params, socket), to: QrLabelSystemWeb.DesignLive.Editor
+
+  @impl true
   defdelegate render(assigns), to: QrLabelSystemWeb.DesignLive.Editor
 end

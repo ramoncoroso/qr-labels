@@ -257,7 +257,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     Enum.count(designs, &(&1.label_type == type))
   end
 
-  defp should_show_design?(design, "all"), do: true
+  defp should_show_design?(_design, "all"), do: true
   defp should_show_design?(design, filter), do: design.label_type == filter
 
   @impl true

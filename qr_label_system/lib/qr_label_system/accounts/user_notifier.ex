@@ -19,7 +19,7 @@ defmodule QrLabelSystem.Accounts.UserNotifier do
     Logger.info("Sending email to #{recipient}: #{subject}")
 
     case Mailer.deliver(email) do
-      {:ok, _metadata} = result ->
+      {:ok, _metadata} ->
         Logger.info("Email sent successfully to #{recipient}")
         {:ok, email}
 

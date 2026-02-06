@@ -249,7 +249,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     # Check for suspicious element loss
     missing_ids = MapSet.difference(current_ids, new_ids)
-    elements_lost = MapSet.size(missing_ids)
+    _elements_lost = MapSet.size(missing_ids)
 
     # Check if all missing elements are expected deletions
     unexpected_missing = MapSet.difference(missing_ids, pending_deletes)
@@ -448,8 +448,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Get current values
       current_binding = Map.get(socket.assigns.selected_element, :binding) ||
                         Map.get(socket.assigns.selected_element, "binding") || ""
-      current_text = Map.get(socket.assigns.selected_element, :text_content) ||
-                     Map.get(socket.assigns.selected_element, "text_content") || ""
+      _current_text = Map.get(socket.assigns.selected_element, :text_content) ||
+                      Map.get(socket.assigns.selected_element, "text_content") || ""
 
       case mode do
         "binding" ->
@@ -1079,15 +1079,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         base
     end
   end
-
-  # Returns example content for barcode formats with rigid requirements
-  # Returns nil for flexible formats (CODE128, CODE39)
-  defp barcode_format_example("EAN13"), do: "5901234123457"
-  defp barcode_format_example("EAN8"), do: "12345678"
-  defp barcode_format_example("UPC"), do: "012345678905"
-  defp barcode_format_example("ITF14"), do: "10012345678902"
-  defp barcode_format_example("pharmacode"), do: "1234"
-  defp barcode_format_example(_), do: nil
 
   # Check if barcode format is compatible with the given content
   # Returns true if compatible, false otherwise

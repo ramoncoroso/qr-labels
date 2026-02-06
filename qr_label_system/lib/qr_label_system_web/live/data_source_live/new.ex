@@ -142,11 +142,6 @@ defmodule QrLabelSystemWeb.DataSourceLive.New do
   defp type_label("csv"), do: "CSV"
   defp type_label(_), do: "Archivo"
 
-  defp error_to_string(:too_large), do: "Archivo muy grande (máx 10MB)"
-  defp error_to_string(:not_accepted), do: "Tipo de archivo no aceptado. Usa .xlsx, .xls o .csv"
-  defp error_to_string(:too_many_files), do: "Solo puedes subir un archivo"
-  defp error_to_string(error), do: "Error: #{inspect(error)}"
-
   @impl true
   def render(assigns) do
     ~H"""
