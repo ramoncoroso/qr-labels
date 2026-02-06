@@ -302,15 +302,6 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
             <% else %>
               <!-- Flow: Data-first -->
               <div class="flex items-center">
-                <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <span class="ml-2 text-sm font-medium text-green-600">Modo múltiple</span>
-              </div>
-              <div class="w-16 h-0.5 bg-indigo-600"></div>
-              <div class="flex items-center">
                 <div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">1</div>
                 <span class="ml-2 text-sm font-medium text-indigo-600">Cargar datos</span>
               </div>
