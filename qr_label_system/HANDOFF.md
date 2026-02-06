@@ -6,175 +6,138 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (4 febrero 2026) - Fixes Criticos de Sincronizacion Editor
+## Sesion Actual (6 febrero 2026) - Fixes Compilacion y Modal Importacion
 
 ### Resumen Ejecutivo
 
 | # | Tarea | Estado |
 |---|-------|--------|
-| 1 | Fix perdida de elementos al volver de cargar datos | ✅ Completado |
-| 2 | Fix binding mode revierte a texto fijo en texto | ✅ Completado |
-| 3 | Eliminar campo "Contenido" duplicado en texto (multiple) | ✅ Completado |
-| 4 | Mover controles de zoom al header | ✅ Completado |
+| 1 | Fix errores criticos de compilacion | Completado |
+| 2 | Fix warnings de compilacion | Completado |
+| 3 | Fix bug importacion de disenos | Completado |
+| 4 | Simplificar navbar (eliminar +Generar) | Completado |
+| 5 | Modal de importacion con seleccion de disenos | Completado |
 
 ---
 
-### 1. Fix Perdida de Elementos (pending_deletes tracking)
+### 1. Fix Errores Criticos de Compilacion
 
-**Problema:** Al navegar a "Cargar datos" y volver al editor, los elementos se borraban.
+**Problemas encontrados:**
 
-**Causa raiz:** Race condition donde `element_modified` del canvas enviaba datos incompletos durante la navegacion, sobrescribiendo el diseno en la BD.
+| Error | Ubicacion | Solucion |
+|-------|-----------|----------|
+| `API.DesignController` no existe | router.ex:159-160 | Creado controlador con export/import |
+| `API.DataSourceController` no existe | router.ex:163-164 | Creado controlador con preview/test_connection |
+| `DbConnector.test_connection/1` no existe | edit.ex, form_component.ex | Agregada funcion wrapper que extrae :type del config |
+| `DataSources.get_data_from_source/2` no existe | show.ex | Agregada funcion conveniente |
 
-**Solucion implementada:**
+**Archivos creados:**
+- `lib/qr_label_system_web/controllers/api/design_controller.ex`
+- `lib/qr_label_system_web/controllers/api/data_source_controller.ex`
+
+**Archivos modificados:**
+- `lib/qr_label_system/data_sources/db_connector.ex` - agregada `test_connection/1`
+- `lib/qr_label_system/data_sources.ex` - agregadas `get_data_from_source/2` y `import_designs_list/2`
+
+---
+
+### 2. Fix Warnings de Compilacion
+
+| Warning | Solucion |
+|---------|----------|
+| Variables no usadas | Prefijadas con `_` |
+| Funciones no usadas | Eliminadas (`change_user_role`, `error_to_string`, `barcode_format_example`) |
+| `@max_retries` no usado | Eliminado de db_connector.ex |
+| `@doc` duplicados en rbac.ex | Consolidados con function head |
+| `@impl true` faltante en editor_debug.ex | Agregados |
+| Default values en multiples clausulas | Agregados function heads en data_sources.ex |
+| `preferred_cli_env` deprecado | Movido a `def cli` en mix.exs |
+
+---
+
+### 3. Fix Bug Importacion de Disenos
+
+**Problema:** Al importar un archivo JSON, el servidor crasheaba con `CaseClauseError`.
+
+**Causa raiz:** `consume_uploaded_entries` devuelve el contenido directamente, no envuelto en `{:ok, content}`.
+
+**Solucion:**
+```elixir
+# Antes (incorrecto):
+case uploaded_files do
+  [{:ok, content}] -> ...
+
+# Despues (correcto):
+case uploaded_files do
+  [content] when is_binary(content) -> ...
+```
+
+---
+
+### 4. Simplificar Navbar
+
+**Cambios:**
+- Eliminado boton "+Generar" de todas las paginas (redundante, app es sencilla)
+- Boton "Mis disenos" ahora es azul (`bg-blue-600`) para mayor visibilidad
+
+**Archivo modificado:** `lib/qr_label_system_web/components/layouts/app.html.heex`
+
+---
+
+### 5. Modal de Importacion con Seleccion de Disenos
+
+**Nuevo flujo de importacion:**
+
+```
+1. Usuario click en "Importar" -> selecciona archivo JSON
+2. Se abre modal con lista de disenos del archivo
+3. Checkbox para cada diseno + "Seleccionar todas"
+4. Contador: "3 de 5 seleccionadas"
+5. Click "Importar X diseno(s)" para confirmar
+```
+
+**Implementacion:**
 
 ```elixir
 # En mount():
-|> assign(:pending_deletes, MapSet.new())
+|> assign(:show_import_modal, false)
+|> assign(:import_preview_designs, [])
+|> assign(:import_selected_ids, MapSet.new())
+|> allow_upload(:backup_file, auto_upload: true, progress: &__MODULE__.handle_progress/3)
 
-# En delete_element handler:
-new_pending_deletes = MapSet.put(pending_deletes, id)
-socket |> assign(:pending_deletes, new_pending_deletes)
-
-# En element_modified handler:
-missing_ids = MapSet.difference(current_ids, new_ids)
-unexpected_missing = MapSet.difference(missing_ids, pending_deletes)
-
-cond do
-  # Rechazar si hay perdida inesperada de elementos
-  MapSet.size(unexpected_missing) > 0 ->
-    Logger.warning("element_modified would unexpectedly lose elements...")
-    {:noreply, socket}
-
-  # Guardar normalmente si las eliminaciones son esperadas
-  true ->
-    do_save_elements(socket, design, elements_json)
+# Callback cuando archivo termina de subir:
+def handle_progress(:backup_file, entry, socket) do
+  if entry.done? do
+    [content] = consume_uploaded_entries(...)
+    {:ok, designs} = parse_import_file(content)
+    socket
+    |> assign(:show_import_modal, true)
+    |> assign(:import_preview_designs, designs)
+    |> assign(:import_selected_ids, MapSet.new(0..length(designs)-1))
+  end
 end
 
-# Limpiar pending_deletes despues de guardar exitosamente
-|> assign(:pending_deletes, MapSet.new())
-```
-
-**Archivo modificado:** `lib/qr_label_system_web/live/design_live/editor.ex`
-
----
-
-### 2. Fix Binding Mode Revierte a Texto Fijo
-
-**Problema:** Al hacer clic en "Vincular a columna" en un elemento de texto, el boton volvia automaticamente a "Texto fijo".
-
-**Causa raiz:** Race condition donde `element_selected` (del canvas) sobrescribia `selected_element` con datos antiguos de `design.elements` antes de que `element_modified` completara.
-
-**Solucion implementada:**
-
-```elixir
-# En set_content_mode cuando mode="binding":
-socket
-|> assign(:selected_element, updated_element)
-|> assign(:pending_selection_id, element_id)
-|> assign(:show_binding_mode, true)  # CLAVE: mantener modo activo
-
-# En element_selected handler:
-cond do
-  # Si hay operacion pendiente para este elemento, ignorar
-  pending_id == id ->
-    {:noreply, socket}
-
-  # Seleccion normal - preservar show_binding_mode si tiene binding
-  true ->
-    new_show_binding_mode = if has_binding?(element) do
-      socket.assigns.show_binding_mode
-    else
-      false
-    end
-    {:noreply, socket |> assign(:selected_element, element) |> assign(:show_binding_mode, new_show_binding_mode)}
+# Importar solo seleccionados:
+def handle_event("confirm_import", _, socket) do
+  selected_designs = filter_by_selected_ids(designs, selected_ids)
+  Designs.import_designs_list(selected_designs, user_id)
 end
 ```
 
-**Archivo modificado:** `lib/qr_label_system_web/live/design_live/editor.ex`
-
----
-
-### 3. Eliminar Campo "Contenido" Duplicado
-
-**Problema:** En etiquetas multiples, los elementos de texto tenian DOS lugares para editar contenido:
-- "Contenido del elemento" con Vincular/Texto fijo (correcto)
-- "Contenido (si no esta vinculado)" en propiedades (duplicado)
-
-**Solucion:** Mostrar campo "Contenido" solo para etiquetas unicas (single):
-
-```heex
-<%= if @label_type == "single" do %>
-  <div>
-    <label>Contenido</label>
-    <input ... phx-value-field="text_content" />
-  </div>
-<% end %>
-```
-
-**Archivo modificado:** `lib/qr_label_system_web/live/design_live/editor.ex`
-
----
-
-### 4. Mover Controles de Zoom
-
-**Cambio:** Controles de zoom movidos del toolbar central al header junto a las dimensiones.
-
-**Antes:** Toolbar tenia: [ZOOM -/+/fit] [UNDO/REDO] [SNAP] [SIZE]
-**Despues:** Header: [40 x 30 mm | -/+/100%/fit], Toolbar: [UNDO/REDO] [SNAP]
+**Archivos modificados:**
+- `lib/qr_label_system_web/live/design_live/index.ex` - modal y logica
+- `lib/qr_label_system/designs.ex` - nueva funcion `import_designs_list/2`
 
 ---
 
 ### Commits de Esta Sesion
 
 ```
-0acea2b fix: Hide duplicate content field for text elements in multiple labels
-3c3581f fix: Prevent binding mode from reverting to fixed text for text elements
-6038808 fix: Add pending_deletes tracking to prevent accidental element loss
+32a50c6 feat: Add import modal with design selection
+8881842 refactor: Simplify navbar by removing +Generar button
+ee3f4a4 fix: Fix design import by correcting consume_uploaded_entries pattern match
+72c97cf fix: Resolve compilation errors and warnings
 ```
-
----
-
-### Archivos Modificados
-
-| Archivo | Cambios |
-|---------|---------|
-| `editor.ex` | pending_deletes, show_binding_mode fix, UI texto condicional, zoom en header |
-
----
-
-## Plan para Continuar
-
-### Problemas Conocidos a Investigar
-
-1. **Texto con binding no muestra preview**
-   - Cuando se vincula texto a columna, deberia mostrar `{{columna}}` o valor de preview
-   - El cambio se intento pero se revirtio - necesita mas investigacion
-
-### Tareas Pendientes del TODO
-
-| Tarea | Esfuerzo | Descripcion |
-|-------|----------|-------------|
-| **Alinear elementos en toolbar** | Bajo | JS ya implementado, falta UI |
-| **Etiquetas multiples sin Excel** | Medio | Generar lote con cantidad especificada |
-
-### Alta Prioridad (del HANDOFF anterior)
-
-1. **Preview de Etiquetas con Datos Reales**
-   - Navegador: `<< Anterior | Registro 3 de 150 | Siguiente >>`
-   - Mostrar datos del Excel en elementos vinculados
-
-2. **Generacion/Impresion de Lote**
-   - PDF con todas las etiquetas
-   - Configuracion de pagina
-
-### Media Prioridad
-
-3. **Validacion de Datos Importados**
-   - Detectar filas con datos faltantes
-   - Opcion de excluir filas problematicas
-
-4. **Mejora UX Selector de Columnas**
-   - Mostrar valor de ejemplo: `Nombre (ej: "Laptop HP")`
 
 ---
 
@@ -222,10 +185,10 @@ Previene perdida accidental de elementos:
 
 | Aspecto | Estado |
 |---------|--------|
-| **Tests** | 712 tests, 0 failures |
-| **Compilacion** | Sin errores |
+| **Compilacion** | 1 warning cosmetico (handle_event clauses) |
 | **Element loss protection** | pending_deletes + validacion IDs |
 | **Binding mode stability** | show_binding_mode + pending_selection_id |
+| **Import flow** | Modal con seleccion de disenos |
 
 ---
 
@@ -244,15 +207,33 @@ mix compile
 
 ---
 
+## Plan para Continuar
+
+### Problemas Conocidos
+
+1. **Warning cosmetico:** `handle_event/3` clauses no agrupadas en editor.ex
+   - Requiere refactor extenso del archivo (~1200 lineas)
+   - No afecta funcionalidad
+
+### Tareas Pendientes
+
+| Tarea | Esfuerzo | Descripcion |
+|-------|----------|-------------|
+| **Preview de etiquetas con datos** | Alto | Navegar registros del Excel en editor |
+| **Generacion PDF de lote** | Alto | PDF con todas las etiquetas |
+| **Alinear elementos en toolbar** | Bajo | JS ya implementado, falta UI |
+
+---
+
 ## Historial de Sesiones Recientes
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 6 feb 2026 | 13 | Fix compilacion, modal importacion con seleccion |
 | 4 feb 2026 | 12 | Fix element loss, binding mode, UI texto duplicado |
 | 4 feb 2026 | 11 | PII anonimizado, sanitizacion uploads, cleanup job |
 | 4 feb 2026 | 10 | Seguridad: SQL validation, magic bytes, .env auto-load |
-| 2 feb 2026 | 9 | Fix CSV parser, UI importacion, modo fijo/binding |
 
 ---
 
-*Handoff actualizado: 4 febrero 2026 (sesion 12)*
+*Handoff actualizado: 6 febrero 2026 (sesion 13)*
