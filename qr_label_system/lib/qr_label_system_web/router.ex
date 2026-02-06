@@ -117,7 +117,6 @@ defmodule QrLabelSystemWeb.Router do
       # Designs
       live "/designs", DesignLive.Index, :index
       live "/designs/new", DesignLive.New, :new
-      live "/designs/:id", DesignLive.Show, :show
       live "/designs/:id/edit", DesignLive.Editor, :edit
 
       # Data Sources
