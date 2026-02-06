@@ -22,10 +22,18 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:show_data_modal, false)
      |> assign(:pending_edit_design, nil)
      |> assign(:filter, "all")
+     # Import modal state
+     |> assign(:show_import_modal, false)
+     |> assign(:import_preview_designs, [])
+     |> assign(:import_selected_ids, MapSet.new())
+     |> assign(:import_filename, nil)
+     |> assign(:import_file_content, nil)
      |> allow_upload(:backup_file,
        accept: ~w(.json),
        max_entries: 1,
-       max_file_size: @max_file_size
+       max_file_size: @max_file_size,
+       auto_upload: true,
+       progress: &__MODULE__.handle_progress/3
      )
      |> stream(:designs, designs)}
   end
@@ -156,39 +164,133 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("validate_import", _params, socket) do
+    # Just validate, actual processing happens in handle_progress when done
     {:noreply, socket}
   end
 
+  # Called when upload progress changes - we process when it's 100% done
+  def handle_progress(:backup_file, entry, socket) do
+    if entry.done? do
+      # File uploaded, consume and parse it
+      [content] =
+        consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
+          {:ok, File.read!(path)}
+        end)
+
+      case parse_import_file(content) do
+        {:ok, designs} ->
+          # All selected by default
+          selected_ids = MapSet.new(0..(length(designs) - 1))
+          {:noreply,
+           socket
+           |> assign(:show_import_modal, true)
+           |> assign(:import_preview_designs, designs)
+           |> assign(:import_selected_ids, selected_ids)
+           |> assign(:import_filename, entry.client_name)
+           |> assign(:import_file_content, content)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Error al leer el archivo: #{reason}")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_import_selection", %{"index" => index_str}, socket) do
+    index = String.to_integer(index_str)
+    selected = socket.assigns.import_selected_ids
+
+    new_selected =
+      if MapSet.member?(selected, index) do
+        MapSet.delete(selected, index)
+      else
+        MapSet.put(selected, index)
+      end
+
+    {:noreply, assign(socket, :import_selected_ids, new_selected)}
+  end
+
+  @impl true
+  def handle_event("toggle_all_import", _params, socket) do
+    designs = socket.assigns.import_preview_designs
+    selected = socket.assigns.import_selected_ids
+    all_ids = MapSet.new(0..(length(designs) - 1))
+
+    new_selected =
+      if MapSet.size(selected) == length(designs) do
+        MapSet.new()
+      else
+        all_ids
+      end
+
+    {:noreply, assign(socket, :import_selected_ids, new_selected)}
+  end
+
+  @impl true
+  def handle_event("cancel_import", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_import_modal, false)
+     |> assign(:import_preview_designs, [])
+     |> assign(:import_selected_ids, MapSet.new())
+     |> assign(:import_filename, nil)
+     |> assign(:import_file_content, nil)}
+  end
+
+  @impl true
+  def handle_event("confirm_import", _params, socket) do
+    user_id = socket.assigns.current_user.id
+    designs = socket.assigns.import_preview_designs
+    selected_ids = socket.assigns.import_selected_ids
+
+    # Filter only selected designs
+    selected_designs =
+      designs
+      |> Enum.with_index()
+      |> Enum.filter(fn {_design, idx} -> MapSet.member?(selected_ids, idx) end)
+      |> Enum.map(fn {design, _idx} -> design end)
+
+    case Designs.import_designs_list(selected_designs, user_id) do
+      {:ok, imported_designs} ->
+        {:noreply,
+         socket
+         |> assign(:show_import_modal, false)
+         |> assign(:import_preview_designs, [])
+         |> assign(:import_selected_ids, MapSet.new())
+         |> assign(:import_filename, nil)
+         |> assign(:import_file_content, nil)
+         |> put_flash(:info, "#{length(imported_designs)} diseños importados correctamente")
+         |> push_navigate(to: ~p"/designs")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:show_import_modal, false)
+         |> put_flash(:error, "Error al importar: #{reason}")}
+    end
+  end
+
+  # Legacy handler - now import goes through the modal
   @impl true
   def handle_event("import_backup", _params, socket) do
-    user_id = socket.assigns.current_user.id
+    {:noreply, socket}
+  end
 
-    uploaded_files =
-      consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
-        {:ok, File.read!(path)}
-      end)
+  defp parse_import_file(content) do
+    case Jason.decode(content) do
+      {:ok, %{"type" => "backup", "designs" => designs}} when is_list(designs) ->
+        {:ok, designs}
 
-    case uploaded_files do
-      [content] when is_binary(content) ->
-        case Designs.import_designs_from_json(content, user_id) do
-          {:ok, imported_designs} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "#{length(imported_designs)} diseños importados correctamente")
-             |> push_navigate(to: ~p"/designs")}
+      {:ok, %{"design" => design}} ->
+        {:ok, [design]}
 
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:import_error, reason)
-             |> put_flash(:error, "Error al importar: #{reason}")}
-        end
+      {:ok, _} ->
+        {:error, "Formato de archivo no reconocido"}
 
-      [] ->
-        {:noreply, socket}
-
-      _other ->
-        {:noreply, put_flash(socket, :error, "Error al procesar el archivo")}
+      {:error, _} ->
+        {:error, "JSON inválido"}
     end
   end
 
@@ -275,25 +377,15 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         <:actions>
           <div class="flex items-center gap-2">
             <!-- Import Button -->
-            <div class="relative">
-              <form phx-submit="import_backup" phx-change="validate_import" class="flex items-center">
-                <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700 transition">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span>Importar</span>
-                  <.live_file_input upload={@uploads.backup_file} class="sr-only" />
-                </label>
-                <%= for entry <- @uploads.backup_file.entries do %>
-                  <div class="ml-2 flex items-center gap-2">
-                    <span class="text-sm text-gray-600"><%= entry.client_name %></span>
-                    <button type="submit" class="px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700">
-                      Cargar
-                    </button>
-                  </div>
-                <% end %>
-              </form>
-            </div>
+            <form phx-change="validate_import" class="contents">
+              <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700 transition">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span>Importar</span>
+                <.live_file_input upload={@uploads.backup_file} class="sr-only" />
+              </label>
+            </form>
             <!-- Export Button -->
             <button
               :if={@has_designs}
@@ -574,6 +666,100 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                 class="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-gray-500 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:w-auto sm:text-sm transition"
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Import Modal -->
+      <div :if={@show_import_modal} class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="import-modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          <!-- Background overlay -->
+          <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" phx-click="cancel_import"></div>
+
+          <!-- Spacer for centering -->
+          <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+          <!-- Modal panel -->
+          <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+            <div class="bg-white px-6 pt-6 pb-4">
+              <!-- Header -->
+              <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                  <div class="flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full bg-blue-100">
+                    <svg class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="text-lg font-semibold text-gray-900" id="import-modal-title">
+                      Importar diseños
+                    </h3>
+                    <p class="text-sm text-gray-500"><%= @import_filename %></p>
+                  </div>
+                </div>
+                <button phx-click="cancel_import" class="text-gray-400 hover:text-gray-600 transition">
+                  <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Select all checkbox -->
+              <div class="flex items-center justify-between py-3 border-b border-gray-200">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={MapSet.size(@import_selected_ids) == length(@import_preview_designs)}
+                    phx-click="toggle_all_import"
+                    class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  />
+                  <span class="text-sm font-medium text-gray-700">Seleccionar todas</span>
+                </label>
+                <span class="text-sm text-gray-500">
+                  <%= MapSet.size(@import_selected_ids) %> de <%= length(@import_preview_designs) %> seleccionadas
+                </span>
+              </div>
+
+              <!-- Design list -->
+              <div class="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                <%= for {design, index} <- Enum.with_index(@import_preview_designs) do %>
+                  <label class="flex items-center gap-3 py-3 px-1 hover:bg-gray-50 cursor-pointer transition">
+                    <input
+                      type="checkbox"
+                      checked={MapSet.member?(@import_selected_ids, index)}
+                      phx-click="toggle_import_selection"
+                      phx-value-index={index}
+                      class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-gray-900 truncate">
+                        <%= design["name"] || "Sin nombre" %>
+                      </p>
+                      <p class="text-xs text-gray-500">
+                        <%= design["label_type"] || "single" %> · <%= length(design["elements"] || []) %> elementos
+                      </p>
+                    </div>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+              <button
+                phx-click="cancel_import"
+                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                phx-click="confirm_import"
+                disabled={MapSet.size(@import_selected_ids) == 0}
+                class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                Importar <%= MapSet.size(@import_selected_ids) %> diseño(s)
               </button>
             </div>
           </div>

@@ -406,6 +406,13 @@ defmodule QrLabelSystem.Designs do
     end
   end
 
+  @doc """
+  Imports a list of design data maps directly (used by the import modal).
+  """
+  def import_designs_list(designs_data, user_id) when is_list(designs_data) do
+    import_backup_designs(designs_data, user_id)
+  end
+
   defp import_backup_designs(designs_data, user_id) when is_list(designs_data) do
     results =
       Enum.reduce_while(designs_data, {:ok, []}, fn design_data, {:ok, acc} ->
