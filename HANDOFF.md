@@ -907,89 +907,6 @@ priv/repo/migrations/
 
 ---
 
-## Próximos Pasos (Plan de Continuación)
-
-### 🔴 Alta Prioridad
-
-1. **Ejecutar migración pendiente**
-   ```bash
-   cd qr_label_system && mix ecto.migrate
-   ```
-
-2. **Probar flujo completo data-first:**
-   - Subir Excel → Crear diseño → Vincular columnas → Generar etiquetas
-   - Verificar que las columnas persisten a través de todas las navegaciones
-
-3. **Probar tamaño de QR/Barcode:**
-   - Cambiar tamaño desde panel de propiedades
-   - Mover el elemento y verificar que mantiene el tamaño
-   - Guardar y recargar para verificar persistencia
-
-### 🟠 Media Prioridad
-
-4. **Completar flujo de impresión:**
-   - Verificar preview con datos reales
-   - Probar exportación a PDF
-   - Probar impresión directa
-
-5. **Tests automatizados:**
-   - Agregar tests para UploadDataStore
-   - Tests de integración para flujo data-first
-   - Tests para canvas_designer.js (Jest)
-
-### 🟡 Baja Prioridad
-
-6. **Optimizaciones:**
-   - Cache de diseños frecuentes
-   - Lazy loading de datos grandes
-   - Compresión de imágenes en etiquetas
-
-7. **UX:**
-   - Indicadores de progreso más claros
-   - Mensajes de error más descriptivos
-   - Atajos de teclado en el editor
-
----
-
-## Comandos para Continuar
-
-```bash
-# Ir al directorio del proyecto
-cd /Users/coroso/ia/qr/qr_label_system
-
-# Instalar dependencias si es necesario
-mix deps.get
-
-# Ejecutar migraciones pendientes
-mix ecto.migrate
-
-# Iniciar servidor
-mix phx.server
-
-# Acceder en http://localhost:4000
-```
-
----
-
-## Notas Técnicas Importantes
-
-### UploadDataStore
-- **Ubicación:** Memoria (ETS)
-- **Expiración:** 30 minutos
-- **Limpieza:** Cada 5 minutos
-- **Identificador:** user_id (entero)
-
-### label_type
-- `"single"`: Diseños para etiqueta única (sin columnas vinculadas)
-- `"multiple"`: Diseños para múltiples etiquetas (con columnas del Excel)
-
-### Grupos en Fabric.js
-- QR y Barcode son grupos (imagen + texto opcional)
-- Al redimensionar, usar `recreateGroupAtSize()` para mantener proporciones
-- El `elementData` debe sincronizarse con el tamaño visual
-
----
-
 ## Cambios Implementados (2026-02-02) - Fix consume_uploaded_entries
 
 ### Resumen
@@ -1050,21 +967,6 @@ Todos los tests pasan: **667 tests, 0 failures**
 ### Lección Aprendida
 
 Siempre verificar que el pattern matching coincida con lo que realmente retorna la función. `consume_uploaded_entries` pasa el valor retornado por el callback directamente a la lista de resultados, incluyendo la tupla `{:ok, ...}` si el callback la retorna.
-
----
-
-## Historial de Cambios (Actualizado)
-
-| Fecha | Cambio |
-|-------|--------|
-| 2025-01-29 | Auditoría completa de seguridad y código |
-| 2025-01-29 | Documentación de issues encontrados |
-| 2025-01-29 | Actualización de HANDOFF con próximos pasos |
-| 2025-01-29 | **IMPLEMENTACIÓN DE FIXES DE SEGURIDAD Y CALIDAD** |
-| 2025-01-31 | **CORRECCIONES DEL EDITOR DE ETIQUETAS** (5 fixes) |
-| 2026-01-31 | **MEJORAS EN FLUJO DE GENERACIÓN Y EDITOR** |
-| 2026-02-02 | **FIX: consume_uploaded_entries pattern matching** (3 archivos) |
-| 2026-02-04 | **MEJORAS EN CLASIFICACIÓN, GUARDADO Y UNDO/REDO** |
 
 ---
 
@@ -1342,3 +1244,97 @@ Se reorganizó completamente la barra superior del editor para mejorar la accesi
 5. **Optimizaciones de rendimiento**
    - Debounce en auto-save
    - Lazy loading de elementos pesados
+
+---
+
+## Cambios Implementados (2026-02-06) - Miniaturas de diseños y fix layout
+
+### Resumen
+
+Se reemplazó el icono genérico azul-índigo en la página `/designs` con miniaturas server-side que muestran el aspecto real de cada etiqueta. También se corrigió un crash en `/generate` causado por `@conn` en el layout.
+
+**Plan de referencia:** Transcripción completa en `.claude/projects/-Users-coroso-ia-qr/efece49d-1c34-4bdf-9375-f9deb305009b.jsonl`
+
+### 1. ✅ Miniaturas de etiquetas en `/designs`
+
+**Archivo nuevo:** `lib/qr_label_system_web/components/design_components.ex`
+
+**Enfoque:** Componente funcional Phoenix que renderiza una versión miniatura de la etiqueta usando HTML/CSS inline, sin dependencias JS adicionales.
+
+**Componentes:**
+
+- **`design_thumbnail/1`** - Componente público
+  - Attrs: `design` (requerido), `max_width` (default 80), `max_height` (default 64)
+  - Calcula escala: `min(max_w / label_w_px, max_h / label_h_px)`
+  - Contenedor con `position: relative; overflow: hidden`, bg/border del diseño
+  - Filtra elementos visibles, ordena por z_index
+  - Sin elementos: muestra "Sin elementos"
+
+- **`thumbnail_element/1`** - Componente privado, despacha por tipo:
+  - `qr`: SVG simplificado con 3 finder patterns
+  - `barcode`: Barras verticales CSS simuladas
+  - `text`: Texto real escalado (min 2px font-size), con color/weight/alignment
+  - `line`: div con background-color
+  - `rectangle`: div con bg, border, border-width escalados
+  - `circle`: Como rectangle pero con border-radius porcentual
+  - `image`: Placeholder gris con icono SVG (SIN incluir image_data base64)
+
+**Archivo modificado:** `lib/qr_label_system_web/live/design_live/index.ex`
+- Añadido `import QrLabelSystemWeb.DesignComponents`
+- Reemplazado icono gradiente azul (div 12x12 con SVG) por `<.design_thumbnail>`
+
+### 2. ✅ Fix crash KeyError `@conn` en LiveViews
+
+**Archivo:** `lib/qr_label_system_web/components/layouts/app.html.heex`
+
+**Problema:** La línea `@conn.request_path` causaba KeyError en todas las LiveViews porque `@conn` solo existe en controllers, no en LiveViews (que usan `@socket`).
+
+**Solución:** Eliminada la condición `:if={not String.starts_with?(@conn.request_path, "/generate")}` del enlace "Generar". El enlace ahora se muestra siempre.
+
+---
+
+## Archivos Modificados (2026-02-06)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system_web/components/design_components.ex` | **NUEVO** - 233 líneas: componente de miniaturas |
+| `lib/qr_label_system_web/live/design_live/index.ex` | +4/-4 líneas: import + uso de design_thumbnail |
+| `lib/qr_label_system_web/components/layouts/app.html.heex` | -1 línea: eliminado `@conn.request_path` |
+
+---
+
+## Commits (2026-02-06)
+
+| Hash | Descripción |
+|------|-------------|
+| `5514ac6` | feat: Add server-side design thumbnails to /designs page |
+
+---
+
+## Verificación (2026-02-06)
+
+- [x] `/designs` muestra miniaturas visuales en lugar del icono azul genérico
+- [x] `/generate` ya no crashea con KeyError
+- [x] Compila sin warnings nuevos (`mix compile`)
+- [ ] Probar con cada tipo de elemento (qr, barcode, text, line, rectangle, circle, image)
+- [ ] Probar diseño sin elementos muestra "Sin elementos"
+- [ ] Probar elementos con `visible: false` no aparecen
+- [ ] Duplicar diseño y verificar miniatura nueva
+- [ ] Probar distintas proporciones (horizontal, vertical, cuadrado)
+
+---
+
+## Historial de Cambios (Actualizado)
+
+| Fecha | Cambio |
+|-------|--------|
+| 2025-01-29 | Auditoría completa de seguridad y código |
+| 2025-01-29 | Documentación de issues encontrados |
+| 2025-01-29 | Actualización de HANDOFF con próximos pasos |
+| 2025-01-29 | **IMPLEMENTACIÓN DE FIXES DE SEGURIDAD Y CALIDAD** |
+| 2025-01-31 | **CORRECCIONES DEL EDITOR DE ETIQUETAS** (5 fixes) |
+| 2026-01-31 | **MEJORAS EN FLUJO DE GENERACIÓN Y EDITOR** |
+| 2026-02-02 | **FIX: consume_uploaded_entries pattern matching** (3 archivos) |
+| 2026-02-04 | **MEJORAS EN CLASIFICACIÓN, GUARDADO Y UNDO/REDO** |
+| 2026-02-04 | **REORGANIZACIÓN HEADER DEL EDITOR** (3 secciones) |
+| 2026-02-06 | **MINIATURAS DE DISEÑOS + FIX LAYOUT @conn** |
