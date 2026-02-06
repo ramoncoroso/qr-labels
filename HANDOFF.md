@@ -129,8 +129,7 @@ qr_label_system/
 │       └── live/
 │           ├── design_live/       # Editor canvas
 │           │   ├── editor.ex
-│           │   ├── index.ex
-│           │   └── show.ex
+│           │   └── index.ex
 │           ├── data_source_live/  # Gestión datos
 │           ├── batch_live/        # Generar + imprimir
 │           │   ├── index.ex
@@ -1324,6 +1323,152 @@ Se reemplazó el icono genérico azul-índigo en la página `/designs` con minia
 
 ---
 
+## Cambios Implementados (2026-02-06 Sesión 2) - Limpieza UX de /designs y mejoras /generate/data
+
+### Resumen
+
+Sesión enfocada en simplificar la experiencia en `/designs` eliminando redundancias y mejorando la interacción directa con las tarjetas de diseño. También se mejoró el feedback en `/generate/data`.
+
+### 1. ✅ Eliminada página show de diseños
+
+**Archivos eliminados:**
+- `lib/qr_label_system_web/live/design_live/show.ex`
+- `test/qr_label_system_web/live/design_live/show_test.exs`
+
+**Archivos modificados:**
+- `lib/qr_label_system_web/router.ex` - Eliminada ruta `/designs/:id`
+- `lib/qr_label_system_web/live/design_live/index.ex` - Eliminado botón "Vista previa" (icono ojo)
+
+**Razón:** La página show era redundante porque el editor (`/designs/:id/edit`) ya permite ver y editar el diseño completo.
+
+### 2. ✅ Tarjetas clickeables para ir al editor
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+Toda la zona izquierda de cada tarjeta (thumbnail, nombre, dimensiones, elementos) ahora es un enlace que navega a `/designs/:id/edit`. Se reemplazó el `<div>` contenedor por `<.link navigate={...}>`.
+
+### 3. ✅ Eliminado botón "Editar" redundante
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+El botón de editar (icono lápiz) se eliminó ya que la tarjeta completa ahora lleva al editor.
+
+### 4. ✅ Botones Duplicar y Eliminar con texto + icono
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+Los botones de acción ahora muestran icono + texto con colores al estilo de `/generate/data`:
+- **Duplicar:** purple (bg-purple-50, text-purple-700)
+- **Eliminar:** red (bg-red-50, text-red-600)
+
+Se eliminaron los tooltips ya que el texto es visible.
+
+### 5. ✅ Badges de tipo movidos a la zona de info
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+Los badges "Única"/"Múltiple" y "Plantilla" se movieron de la derecha (junto a botones) a la izquierda, inline con "X elementos" en la línea de info. Estilo simplificado sin gradientes ni iconos SVG.
+
+### 6. ✅ Subtítulo de página actualizado
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+Subtítulo cambiado de "Crea y administra tus diseños de etiquetas personalizadas" a "Pulsa sobre un diseño para editarlo en el canvas. Usa los botones para duplicar o eliminar."
+
+### 7. ✅ Auto-scroll a datos procesados en /generate/data
+
+**Archivos:**
+- `assets/js/hooks/scroll_to.js` - **NUEVO** - Hook que escucha evento `scroll_to` y hace scroll suave
+- `assets/js/hooks/index.js` - Registrado hook ScrollTo
+- `lib/qr_label_system_web/live/generate_live/data_first.ex` - push_event scroll_to después de procesar archivo o pegar datos
+
+**Problema:** Al procesar datos, la tabla de preview aparecía debajo del fold sin feedback visual.
+**Solución:** Scroll automático a la sección `#data-preview` después de procesar.
+
+### 8. ✅ Barra de progreso simplificada en /generate/data
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+Eliminado el pseudo-paso "Modo múltiple" (check verde) del flujo data-first. Ahora ambos flujos muestran 3 pasos numerados consistentemente:
+- Flujo desde `/designs`: 1. Cargar datos → 2. Editar diseño → 3. Imprimir
+- Flujo data-first: 1. Cargar datos → 2. Elegir diseño → 3. Imprimir
+
+### 9. ✅ Botón "Vincular/Cambiar datos" en editor
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+Para diseños de tipo "múltiple", se añadió un botón en el toolbar del editor (sección derecha, antes de "Vista previa"):
+- **Sin datos cargados:** "Vincular datos" (estilo indigo)
+- **Con datos cargados:** "Cambiar datos" (estilo amber)
+
+Navega a `/generate/data/:design_id` para cargar o reemplazar datos.
+
+---
+
+## Commits (2026-02-06 Sesión 2)
+
+| Hash | Descripción |
+|------|-------------|
+| `2ac482f` | refactor: Remove redundant design show page and preview button |
+| `e06d6b7` | feat: Make design card clickable to navigate to editor |
+| `f87a0e9` | refactor: Remove redundant edit button from design cards |
+| `45da9b7` | style: Add text labels to duplicate and delete buttons on design cards |
+| `f46fdb9` | style: Move label type badges to left side of design cards |
+| `8298136` | docs: Update designs page subtitle with usage instructions |
+| `22d2ef0` | feat: Auto-scroll to data preview after processing on /generate/data |
+| `cf6d5a8` | fix: Remove misleading "Modo múltiple" pseudo-step from progress bar |
+| `7a63ace` | feat: Add data link/change button to editor toolbar for multiple designs |
+
+---
+
+## Archivos Nuevos (2026-02-06 Sesión 2)
+
+```
+assets/js/hooks/scroll_to.js    # Hook para scroll suave a elementos
+```
+
+## Archivos Eliminados (2026-02-06 Sesión 2)
+
+```
+lib/qr_label_system_web/live/design_live/show.ex           # Página show redundante
+test/qr_label_system_web/live/design_live/show_test.exs     # Tests de show
+```
+
+## Archivos Modificados (2026-02-06 Sesión 2)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system_web/router.ex` | Eliminada ruta `/designs/:id` |
+| `lib/qr_label_system_web/live/design_live/index.ex` | Tarjetas clickeables, botones con texto, badges reubicados, subtítulo |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | Botón vincular/cambiar datos en toolbar |
+| `lib/qr_label_system_web/live/generate_live/data_first.ex` | Auto-scroll, barra progreso simplificada |
+| `assets/js/hooks/index.js` | Registrado ScrollTo hook |
+
+---
+
+## Tareas Pendientes (TODO)
+
+### 🔴 Bug Prioritario
+
+1. **Impresión de múltiples etiquetas solo muestra nombre del campo**
+   - Al imprimir, en lugar de mostrar el valor de los datos vinculados, solo aparece el nombre del campo (ej. "nombre" en vez de "Juan")
+   - Investigar flujo de impresión y sustitución de bindings por valores reales
+
+### 🟠 Mejoras Funcionales
+
+2. **Mejorar categorización en /designs**
+   - La UX actual de asignar categorías no convence
+   - Revisar cómo se asignan, filtran y visualizan en las tarjetas
+
+3. **Permitir renombrar etiqueta desde /designs**
+   - Poder cambiar el nombre sin entrar al editor
+   - Ya existe funcionalidad de rename en index.ex, revisar accesibilidad
+
+4. **Preguntar antes de importar etiquetas duplicadas**
+   - Al importar, si ya existe un diseño con el mismo nombre, preguntar al usuario si desea duplicar o saltar
+
+---
+
 ## Historial de Cambios (Actualizado)
 
 | Fecha | Cambio |
@@ -1338,3 +1483,4 @@ Se reemplazó el icono genérico azul-índigo en la página `/designs` con minia
 | 2026-02-04 | **MEJORAS EN CLASIFICACIÓN, GUARDADO Y UNDO/REDO** |
 | 2026-02-04 | **REORGANIZACIÓN HEADER DEL EDITOR** (3 secciones) |
 | 2026-02-06 | **MINIATURAS DE DISEÑOS + FIX LAYOUT @conn** |
+| 2026-02-06 | **LIMPIEZA UX /designs + MEJORAS /generate/data + BOTÓN DATOS EN EDITOR** |
