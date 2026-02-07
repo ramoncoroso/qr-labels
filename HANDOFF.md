@@ -29,7 +29,7 @@ Sistema web **production-ready** para generar etiquetas con códigos QR y de bar
 | 6 | Generación QR/Barras | ✅ Completado | Client-side generation |
 | 7 | Sistema Impresión | ✅ Completado | PDF + Print engine |
 | 8 | Production Hardening | ⚠️ Parcial | Ver issues de seguridad |
-| 9 | Testing & Docs | ❌ Pendiente | Sin tests implementados |
+| 9 | Testing & Docs | ⚠️ Parcial | 707 tests, 0 failures |
 
 ---
 
@@ -1568,7 +1568,7 @@ lib/qr_label_system/designs/category.ex
 | `6458708` | fix: Move tag chips outside link and make +Tag button always visible |
 | `c45b059` | fix: Improve design card layout - thumbnail spans full height, tags separated |
 
-## Verificación (2026-02-07)
+## Verificación (2026-02-07 — sesión tags)
 
 - [x] `mix ecto.migrate` ejecuta sin errores
 - [x] `mix compile` sin warnings de categoría
@@ -1582,22 +1582,177 @@ lib/qr_label_system/designs/category.ex
 
 ---
 
+## Sesión 2026-02-07 — Fixes de impresión, binding de columnas y UX de carga
+
+### Resumen
+
+Se resolvieron 4 problemas clave:
+1. **Impresión mostraba nombres de campo en vez de valores** — Fix en print_engine.js + integración en editor
+2. **Design.to_json() no incluía label_type** — LabelPreview JS siempre defaulteaba a 'single'
+3. **Parser de datos pegados no separaba columnas** — Solo dividía por tabs, no por espacios/comas/punto y coma
+4. **Drop zone visible después de seleccionar archivo** — UX mejorada ocultando drop zone al seleccionar
+
+### 1. ✅ Fix impresión de etiquetas múltiples (print_engine.js)
+
+**Archivo:** `assets/js/hooks/print_engine.js`
+
+- Corregido `substituteText()` para usar `columnMapping` al sustituir `{{campo}}` por valores reales
+- El PrintEngine ahora recibe `upload_data` y `available_columns` del servidor
+- Integrado hook `PrintEngine` en el panel de preview del editor (`editor.ex`)
+
+### 2. ✅ Fix Design.to_json() — campo label_type faltante
+
+**Archivo:** `lib/qr_label_system/designs/design.ex`
+
+- Añadido `label_type: design.label_type` al mapa devuelto por `to_json/1`
+- **Impacto:** Sin este campo, el hook `LabelPreview` en JS siempre defaulteaba a modo 'single', ignorando los bindings de columnas
+
+### 3. ✅ Auto-detección de separador en paste parser
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Problema:** `parse_pasted_data/1` solo dividía por `\t` (tab). Cuando el usuario pegaba datos separados por espacios, todos los nombres de columna acababan como un solo string `"aaaa bbbb cccc"` en vez de tres columnas separadas.
+
+**Solución:** Nueva función `detect_separator/1` que auto-detecta:
+- Tabs (`\t`) — prioridad para datos copiados de Excel
+- Punto y coma (`;`) — CSV europeo
+- Comas (`,`) — CSV estándar
+- Espacios múltiples (`\s{2,}`) o simples (`\s+`) — datos manuales
+
+**Texto actualizado:** "Pegar datos desde Excel" → "Pegar datos" con descripción de auto-detección.
+
+### 4. ✅ UX: Ocultar drop zone después de seleccionar archivo
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Problema:** Después de seleccionar un archivo Excel/CSV, el drop zone seguía visible, permitiendo seleccionar otro archivo antes de procesar.
+
+**Solución:** Rendering condicional:
+- `length(@uploads.data_file.entries) == 0` → Muestra drop zone completo
+- Archivo seleccionado → Muestra solo: nombre del archivo, barra de progreso, botón eliminar, botón "Procesar archivo"
+
+### 5. ✅ Panel de aviso "Sin datos vinculados" en editor
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+- Nuevo panel `bg-amber-50` visible cuando `label_type == "multiple"` y `available_columns == []`
+- Mensaje: "Sin datos vinculados" con enlace a `/generate/data/{id}` para cargar datos
+- Logging de debug en mount para trazar flujo de datos
+
+### 6. ✅ Tests actualizados
+
+**Archivo:** `test/qr_label_system_web/live/generate_live_test.exs`
+
+- Assertion actualizada: `"Pegar datos desde Excel"` → `"Pegar datos"`
+- 707 tests, 0 failures
+
+---
+
+## Archivos Modificados (2026-02-07 — sesión fixes)
+
+| Archivo | Cambios |
+|---------|---------|
+| `assets/js/hooks/print_engine.js` | Fix sustitución de texto con columnMapping |
+| `lib/qr_label_system/designs/design.ex` | Añadido `label_type` a `to_json/1` |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | PrintEngine hook, panel "sin datos", logging |
+| `lib/qr_label_system_web/live/generate_live/data_first.ex` | Auto-detect separator, hide drop zone, logging |
+| `test/qr_label_system_web/live/generate_live_test.exs` | Assertion de texto actualizada |
+
+## Commits (2026-02-07 — sesión fixes)
+
+| Hash | Descripción |
+|------|-------------|
+| `e7c0b17` | feat: Fix print data binding and add print/PDF from editor |
+| `f8f6d24` | fix: Auto-detect separator in paste data parser |
+| `34bb2dd` | fix: Hide drop zone after file is selected in data upload |
+
+## Verificación (2026-02-07 — sesión fixes)
+
+- [x] 707 tests, 0 failures
+- [x] Columnas separadas correctamente al pegar datos con espacios/comas/tabs
+- [x] Drop zone oculta después de seleccionar archivo
+- [x] Botón "Procesar archivo" visible solo con archivo seleccionado
+- [x] Panel "Sin datos vinculados" visible en editor para etiquetas múltiples sin datos
+- [x] `label_type` incluido en Design.to_json()
+
+---
+
+## Sesión 2026-02-07 — UX de /designs: tags en header, rename, badges, clickabilidad
+
+### Resumen
+
+Mejoras de usabilidad en la página `/designs`:
+
+### 1. ✅ Tags en misma fila que pestañas
+
+Chips de tags de filtro movidos a la misma fila que "Todas | Únicas | Múltiples", alineados a la derecha con `justify-between`.
+
+### 2. ✅ Inline rename con icono lápiz
+
+Icono de lápiz junto al nombre del diseño (visible al hover). Al pulsar, el nombre se convierte en input editable con botones de confirmar/cancelar. Usa `stream_insert` para forzar re-render.
+
+### 3. ✅ Tipo de etiqueta como texto plano
+
+Reemplazados los badges coloreados "Única"/"Múltiple" por texto plano gris junto a las dimensiones para evitar confusión visual con los tags.
+
+### 4. ✅ Eliminado contador de elementos
+
+Quitado "X elementos" de las tarjetas — no aportaba valor al usuario.
+
+### 5. ✅ Tarjeta completamente clickeable (stretched link)
+
+Patrón CSS "stretched link": el link del nombre usa `after:absolute after:inset-0 after:content-['']` para cubrir toda la tarjeta. Botones y tags usan `relative z-10` para quedar por encima. Container de tags usa `pointer-events-none` con `[&>*]:pointer-events-auto` para no bloquear clicks en zonas vacías.
+
+---
+
+## Commits (2026-02-07 — sesión UX)
+
+| Hash | Descripción |
+|------|-------------|
+| `7b8c5e4` | style: Move tag filter chips to same row as type tabs |
+| `35323f0` | feat: Add inline rename with pencil icon on design cards |
+| `5a45637` | style: Show label type as plain text instead of colored badges |
+| `c6318e0` | fix: Make entire design card clickable with stretched link pattern |
+| `106e5ec` | fix: Allow clicks through empty tag row area with pointer-events |
+
+---
+
+## Plan de Continuación
+
+### Próximos pasos prioritarios
+
+1. **Verificar flujo completo de impresión end-to-end**
+   - Cargar datos → vincular columnas → previsualizar → imprimir/PDF
+   - Confirmar que los valores reales aparecen en las etiquetas impresas
+
+2. **Persistencia de datos entre sesiones**
+   - UploadDataStore usa ETS (datos se pierden al reiniciar)
+   - Opciones: guardar en DB, usar session storage, o mostrar aviso al usuario
+
+3. **Detección de duplicados al importar** (pendiente)
+   - Si ya existe un diseño con el mismo nombre, preguntar si duplicar o saltar
+
+4. **Fix compilation warning**
+   - `editor.ex:349` — agrupar cláusulas de `handle_event/3`
+
+---
+
 ## Tareas Pendientes (TODO)
-
-### 🔴 Bug Prioritario
-
-1. **Impresión de múltiples etiquetas solo muestra nombre del campo**
-   - Al imprimir, en lugar de mostrar el valor de los datos vinculados, solo aparece el nombre del campo (ej. "nombre" en vez de "Juan")
-   - Investigar flujo de impresión y sustitución de bindings por valores reales
 
 ### 🟠 Mejoras Funcionales
 
-2. **Permitir renombrar etiqueta desde /designs**
-   - Poder cambiar el nombre sin entrar al editor
-   - Ya existe funcionalidad de rename en index.ex, revisar accesibilidad
-
-3. **Preguntar antes de importar etiquetas duplicadas**
+1. **Preguntar antes de importar etiquetas duplicadas**
    - Al importar, si ya existe un diseño con el mismo nombre, preguntar al usuario si desea duplicar o saltar
+
+### 🟡 Mejoras Técnicas
+
+2. **Fix compilation warning: handle_event/3 not grouped**
+   - `editor.ex:349` — clauses with same name/arity should be grouped together
+   - Mover `handle_event("update_element", ...)` junto a los otros `handle_event/3`
+
+3. **Persistencia de datos vinculados entre sesiones**
+   - UploadDataStore usa ETS — datos se pierden al reiniciar servidor
+   - Considerar guardar datos en DB o session para que sobrevivan reinicios
 
 ---
 
@@ -1617,3 +1772,5 @@ lib/qr_label_system/designs/category.ex
 | 2026-02-06 | **MINIATURAS DE DISEÑOS + FIX LAYOUT @conn** |
 | 2026-02-06 | **LIMPIEZA UX /designs + MEJORAS /generate/data + BOTÓN DATOS EN EDITOR** |
 | 2026-02-07 | **REEMPLAZO DE CATEGORÍAS POR TAGS (many-to-many) + BUG FIXES + LAYOUT** |
+| 2026-02-07 | **FIX IMPRESIÓN + AUTO-DETECT SEPARATOR + UX CARGA ARCHIVOS** |
+| 2026-02-07 | **UX /designs: TAGS EN HEADER, RENAME INLINE, STRETCHED LINK** |
