@@ -1,0 +1,7 @@
+num_pieza,descripcion,proveedor,cantidad,ubicacion_origen,ubicacion_destino
+MCH-4520-A,Carcasa motor 45mm,Mecanizados Ibérica S.L.,200 uds,ALM-A3-12,LIN-2-EST5
+ELE-0087-C,Conector eléctrico 12 pines,Componentes Navarra S.A.,500 uds,ALM-B1-04,LIN-1-EST3
+PLT-1100-B,Engranaje plástico módulo 1,Inyección Levante S.L.,1000 uds,ALM-C2-08,LIN-3-EST1
+TOR-0233-A,Tornillo M6x25 inox A2,Fijaciones del Norte S.A.,5000 uds,ALM-D1-01,LIN-2-EST7
+JNT-0045-D,Junta tórica 45x3 NBR,Cauchos Bidasoa S.L.,300 uds,ALM-A2-19,LIN-1-EST9
+CIR-0912-A,Placa circuito control v3.2,Electrónica Guadalquivir S.A.,150 uds,ALM-B3-06,LIN-4-EST2

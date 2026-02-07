@@ -63,7 +63,8 @@ defmodule QrLabelSystemWeb.TemplateLive.Index do
     "alimentacion" => "Alimentación",
     "farmaceutica" => "Farmacéutica",
     "logistica" => "Logística",
-    "manufactura" => "Manufactura"
+    "manufactura" => "Manufactura",
+    "retail" => "Retail / Textil"
   }
 
   defp category_label(key), do: Map.get(@category_labels, key, key)
@@ -125,7 +126,7 @@ defmodule QrLabelSystemWeb.TemplateLive.Index do
           Todas (<%= length(@system_templates) %>)
         </button>
         <button
-          :for={cat <- ~w(alimentacion farmaceutica logistica manufactura)}
+          :for={cat <- ~w(alimentacion farmaceutica logistica manufactura retail)}
           phx-click="filter_category"
           phx-value-category={cat}
           class={"px-3 py-1.5 rounded-full text-sm font-medium transition-all border " <>
@@ -139,56 +140,80 @@ defmodule QrLabelSystemWeb.TemplateLive.Index do
         </button>
       </div>
 
-      <!-- Template Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <!-- Template List -->
+      <div class="space-y-4 pb-4">
         <div
           :for={template <- filtered_templates(@system_templates, @category_filter)}
-          class="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all duration-200 overflow-hidden"
+          class="group/card relative bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200"
         >
-          <!-- Preview -->
-          <div class="p-4 bg-gray-50 border-b border-gray-100 flex items-center justify-center min-h-[100px]">
-            <.design_thumbnail design={template} max_width={120} max_height={90} />
-          </div>
-          <!-- Info -->
-          <div class="p-4">
-            <h3 class="font-semibold text-gray-900 text-sm"><%= template.name %></h3>
-            <p class="text-xs text-gray-500 mt-1 line-clamp-2"><%= template.description %></p>
-            <div class="flex items-center gap-2 mt-2">
-              <span class="text-xs text-gray-400"><%= template.width_mm %> × <%= template.height_mm %> mm</span>
-              <span class="text-gray-300">·</span>
-              <span class={"inline-block px-2 py-0.5 rounded-full text-xs font-medium " <>
-                case template.template_category do
-                  "alimentacion" -> "bg-green-100 text-green-700"
-                  "farmaceutica" -> "bg-blue-100 text-blue-700"
-                  "logistica" -> "bg-orange-100 text-orange-700"
-                  "manufactura" -> "bg-purple-100 text-purple-700"
-                  _ -> "bg-gray-100 text-gray-600"
-                end}>
-                <%= category_label(template.template_category) %>
-              </span>
+          <div class="flex gap-4">
+            <!-- LEFT: Thumbnail -->
+            <div
+              phx-click="preview_template"
+              phx-value-id={template.id}
+              class="flex-shrink-0 self-stretch flex items-center cursor-pointer"
+            >
+              <div class="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                <.design_thumbnail design={template} max_width={80} max_height={80} />
+              </div>
             </div>
-            <div class="flex items-center gap-2 mt-3">
-              <button
-                phx-click="preview_template"
-                phx-value-id={template.id}
-                class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 text-sm font-medium transition"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Ver
-              </button>
-              <button
-                phx-click="use_template"
-                phx-value-id={template.id}
-                class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Usar plantilla
-              </button>
+
+            <!-- RIGHT: Content -->
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between">
+                <!-- Name + meta -->
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-base font-semibold text-gray-900 truncate"><%= template.name %></h3>
+                  <p :if={template.description} class="text-sm text-gray-500 truncate mt-0.5"><%= template.description %></p>
+                  <p class="text-sm text-gray-500 flex items-center gap-2 flex-wrap mt-0.5">
+                    <span class="inline-flex items-center gap-1">
+                      <svg class="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                      </svg>
+                      <%= template.width_mm %> × <%= template.height_mm %> mm
+                    </span>
+                    <span class="text-gray-300">·</span>
+                    <span><%= if template.label_type == "single", do: "Única", else: "Múltiple" %></span>
+                    <span class="text-gray-300">·</span>
+                    <span class={"inline-block px-2 py-0.5 rounded-full text-xs font-medium " <>
+                      case template.template_category do
+                        "alimentacion" -> "bg-green-100 text-green-700"
+                        "farmaceutica" -> "bg-blue-100 text-blue-700"
+                        "logistica" -> "bg-orange-100 text-orange-700"
+                        "manufactura" -> "bg-purple-100 text-purple-700"
+                        "retail" -> "bg-pink-100 text-pink-700"
+                        _ -> "bg-gray-100 text-gray-600"
+                      end}>
+                      <%= category_label(template.template_category) %>
+                    </span>
+                  </p>
+                </div>
+
+                <!-- Action buttons -->
+                <div class="flex items-center gap-2 ml-4">
+                  <button
+                    phx-click="preview_template"
+                    phx-value-id={template.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 text-sm font-medium transition"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Ver
+                  </button>
+                  <button
+                    phx-click="use_template"
+                    phx-value-id={template.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Usar plantilla
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -220,6 +245,7 @@ defmodule QrLabelSystemWeb.TemplateLive.Index do
                     "farmaceutica" -> "bg-blue-100 text-blue-700"
                     "logistica" -> "bg-orange-100 text-orange-700"
                     "manufactura" -> "bg-purple-100 text-purple-700"
+                    "retail" -> "bg-pink-100 text-pink-700"
                     _ -> "bg-gray-100 text-gray-600"
                   end}>
                   <%= category_label(@preview_template.template_category) %>

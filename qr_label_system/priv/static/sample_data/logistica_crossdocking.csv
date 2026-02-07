@@ -1,0 +1,7 @@
+origen,destino,num_pedido,prioridad,fecha_entrega
+Almacén Central Madrid,Tienda Barcelona-Diagonal,PED-2026-08841,URGENTE,08/02/2026
+Centro Logístico Zaragoza,Tienda Valencia-Colón,PED-2026-08856,NORMAL,10/02/2026
+Almacén Central Madrid,Tienda Sevilla-Nervión,PED-2026-08863,ALTA,09/02/2026
+Plataforma Vitoria,Tienda Bilbao-Gran Vía,PED-2026-08879,NORMAL,11/02/2026
+Centro Logístico Zaragoza,Tienda Málaga-Larios,PED-2026-08892,URGENTE,08/02/2026
+Almacén Central Madrid,Tienda Madrid-Preciados,PED-2026-08901,ALTA,09/02/2026

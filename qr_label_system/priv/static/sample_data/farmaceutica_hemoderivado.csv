@@ -1,0 +1,7 @@
+tipo_producto,grupo_sanguineo,num_donacion,fecha_extraccion,fecha_caducidad,volumen
+Concentrado hematíes,A+,DON-2026-00145,03/02/2026,17/03/2026,280 ml
+Plasma fresco congelado,O-,DON-2026-00162,04/02/2026,04/02/2027,250 ml
+Concentrado plaquetas,B+,DON-2026-00178,05/02/2026,10/02/2026,60 ml
+Concentrado hematíes,AB+,DON-2026-00183,05/02/2026,19/03/2026,290 ml
+Plasma fresco congelado,A-,DON-2026-00191,06/02/2026,06/02/2027,240 ml
+Concentrado hematíes,O+,DON-2026-00204,07/02/2026,21/03/2026,275 ml

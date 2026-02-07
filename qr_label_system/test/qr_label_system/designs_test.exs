@@ -379,7 +379,7 @@ defmodule QrLabelSystem.DesignsTest do
     end
 
     test "accepts valid template_category values" do
-      for category <- ~w(alimentacion farmaceutica logistica manufactura) do
+      for category <- ~w(alimentacion farmaceutica logistica manufactura retail) do
         attrs = valid_design_attributes(%{template_category: category})
         assert {:ok, design} = Designs.create_design(attrs)
         assert design.template_category == category

@@ -1,0 +1,7 @@
+num_equipo,descripcion,fecha_calibracion,proxima_calibracion,responsable,estado
+BAL-001,Balanza analítica Mettler XS205,01/02/2026,01/08/2026,J. Martínez,VIGENTE
+PIE-014,Pie de rey digital Mitutoyo 150mm,15/01/2026,15/07/2026,A. Rodríguez,VIGENTE
+MIC-003,Micrómetro exterior 0-25mm,10/12/2025,10/06/2026,J. Martínez,VIGENTE
+TER-022,Termómetro patrón Pt100,20/11/2025,20/05/2026,L. Fernández,POR CALIBRAR
+MAN-008,Manómetro de precisión 0-10 bar,05/01/2026,05/07/2026,A. Rodríguez,VIGENTE
+DUR-005,Durómetro Shore A,28/09/2025,28/03/2026,L. Fernández,CADUCADO
