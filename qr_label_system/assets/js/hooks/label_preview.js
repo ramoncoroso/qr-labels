@@ -76,16 +76,10 @@ const LabelPreview = {
     for (const element of elements) {
       if (element.type !== 'qr' && element.type !== 'barcode') continue
 
-      let value = null
-
-      if (labelType === 'single') {
-        // For single labels, use text_content from the element
-        value = element.text_content
-      } else {
-        // For multiple labels, use mapped column from row data
-        const columnName = mapping[element.id]
-        value = columnName ? row[columnName] : null
-      }
+      // Try mapped data first (multiple labels), then text_content, then binding
+      // This matches the canvas logic: element.text_content || element.binding || ''
+      const columnName = mapping[element.id]
+      const value = (columnName ? row[columnName] : null) || element.text_content || element.binding
 
       if (!value) continue
 

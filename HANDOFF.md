@@ -1875,13 +1875,84 @@ Revisión de código post-implementación. Se encontraron y corrigieron 4 issues
 
 ### 🟡 Mejoras Técnicas
 
-2. **Fix compilation warning: handle_event/3 not grouped**
-   - `editor.ex:349` — clauses with same name/arity should be grouped together
-   - Mover `handle_event("update_element", ...)` junto a los otros `handle_event/3`
-
-3. **Persistencia de datos vinculados entre sesiones**
+2. **Persistencia de datos vinculados entre sesiones**
    - UploadDataStore usa ETS — datos se pierden al reiniciar servidor
    - Considerar guardar datos en DB o session para que sobrevivan reinicios
+
+---
+
+## Sesión 2026-02-07 — Fix compilation warning y persistencia de resize en canvas
+
+### Resumen
+
+Se resolvieron 3 problemas: warning de compilación, pérdida de resize al hacer click, y QR/barcode que no se redimensionaban correctamente.
+
+### 1. ✅ Fix compilation warning: handle_event/3 not grouped
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/editor.ex`
+
+**Problema:** `@allowed_element_fields` y `defp do_save_elements/3` estaban insertados entre cláusulas de `handle_event/3`, causando warning del compilador.
+
+**Solución:**
+- `@allowed_element_fields` movido al inicio del módulo (junto a aliases)
+- `do_save_elements/3` movido a la sección de Helper Functions (después de todos los `handle_event/3`)
+
+### 2. ✅ Fix pérdida de resize al hacer click en otra parte
+
+**Archivo:** `assets/js/hooks/canvas_designer.js`
+
+**Problema:** Al redimensionar un elemento y hacer click en otra parte del canvas, el tamaño revertía al original. Causado por:
+1. **Debounce de 100ms** en `saveElements()`: la deselección podía resetear el estado antes del save
+2. **Fabric.js modifica `scaleX/scaleY`** al redimensionar, no `width/height`. Si la escala se reseteaba antes del save, se guardaban las dimensiones originales
+
+**Solución (doble):**
+- `object:modified` ahora llama `saveElementsImmediate()` directamente (sin debounce). El evento solo se dispara una vez al soltar el handle, así que no hay exceso de llamadas
+- Normalización inmediata de escala en `object:modified` para elementos no-código: `width = width * scaleX`, `height = height * scaleY`, reset `scaleX/scaleY = 1`. Así `elementData` siempre refleja el tamaño visual real
+
+### 3. ✅ Fix QR/barcode resize: detección por elementType y escalado independiente
+
+**Archivo:** `assets/js/hooks/canvas_designer.js`
+
+**Problema 1:** QR y barcode generados son `fabric.Image`, no `fabric.Group`. Toda la lógica de recreación (`_pendingRecreate`, `recreateGroupWithoutSave`) comparaba `obj.type === 'group'`, así que nunca se ejecutaba para códigos ya renderizados. Resultado: al ampliar un QR, el contenedor crecía pero la imagen QR quedaba del mismo tamaño. Al reducir un barcode, la imagen se recortaba.
+
+**Solución:** Reemplazadas todas las comparaciones `obj.type === 'group'` por `obj.elementType === 'qr' || obj.elementType === 'barcode'` en:
+- `object:modified` — exclusión de normalización de escala
+- `saveElementsImmediate` — rama de dimensiones visuales y `_pendingRecreate`
+- Recreación post-save — detección de elementos que necesitan regeneración
+- `updateSelectedElement` (width/height) — panel de propiedades llama a `recreateGroupAtSize`
+
+**Problema 2:** `createBarcode` usaba `Math.min(scaleX, scaleY)` (escala uniforme) para mantener la proporción del barcode. Cuando la proporción no coincidía con las dimensiones del usuario, el barcode quedaba más chico y ese tamaño reducido se guardaba.
+
+**Solución:** Escalas independientes `scaleX: w / img.width, scaleY: h / img.height` para que el barcode llene exactamente las dimensiones especificadas.
+
+**Problema 3:** `recreateGroupAtSize` usaba `saveElements()` (debounced 100ms). La generación asíncrona del barcode completaba antes del save, y `saveElementsImmediate` leía las dimensiones visuales (incorrectas por `Math.min`) en vez de las deseadas.
+
+**Solución:** Cambiado a `saveElementsImmediate()` para que el save ocurra antes de la generación asíncrona.
+
+---
+
+## Archivos Modificados (2026-02-07 — sesión canvas resize)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system_web/live/design_live/editor.ex` | Movido `@allowed_element_fields` y `do_save_elements/3` para agrupar `handle_event/3` |
+| `assets/js/hooks/canvas_designer.js` | Save sin debounce en `object:modified`, normalización de escala inmediata, detección por `elementType`, escalas independientes en barcode, save inmediato en `recreateGroupAtSize` |
+
+## Commits (2026-02-07 — sesión canvas resize)
+
+| Hash | Descripción |
+|------|-------------|
+| `e0a0827` | fix: Group handle_event/3 clauses together in editor.ex |
+| `c8d5ec8` | fix: Persist element resize and regenerate QR/barcode at correct size |
+
+## Verificación (2026-02-07 — sesión canvas resize)
+
+- [x] 707 tests, 0 failures
+- [x] Compilación sin warnings
+- [x] Resize de elementos se persiste al hacer click en otra parte
+- [x] QR se regenera al tamaño correcto al redimensionar
+- [x] Barcode se regenera llenando las dimensiones exactas especificadas
+- [x] Cambio de tamaño desde panel de propiedades funciona para QR/barcode
 
 ---
 
@@ -1905,3 +1976,4 @@ Revisión de código post-implementación. Se encontraron y corrigieron 4 issues
 | 2026-02-07 | **UX /designs: TAGS EN HEADER, RENAME INLINE, STRETCHED LINK** |
 | 2026-02-07 | **FIX EXCEL PARSER + UPLOAD ARCHIVOS** |
 | 2026-02-07 | **CODE REVIEW: zip leak, rich text, logging, deps cleanup** |
+| 2026-02-07 | **FIX COMPILATION WARNING + PERSISTENCIA RESIZE + QR/BARCODE RESIZE** |

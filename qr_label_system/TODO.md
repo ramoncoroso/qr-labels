@@ -40,6 +40,45 @@ Archivos soportados (en orden de prioridad):
 - Permitir al usuario especificar cantidad de etiquetas a generar
 - Útil para etiquetas con datos estáticos o códigos secuenciales
 
+## [CANVAS] Fix compilation warning: handle_event/3 not grouped
+
+**Estado**: ✅ Completado (2026-02-07)
+
+**Solución implementada**:
+- Movido `@allowed_element_fields` al inicio del módulo
+- Movido `do_save_elements/3` a la sección de Helper Functions
+- Todas las cláusulas `handle_event/3` quedan agrupadas contiguamente
+
+**Archivos modificados**:
+- `lib/qr_label_system_web/live/design_live/editor.ex`
+
+## [CANVAS] Persistir resize de elementos al hacer click en otra parte
+
+**Estado**: ✅ Completado (2026-02-07)
+
+**Problema**: Al redimensionar un elemento y hacer click en otra parte del canvas, el tamaño revertía. El debounce de 100ms en el save permitía que la deselección reseteara la escala antes de guardar.
+
+**Solución implementada**:
+1. `object:modified` llama `saveElementsImmediate()` directamente (sin debounce)
+2. Normalización inmediata de escala en `object:modified` para elementos no-código
+
+**Archivos modificados**:
+- `assets/js/hooks/canvas_designer.js`
+
+## [CANVAS] QR/barcode no se redimensionaban correctamente
+
+**Estado**: ✅ Completado (2026-02-07)
+
+**Problema**: QR y barcode generados son `fabric.Image`, pero la lógica de recreación comparaba `obj.type === 'group'`. Además, `createBarcode` usaba `Math.min(scaleX, scaleY)` produciendo dimensiones menores a las pedidas.
+
+**Solución implementada**:
+1. Detección por `elementType` en vez de `obj.type` en 5 ubicaciones
+2. Escalas independientes en `createBarcode` para llenar dimensiones exactas
+3. `recreateGroupAtSize` usa `saveElementsImmediate()` (sin debounce)
+
+**Archivos modificados**:
+- `assets/js/hooks/canvas_designer.js`
+
 ---
 
 # Mejoras de Seguridad
