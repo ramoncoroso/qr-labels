@@ -40,7 +40,8 @@ defmodule QrLabelSystem.Designs do
     Repo.all(
       from d in Design,
         where: d.user_id == ^user_id and d.label_type == ^label_type,
-        order_by: [desc: d.updated_at]
+        order_by: [desc: d.updated_at],
+        preload: [:tags]
     )
   end
 
