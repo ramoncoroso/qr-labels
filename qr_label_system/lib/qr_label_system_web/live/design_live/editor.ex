@@ -1099,9 +1099,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       "text" ->
         Map.merge(base, %{
-          width: 30.0,
-          height: 8.0,
-          font_size: 12,
+          width: 60.0,
+          height: 14.0,
+          font_size: 25,
           font_family: "Arial",
           font_weight: "normal",
           text_align: "left",

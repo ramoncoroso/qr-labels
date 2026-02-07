@@ -1399,7 +1399,7 @@ const CanvasDesigner = {
     const fittedWidth = Math.max(textWidth + padding, minWidth)
 
     // Only auto-fit if we don't have an explicit width from saved data
-    if (!element.width || element.width === 30) {
+    if (!element.width || element.width === 60) {
       textbox.set('width', fittedWidth)
     }
 

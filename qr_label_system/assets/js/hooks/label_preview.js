@@ -178,9 +178,9 @@ const LabelPreview = {
         div.style.fontWeight = element.font_weight || 'normal'
         div.style.color = element.color || '#000000'
         div.style.textAlign = element.text_align || 'left'
-        div.style.overflow = 'hidden'
-        div.style.whiteSpace = 'nowrap'
-        div.style.textOverflow = 'ellipsis'
+        div.style.overflow = 'visible'
+        div.style.whiteSpace = 'normal'
+        div.style.wordBreak = 'break-word'
         break
 
       case 'line':
