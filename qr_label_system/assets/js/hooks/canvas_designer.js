@@ -279,6 +279,10 @@ const CanvasDesigner = {
       height: height
     }
 
+    // Store base (unzoomed) canvas dimensions for zoom calculations
+    this._baseCanvasWidth = totalWidth
+    this._baseCanvasHeight = totalHeight
+
     this.elements = new Map()
 
     // Final verification - ensure canvas is interactive
@@ -311,9 +315,9 @@ const CanvasDesigner = {
     const availableWidth = viewportWidth - sidebarLeft - sidebarLayers - sidebarProperties - padding
     const availableHeight = viewportHeight - headerAndToolbar - padding
 
-    // Get canvas dimensions (original size)
-    const canvasWidth = this.canvas.width
-    const canvasHeight = this.canvas.height
+    // Get canvas dimensions (original unzoomed size)
+    const canvasWidth = this._baseCanvasWidth || this.canvas.width
+    const canvasHeight = this._baseCanvasHeight || this.canvas.height
 
     // Calculate the zoom level needed to fit
     const scaleX = availableWidth / canvasWidth
@@ -331,37 +335,35 @@ const CanvasDesigner = {
   },
 
   /**
-   * Apply zoom using CSS transform
-   * This scales the entire canvas element visually while maintaining coordinate system
+   * Apply zoom using Fabric.js native zoom
+   * Re-renders at full resolution so text stays crisp at any zoom level
    */
   applyZoom(zoomLevel) {
     if (!this.canvas) return
 
-    const canvasWidth = this.canvas.width
-    const canvasHeight = this.canvas.height
-    const scaledWidth = Math.round(canvasWidth * zoomLevel)
-    const scaledHeight = Math.round(canvasHeight * zoomLevel)
+    const baseW = this._baseCanvasWidth || this.canvas.width
+    const baseH = this._baseCanvasHeight || this.canvas.height
+    const scaledWidth = Math.round(baseW * zoomLevel)
+    const scaledHeight = Math.round(baseH * zoomLevel)
 
-    // Set our container to the scaled dimensions and position relative
+    // Resize container to match zoomed dimensions
     this.el.style.width = `${scaledWidth}px`
     this.el.style.height = `${scaledHeight}px`
     this.el.style.position = 'relative'
     this.el.style.overflow = 'hidden'
 
-    // Position the Fabric wrapper absolutely so it doesn't affect layout
-    // The transform will scale it to fit within this.el
+    // Clear any CSS transform from previous implementation
     const fabricWrapper = this.canvas.wrapperEl
     if (fabricWrapper) {
-      fabricWrapper.style.position = 'absolute'
-      fabricWrapper.style.top = '0'
-      fabricWrapper.style.left = '0'
-      fabricWrapper.style.transform = `scale(${zoomLevel})`
-      fabricWrapper.style.transformOrigin = 'top left'
+      fabricWrapper.style.transform = ''
+      fabricWrapper.style.transformOrigin = ''
     }
 
-    // Keep Fabric zoom at 1 - CSS transform handles visual scaling
-    // Fabric automatically adjusts mouse coordinates via cssScale in getPointer
-    this.canvas.setZoom(1)
+    // Resize the canvas element to the zoomed pixel dimensions
+    this.canvas.setDimensions({ width: scaledWidth, height: scaledHeight })
+
+    // Apply Fabric.js native zoom — re-renders text as vectors at full resolution
+    this.canvas.setZoom(zoomLevel)
     this.canvas.requestRenderAll()
   },
 
@@ -2925,11 +2927,13 @@ const CanvasDesigner = {
       if (!exists) uniqueLines.push(line)
     })
 
+    const baseH = this._baseCanvasHeight || this.canvas.height
+    const baseW = this._baseCanvasWidth || this.canvas.width
     uniqueLines.forEach(line => {
       let fabricLine
       if (line.type === 'vertical') {
         fabricLine = new fabric.Line(
-          [line.x, 0, line.x, this.canvas.height],
+          [line.x, 0, line.x, baseH],
           {
             stroke: '#3b82f6',
             strokeWidth: 1,
@@ -2941,7 +2945,7 @@ const CanvasDesigner = {
         )
       } else {
         fabricLine = new fabric.Line(
-          [0, line.y, this.canvas.width, line.y],
+          [0, line.y, baseW, line.y],
           {
             stroke: '#3b82f6',
             strokeWidth: 1,

@@ -1956,6 +1956,88 @@ Se resolvieron 3 problemas: warning de compilación, pérdida de resize al hacer
 
 ---
 
+## Sesión: Placeholders "Completar" + Mejoras UX Canvas + Fix Preview (2026-02-07)
+
+### Contexto
+
+Mejora de la experiencia de usuario al crear nuevos elementos en el canvas. Anteriormente, los elementos se creaban con valores genéricos hardcodeados ("Escriba aqui...", "QR-1", "CODE1") que no indicaban claramente al usuario que debía completar el contenido.
+
+### Cambios realizados
+
+#### 1. Placeholder "Completar" con estilo visual gris (`6533d80`)
+- **Backend (`editor.ex`)**: `text_content` por defecto cambiado a `""` (vacío) para texto, QR y barcode
+- **Frontend (`canvas_designer.js`)**: Cuando `text_content` está vacío, el canvas muestra placeholder en gris `#999999` con estado `_isPlaceholder`
+- **Propiedades**: Todos los inputs usan `placeholder="Completar"` (HTML nativo)
+- **Edición en canvas**: Al hacer doble click en texto placeholder, se limpia y restaura color negro. Al salir vacío, reaparece el placeholder gris
+- **Eventos**: `text:editing:entered` y `text:editing:exited` gestionan el ciclo de vida del placeholder
+
+#### 2. Placeholders con tipo específico y forma visual (`96dce85`)
+- **Texto en canvas por tipo**: "Completar texto", "Completar QR", "Completar cód. barras"
+- **QR placeholder visual**: Finder patterns en 3 esquinas + módulos de datos dispersos + hueco blanco central con texto
+- **Barcode placeholder visual**: Líneas verticales de ancho variable simulando código de barras + hueco blanco central con texto
+- **Auto-escalado de fuente**: `fontSize = Math.min(maxFontSize, (ancho * 0.85) / numChars * 1.6)` para que el texto siempre quepa
+- **Colores**: Gris (`#999999` texto, `#d1d5db` patrones, `#f3f4f6` fondo) para "Completar"; azul para "Generando..." (carga)
+
+#### 3. Tamaño de texto por defecto aumentado (`435618a`)
+- `font_size`: 12 → **25**
+- `width`: 30mm → **60mm**
+- `height`: 8mm → **14mm**
+- Auto-fit actualizado para reconocer nuevo ancho por defecto (60mm)
+- Preview: `overflow: visible` + `whiteSpace: normal` + `wordBreak: break-word`
+
+#### 4. Fix tamaño de fuente en vista previa (`33e97eb`)
+- **Problema**: Canvas usa `PX_PER_MM = 6`, preview usa `MM_TO_PX = 3.78`. Font size se aplicaba sin conversión → preview ~1.6x más grande
+- **Fix**: `fontSize * scale` → `fontSize * (MM_TO_PX / 6) * scale`
+
+### Archivos modificados
+
+| Archivo | Cambios |
+|---------|---------|
+| `canvas_designer.js` | Placeholder gris, formas visuales QR/barcode, eventos text editing, auto-escalado fuente |
+| `editor.ex` | Defaults vacíos, placeholders "Completar" en inputs, font_size 25, width 60mm |
+| `label_preview.js` | Fix conversión px→mm en fontSize, overflow visible para texto |
+
+### Commits
+
+| Hash | Descripción |
+|------|-------------|
+| `6533d80` | feat: Show "Completar" placeholder in gray for empty text/QR/barcode elements |
+| `96dce85` | feat: Show type-specific placeholders with visual QR/barcode shapes |
+| `435618a` | feat: Increase default text element size and fix preview text overflow |
+| `33e97eb` | fix: Match preview text font size with canvas by converting px-to-mm ratio |
+
+### Referencia al Plan de Producto (`PLAN_PRODUCTO.md`)
+
+Los cambios de esta sesión son **mejoras de UX del editor** (estabilización previa a Fase 1). El plan de producto define las siguientes fases pendientes:
+
+#### Fase 1 — Fundamentos de valor profesional (pendiente)
+
+| Sub-fase | Descripción | Estado | Semanas est. |
+|----------|-------------|--------|-------------|
+| **1.1** | Biblioteca de plantillas por industria (20 plantillas + catálogo) | Pendiente | 2-3 |
+| **1.2** | Formatos de código de barras industriales (migrar a bwip-js, 30+ formatos) | Pendiente | 3-4 |
+| **1.3** | Campos calculados y variables dinámicas (motor de expresiones `{{}}`) | Pendiente | 3-4 |
+| **1.4** | Soporte impresoras ZPL (Zebra) | Pendiente | 4-6 |
+
+#### Fase 2 — Diferenciación competitiva (futuro)
+- 2.1 Cumplimiento normativo por sector
+- 2.2 Sistema de aprobación y versionado
+- 2.3 Multi-idioma en etiquetas
+- 2.4 Integraciones (Shopify, ERPs, APIs)
+
+#### Fase 3 — Escala y automatización (futuro)
+- 3.1 Motor de reglas y automatización
+- 3.2 Impresión en la nube (Cloud Print)
+- 3.3 Workspaces y equipos
+
+### Notas técnicas para próximas sesiones
+
+- **Sistema de coordenadas dual**: Canvas (`PX_PER_MM = 6`) vs Preview/Print (`MM_TO_PX = 3.78`). Cualquier cambio visual debe verificarse en ambos sistemas.
+- **3 puntos de generación**: `canvas_designer.js`, `label_preview.js`, `print_engine.js` — los tres deben mantenerse sincronizados.
+- **Placeholder state**: Los elementos de texto usan `_isPlaceholder` y `_originalColor` en el objeto Fabric.js para gestionar el ciclo placeholder ↔ contenido real.
+
+---
+
 ## Historial de Cambios (Actualizado)
 
 | Fecha | Cambio |
@@ -1977,3 +2059,4 @@ Se resolvieron 3 problemas: warning de compilación, pérdida de resize al hacer
 | 2026-02-07 | **FIX EXCEL PARSER + UPLOAD ARCHIVOS** |
 | 2026-02-07 | **CODE REVIEW: zip leak, rich text, logging, deps cleanup** |
 | 2026-02-07 | **FIX COMPILATION WARNING + PERSISTENCIA RESIZE + QR/BARCODE RESIZE** |
+| 2026-02-07 | **PLACEHOLDERS "COMPLETAR" + MEJORAS UX CANVAS + FIX PREVIEW** |
