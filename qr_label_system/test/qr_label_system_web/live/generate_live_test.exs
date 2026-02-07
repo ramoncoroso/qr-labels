@@ -85,7 +85,7 @@ defmodule QrLabelSystemWeb.GenerateLiveTest do
       # Click on paste method
       html = lv |> element("button[phx-value-method='paste']") |> render_click()
 
-      assert html =~ "Pegar datos desde Excel"
+      assert html =~ "Pegar datos"
     end
   end
 

@@ -756,13 +756,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                       <%= design.width_mm %> × <%= design.height_mm %> mm
                     </span>
                     <span class="text-gray-300">·</span>
-                    <span class="inline-flex items-center">
-                      <svg class="w-3.5 h-3.5 mr-1 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L12 12.75l-5.571-3m11.142 0l4.179 2.25L12 17.25l-9.75-5.25 4.179-2.25m11.142 0l4.179 2.25-4.179 2.25m0-4.5v4.5" />
-                      </svg>
-                      <%= length(design.elements || []) %> elementos
-                    </span>
-                    <span class="text-gray-300">·</span>
                     <%= if design.label_type == "single" do %>
                       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
                         Única

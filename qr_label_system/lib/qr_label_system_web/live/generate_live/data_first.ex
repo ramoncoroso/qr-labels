@@ -237,15 +237,18 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
       case lines do
         [header | rows] when rows != [] ->
-          columns = String.split(header, "\t")
+          # Auto-detect separator: tab, semicolon, comma, or multiple spaces
+          separator = detect_separator(header)
+
+          columns = String.split(header, separator)
           |> Enum.map(&String.trim/1)
           |> Enum.filter(&(&1 != ""))
 
           if length(columns) == 0 do
-            {:error, "No se detectaron columnas. Asegúrate de copiar datos con encabezados separados por tabuladores."}
+            {:error, "No se detectaron columnas. Asegúrate de que los encabezados estén separados por tabuladores, comas o punto y coma."}
           else
             data = Enum.map(rows, fn row ->
-              values = String.split(row, "\t")
+              values = String.split(row, separator)
               |> Enum.map(&String.trim/1)
 
               columns
@@ -265,6 +268,18 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
         [] ->
           {:error, "No hay datos para procesar"}
       end
+    end
+  end
+
+  # Detect the best separator for pasted data
+  defp detect_separator(header) do
+    cond do
+      String.contains?(header, "\t") -> "\t"
+      String.contains?(header, ";") -> ";"
+      String.contains?(header, ",") -> ","
+      String.match?(header, ~r/\s{2,}/) -> ~r/\s{2,}/
+      String.contains?(header, " ") -> ~r/\s+/
+      true -> "\t"
     end
   end
 
@@ -468,9 +483,9 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
         <!-- Paste Area -->
         <div :if={@active_method == "paste"} class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Pegar datos desde Excel</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Pegar datos</h3>
           <p class="text-sm text-gray-600 mb-4">
-            Copia las celdas en Excel (incluyendo los encabezados) y pégalas aquí. Los datos deben estar separados por tabuladores.
+            Pega tus datos aquí. Se detectan automáticamente tabuladores, comas, punto y coma, o espacios como separadores.
           </p>
 
           <form phx-submit="parse_pasted">
