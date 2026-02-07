@@ -711,7 +711,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         </div>
 
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
-          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
+          <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card relative bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
             <div class="flex gap-4">
               <!-- Thumbnail spanning full card height -->
               <.link navigate={~p"/designs/#{design.id}/edit"} class="flex-shrink-0 self-stretch flex items-center cursor-pointer">
@@ -748,7 +748,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                       </form>
                     <% else %>
                       <div class="flex items-center gap-1.5 group/name">
-                        <.link navigate={~p"/designs/#{design.id}/edit"} class="min-w-0">
+                        <.link navigate={~p"/designs/#{design.id}/edit"} class="min-w-0 after:absolute after:inset-0 after:content-['']">
                           <h3 class="text-base font-semibold text-gray-900 truncate group-hover/card:text-blue-700 transition-colors">
                             <%= design.name %>
                           </h3>
@@ -758,7 +758,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                           phx-click="start_rename"
                           phx-value-id={design.id}
                           phx-value-name={design.name}
-                          class="p-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover/card:opacity-100 transition-opacity flex-shrink-0"
+                          class="relative z-10 p-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover/card:opacity-100 transition-opacity flex-shrink-0"
                           title="Renombrar"
                         >
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -786,7 +786,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                     </.link>
                   </div>
 
-                  <div class="flex items-center gap-2">
+                  <div class="relative z-10 flex items-center gap-2">
                     <!-- Duplicate Button -->
                     <button
                       phx-click="duplicate"
@@ -814,7 +814,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                   </div>
                 </div>
                 <!-- Tag Chips -->
-                <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+                <div class="relative z-10 flex items-center gap-1.5 mt-3 flex-wrap">
               <%= for tag <- (design.tags || []) do %>
                 <span
                   class="group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
