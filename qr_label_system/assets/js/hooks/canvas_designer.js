@@ -589,7 +589,7 @@ const CanvasDesigner = {
       const obj = e.target
       if (obj && obj.elementId && (!obj.text || obj.text.trim() === '')) {
         // Restore placeholder
-        obj.set('text', 'Completar')
+        obj.set('text', 'Completar texto')
         obj.set('fill', '#999999')
         obj._isPlaceholder = true
         // Save empty text_content to backend
@@ -1034,35 +1034,67 @@ const CanvasDesigner = {
     }
 
     // No content - show placeholder
-    return this.createQRPlaceholder(size, x, y, element.rotation, 'Completar', '#999999')
+    return this.createQRPlaceholder(size, x, y, element.rotation, 'Completar QR', '#999999')
   },
 
   createQRPlaceholder(size, x, y, rotation, label, color) {
     const fillColor = color || '#3b82f6'
     const bgColor = color ? '#f3f4f6' : '#dbeafe'
-    const rect = new fabric.Rect({
-      width: size,
-      height: size,
-      fill: bgColor,
-      stroke: fillColor,
-      strokeWidth: 2,
-      strokeDashArray: [4, 4]
+    const moduleColor = color ? '#d1d5db' : '#93c5fd'
+    const objects = []
+
+    // Background
+    objects.push(new fabric.Rect({
+      width: size, height: size,
+      fill: bgColor, stroke: fillColor,
+      strokeWidth: 2, strokeDashArray: [4, 4]
+    }))
+
+    // QR finder patterns (3 corners)
+    const fp = size * 0.18 // finder pattern size
+    const m = size * 0.06  // margin
+    const corners = [[m, m], [size - fp - m, m], [m, size - fp - m]]
+    corners.forEach(([cx, cy]) => {
+      objects.push(new fabric.Rect({ left: cx, top: cy, width: fp, height: fp, fill: moduleColor, rx: 2, ry: 2 }))
+      const inner = fp * 0.5
+      const offset = (fp - inner) / 2
+      objects.push(new fabric.Rect({ left: cx + offset, top: cy + offset, width: inner, height: inner, fill: bgColor, rx: 1, ry: 1 }))
+      const core = fp * 0.22
+      const coreOff = (fp - core) / 2
+      objects.push(new fabric.Rect({ left: cx + coreOff, top: cy + coreOff, width: core, height: core, fill: moduleColor }))
     })
 
-    const text = new fabric.Text(label, {
-      fontSize: size * 0.25,
-      fill: fillColor,
-      fontWeight: 'bold',
-      originX: 'center',
-      originY: 'center',
-      left: size / 2,
-      top: size / 2
+    // Scattered data modules
+    const mod = size * 0.05
+    const positions = [
+      [0.45, 0.15], [0.55, 0.15], [0.65, 0.15],
+      [0.75, 0.35], [0.80, 0.45],
+      [0.15, 0.75], [0.25, 0.80],
+      [0.75, 0.75], [0.80, 0.80], [0.65, 0.85]
+    ]
+    positions.forEach(([px, py]) => {
+      objects.push(new fabric.Rect({ left: size * px, top: size * py, width: mod, height: mod, fill: moduleColor }))
     })
 
-    return new fabric.Group([rect, text], {
-      left: x,
-      top: y,
-      angle: rotation || 0
+    // White gap + text in center
+    const maxFontSize = size * 0.2
+    const fitFontSize = (size * 0.85) / label.length * 1.6
+    const fontSize = Math.min(maxFontSize, fitFontSize)
+    const gapW = size * 0.75
+    const gapH = fontSize * 1.8
+    objects.push(new fabric.Rect({
+      left: (size - gapW) / 2, top: (size - gapH) / 2,
+      width: gapW, height: gapH,
+      fill: 'white', rx: 3, ry: 3
+    }))
+    objects.push(new fabric.Text(label, {
+      fontSize: fontSize, fill: fillColor, fontWeight: 'bold',
+      originX: 'center', originY: 'center',
+      left: size / 2, top: size / 2
+    }))
+
+    return new fabric.Group(objects, {
+      left: x, top: y, angle: rotation || 0
     })
   },
 
@@ -1184,7 +1216,7 @@ const CanvasDesigner = {
     }
 
     // No content - show placeholder
-    return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'Completar', '#999999')
+    return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'Completar cód. barras', '#999999')
   },
 
   /**
@@ -1248,29 +1280,55 @@ const CanvasDesigner = {
   createBarcodePlaceholder(w, h, x, y, rotation, label, color) {
     const fillColor = color || '#3b82f6'
     const bgColor = color ? '#f3f4f6' : '#dbeafe'
-    const rect = new fabric.Rect({
-      width: w,
-      height: h,
-      fill: bgColor,
-      stroke: fillColor,
-      strokeWidth: 2,
-      strokeDashArray: [4, 4]
+    const barColor = color ? '#d1d5db' : '#93c5fd'
+    const objects = []
+
+    // Background
+    objects.push(new fabric.Rect({
+      width: w, height: h,
+      fill: bgColor, stroke: fillColor,
+      strokeWidth: 2, strokeDashArray: [4, 4]
+    }))
+
+    // Barcode lines
+    const barMargin = w * 0.05
+    const barAreaW = w - barMargin * 2
+    const barH = h * 0.7
+    const barY = (h - barH) / 2
+    const widths = [2, 1, 3, 1, 2, 1, 3, 2, 1, 2, 1, 3, 1, 2, 3, 1, 2, 1, 3, 1, 2]
+    const totalUnits = widths.reduce((a, b) => a + b, 0) + widths.length * 0.5
+    const unitW = barAreaW / totalUnits
+    let cx = barMargin
+    widths.forEach((bw, i) => {
+      if (i % 2 === 0) {
+        objects.push(new fabric.Rect({
+          left: cx, top: barY,
+          width: Math.max(bw * unitW, 1), height: barH,
+          fill: barColor
+        }))
+      }
+      cx += (bw + 0.5) * unitW
     })
 
-    const text = new fabric.Text(label, {
-      fontSize: Math.min(w, h) * 0.2,
-      fill: fillColor,
-      fontWeight: 'bold',
-      originX: 'center',
-      originY: 'center',
-      left: w / 2,
-      top: h / 2
-    })
+    // White gap + text in center
+    const maxFontSize = Math.min(w, h) * 0.2
+    const fitFontSize = (w * 0.85) / label.length * 1.6
+    const fontSize = Math.min(maxFontSize, fitFontSize)
+    const gapW = w * 0.7
+    const gapH = fontSize * 1.8
+    objects.push(new fabric.Rect({
+      left: (w - gapW) / 2, top: (h - gapH) / 2,
+      width: gapW, height: gapH,
+      fill: 'white', rx: 3, ry: 3
+    }))
+    objects.push(new fabric.Text(label, {
+      fontSize: fontSize, fill: fillColor, fontWeight: 'bold',
+      originX: 'center', originY: 'center',
+      left: w / 2, top: h / 2
+    }))
 
-    return new fabric.Group([rect, text], {
-      left: x,
-      top: y,
-      angle: rotation || 0
+    return new fabric.Group(objects, {
+      left: x, top: y, angle: rotation || 0
     })
   },
 
@@ -1311,7 +1369,7 @@ const CanvasDesigner = {
   createText(element, x, y) {
     // Show binding as [ColumnName] indicator, or text_content, or placeholder
     const hasContent = element.binding || (element.text_content && element.text_content.trim() !== '')
-    const content = element.binding ? `[${element.binding}]` : (hasContent ? element.text_content : 'Completar')
+    const content = element.binding ? `[${element.binding}]` : (hasContent ? element.text_content : 'Completar texto')
     const isPlaceholder = !hasContent
     const fontSize = element.font_size || 12
 
@@ -1615,7 +1673,7 @@ const CanvasDesigner = {
             obj.set('fill', obj._originalColor || data.color || '#000000')
             obj._isPlaceholder = false
           } else {
-            obj.set('text', 'Completar')
+            obj.set('text', 'Completar texto')
             obj.set('fill', '#999999')
             obj._isPlaceholder = true
           }
@@ -1704,7 +1762,7 @@ const CanvasDesigner = {
             obj._isPlaceholder = false
           } else {
             // Binding cleared, no text_content: show placeholder
-            obj.set('text', 'Completar')
+            obj.set('text', 'Completar texto')
             obj.set('fill', '#999999')
             obj._isPlaceholder = true
           }
