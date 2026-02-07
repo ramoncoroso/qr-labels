@@ -125,9 +125,9 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
 
     case uploaded_files do
       [{:ok, file_path}] ->
-        Logger.info("Upload file path: #{file_path}, extension: #{Path.extname(file_path)}")
+        Logger.debug("Upload file path: #{file_path}, extension: #{Path.extname(file_path)}")
         result = ExcelParser.parse_file(file_path)
-        Logger.info("Parse result: #{inspect(result)}")
+        Logger.debug("Parse result keys: #{inspect(if match?({:ok, _}, result), do: :ok, else: result)}")
 
         # Schedule cleanup
         Task.start(fn ->

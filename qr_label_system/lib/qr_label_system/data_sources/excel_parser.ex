@@ -21,37 +21,40 @@ defmodule QrLabelSystem.DataSources.ExcelParser do
     try do
       {:ok, zip_handle} = :zip.zip_open(String.to_charlist(file_path), [:memory])
 
-      # Read shared strings if present
-      shared_strings = read_shared_strings(zip_handle)
+      try do
+        # Read shared strings if present
+        shared_strings = read_shared_strings(zip_handle)
 
-      # Find and read first worksheet
-      sheet_xml = read_first_sheet(zip_handle)
-      :zip.zip_close(zip_handle)
+        # Find and read first worksheet
+        sheet_xml = read_first_sheet(zip_handle)
 
-      case sheet_xml do
-        nil ->
-          {:error, "No worksheet found in Excel file"}
+        case sheet_xml do
+          nil ->
+            {:error, "No worksheet found in Excel file"}
 
-        xml ->
-          all_rows = parse_worksheet_xml(xml, shared_strings)
+          xml ->
+            all_rows = parse_worksheet_xml(xml, shared_strings)
 
-          if Enum.empty?(all_rows) do
-            {:error, "Empty file or sheet"}
-          else
-            [header_row | data_rows] = all_rows
-            headers = normalize_headers(header_row)
+            if Enum.empty?(all_rows) do
+              {:error, "Empty file or sheet"}
+            else
+              [header_row | data_rows] = all_rows
+              headers = normalize_headers(header_row)
 
-            rows =
-              data_rows
-              |> Enum.take(max_rows)
-              |> Enum.map(&row_to_map(headers, &1))
+              rows =
+                data_rows
+                |> Enum.take(max_rows)
+                |> Enum.map(&row_to_map(headers, &1))
 
-            {:ok, %{
-              headers: headers,
-              rows: rows,
-              total: length(rows)
-            }}
-          end
+              {:ok, %{
+                headers: headers,
+                rows: rows,
+                total: length(rows)
+              }}
+            end
+        end
+      after
+        :zip.zip_close(zip_handle)
       end
     rescue
       e -> {:error, "Failed to parse Excel file: #{Exception.message(e)}"}
@@ -120,9 +123,15 @@ defmodule QrLabelSystem.DataSources.ExcelParser do
   end
 
   defp parse_shared_strings(xml) do
-    # Simple regex-based extraction of shared string values
-    Regex.scan(~r/<si>\s*<t[^>]*>(.*?)<\/t>\s*<\/si>/s, xml)
-    |> Enum.map(fn [_, value] -> unescape_xml(value) end)
+    # Extract each <si>...</si> block, then collect all <t>...</t> text within it.
+    # Handles both simple (<si><t>text</t></si>) and rich text
+    # (<si><r><t>part1</t></r><r><t>part2</t></r></si>) formats.
+    Regex.scan(~r/<si>(.*?)<\/si>/s, xml)
+    |> Enum.map(fn [_, si_content] ->
+      Regex.scan(~r/<t[^>]*>(.*?)<\/t>/s, si_content)
+      |> Enum.map(fn [_, text] -> unescape_xml(text) end)
+      |> Enum.join()
+    end)
   end
 
   defp read_first_sheet(zip_handle) do

@@ -62,8 +62,7 @@ defmodule QrLabelSystem.MixProject do
       # Encryption for sensitive data
       {:cloak_ecto, "~> 1.2"},
 
-      # Excel/CSV parsing
-      {:xlsx_reader, "~> 0.8"},
+      # CSV parsing (xlsx parsed via custom SAX parser using Erlang :zip)
       {:nimble_csv, "~> 1.2"},
 
       # External DB connections (optional)
