@@ -311,11 +311,10 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
                 <% end %>
               </div>
 
-              <p class="text-sm text-gray-500 mb-3 line-clamp-2"><%= design.description || "Sin descripción" %></p>
+              <p :if={design.description} class="text-sm text-gray-500 mb-3 line-clamp-2"><%= design.description %></p>
 
-              <div class="flex items-center justify-between text-sm text-gray-600 mb-3">
+              <div class="text-sm text-gray-600 mb-3">
                 <span><%= design.width_mm %> × <%= design.height_mm %> mm</span>
-                <span><%= length(design.elements || []) %> elementos</span>
               </div>
 
               <!-- Tags -->
@@ -429,7 +428,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
             <!-- Design Info -->
             <div class="p-4 border-t">
-              <p class="text-sm text-gray-600 mb-3"><%= @preview_design.description || "Sin descripción" %></p>
+              <p :if={@preview_design.description} class="text-sm text-gray-600 mb-3"><%= @preview_design.description %></p>
 
               <% bindings = get_bindings(@preview_design.elements) %>
               <%= if length(bindings) > 0 do %>
