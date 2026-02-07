@@ -3,14 +3,21 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
 
   alias QrLabelSystem.Designs
 
+  import QrLabelSystemWeb.DesignComponents
+
   @impl true
   def mount(_params, _session, socket) do
-    designs = Designs.list_user_designs_by_type(socket.assigns.current_user.id, "single")
+    user_id = socket.assigns.current_user.id
+    all_designs = Designs.list_user_designs_by_type(user_id, "single")
+    tags = Designs.list_user_tags(user_id)
 
     {:ok,
      socket
      |> assign(:page_title, "Etiqueta Única")
-     |> assign(:designs, designs)}
+     |> assign(:all_designs, all_designs)
+     |> assign(:designs, all_designs)
+     |> assign(:tags, tags)
+     |> assign(:active_tag_ids, [])}
   end
 
   @impl true
@@ -24,6 +31,32 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
      socket
      |> put_flash(:return_to, "single_select")
      |> push_navigate(to: ~p"/designs/new?type=single")}
+  end
+
+  @impl true
+  def handle_event("toggle_tag_filter", %{"id" => tag_id}, socket) do
+    tag_id = String.to_integer(tag_id)
+    active = socket.assigns.active_tag_ids
+
+    active =
+      if tag_id in active,
+        do: List.delete(active, tag_id),
+        else: active ++ [tag_id]
+
+    designs = filter_by_tags(socket.assigns.all_designs, active)
+
+    {:noreply,
+     socket
+     |> assign(:active_tag_ids, active)
+     |> assign(:designs, designs)}
+  end
+
+  @impl true
+  def handle_event("clear_tag_filters", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:active_tag_ids, [])
+     |> assign(:designs, socket.assigns.all_designs)}
   end
 
   @impl true
@@ -75,6 +108,30 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
           </div>
         </div>
 
+        <!-- Tag Filters -->
+        <div :if={@tags != []} class="flex flex-wrap items-center gap-2 mb-6">
+          <%= for tag <- @tags do %>
+            <button
+              type="button"
+              phx-click="toggle_tag_filter"
+              phx-value-id={tag.id}
+              class={"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all #{if tag.id in @active_tag_ids, do: "ring-2 ring-offset-1 ring-blue-400", else: ""}"}
+              style={"background-color: #{tag.color}20; color: #{tag.color};"}
+            >
+              <span class="w-2 h-2 rounded-full" style={"background-color: #{tag.color};"}></span>
+              <%= tag.name %>
+            </button>
+          <% end %>
+          <button
+            :if={@active_tag_ids != []}
+            type="button"
+            phx-click="clear_tag_filters"
+            class="text-xs text-gray-400 hover:text-gray-600 ml-1"
+          >
+            Limpiar filtros
+          </button>
+        </div>
+
         <!-- Design Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <!-- Create New Design Card -->
@@ -105,20 +162,28 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
                 </svg>
               </div>
 
-              <p class="text-sm text-gray-500 mb-3 line-clamp-2"><%= design.description || "Sin descripción" %></p>
+              <p :if={design.description} class="text-sm text-gray-500 mb-3 line-clamp-2"><%= design.description %></p>
 
-              <div class="flex items-center justify-between text-sm text-gray-600 mb-4">
+              <div class="text-sm text-gray-600 mb-3">
                 <span><%= design.width_mm %> × <%= design.height_mm %> mm</span>
-                <span><%= length(design.elements || []) %> elementos</span>
+              </div>
+
+              <!-- Tags -->
+              <div :if={(design.tags || []) != []} class="flex flex-wrap gap-1 mb-3">
+                <%= for tag <- design.tags do %>
+                  <span
+                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                    style={"background-color: #{tag.color}20; color: #{tag.color};"}
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full" style={"background-color: #{tag.color};"}></span>
+                    <%= tag.name %>
+                  </span>
+                <% end %>
               </div>
 
               <!-- Mini Preview -->
-              <div class="bg-gray-100 rounded-lg p-3 flex justify-center">
-                <div
-                  class="bg-white shadow-sm rounded"
-                  style={"width: #{min(design.width_mm * 2, 120)}px; height: #{min(design.height_mm * 2, 80)}px; background-color: #{design.background_color}; border: 1px solid #{design.border_color};"}
-                >
-                </div>
+              <div class="bg-gray-100 rounded-lg p-3 flex justify-center items-center min-h-[80px]">
+                <.design_thumbnail design={design} max_width={140} max_height={90} />
               </div>
             </button>
           <% end %>
@@ -145,5 +210,14 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
       </div>
     </div>
     """
+  end
+
+  defp filter_by_tags(designs, []), do: designs
+
+  defp filter_by_tags(designs, active_tag_ids) do
+    Enum.filter(designs, fn design ->
+      design_tag_ids = Enum.map(design.tags || [], & &1.id)
+      Enum.all?(active_tag_ids, &(&1 in design_tag_ids))
+    end)
   end
 end
