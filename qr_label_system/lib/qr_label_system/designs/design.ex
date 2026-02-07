@@ -62,7 +62,7 @@ defmodule QrLabelSystem.Designs.Design do
       :is_template, :template_source, :template_category, :label_type, :user_id
     ])
     |> validate_inclusion(:template_source, ~w(system user), message: "must be system or user")
-    |> validate_inclusion(:template_category, ~w(alimentacion farmaceutica logistica manufactura), message: "must be a valid category")
+    |> validate_inclusion(:template_category, ~w(alimentacion farmaceutica logistica manufactura retail), message: "must be a valid category")
     |> cast_embed(:elements, with: &Element.changeset/2)
     |> validate_required([:name, :width_mm, :height_mm])
     |> validate_number(:width_mm, greater_than: 0, less_than_or_equal_to: 500)
@@ -147,6 +147,7 @@ defmodule QrLabelSystem.Designs.Design do
       background_color: element.background_color,
       border_width: element.border_width,
       border_color: element.border_color,
+      border_radius: element.border_radius,
       image_url: element.image_url,
       # Layer management fields - CRITICAL for persistence
       z_index: element.z_index,

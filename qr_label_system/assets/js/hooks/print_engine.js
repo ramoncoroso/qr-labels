@@ -8,6 +8,10 @@ import JsBarcode from 'jsbarcode'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
+// Canvas uses PX_PER_MM=6 for font sizes — convert to mm: font_size / PX_PER_MM
+const PX_PER_MM = 6
+// Convert canvas font pixels to pt for jsPDF: (font_size / PX_PER_MM) * (72 / 25.4)
+const FONT_PX_TO_PT = 72 / (PX_PER_MM * 25.4)
 
 const PrintEngine = {
   mounted() {
@@ -77,7 +81,11 @@ const PrintEngine = {
       return await QRCode.toDataURL(content, {
         width: Math.round((config.width || 20) * MM_TO_PX),
         margin: 0,
-        errorCorrectionLevel: config.qr_error_level || 'M'
+        errorCorrectionLevel: config.qr_error_level || 'M',
+        color: {
+          dark: config.color || '#000000',
+          light: config.background_color || '#ffffff'
+        }
       })
     } catch (err) {
       console.error('Error generating QR:', err)
@@ -281,14 +289,14 @@ const PrintEngine = {
 
         div.textContent = textContent
         div.style.width = `${element.width * scale * MM_TO_PX}px`
-        div.style.fontSize = `${(element.font_size || 12) * scale}px`
+        div.style.fontSize = `${(element.font_size || 12) * (MM_TO_PX / PX_PER_MM) * scale}px`
         div.style.fontFamily = element.font_family || 'Arial'
         div.style.fontWeight = element.font_weight || 'normal'
         div.style.color = element.color || '#000000'
         div.style.textAlign = element.text_align || 'left'
-        div.style.overflow = 'hidden'
-        div.style.whiteSpace = 'nowrap'
-        div.style.textOverflow = 'ellipsis'
+        div.style.overflow = 'visible'
+        div.style.whiteSpace = 'normal'
+        div.style.wordBreak = 'break-word'
         break
 
       case 'line':
@@ -301,14 +309,14 @@ const PrintEngine = {
         div.style.width = `${element.width * scale * MM_TO_PX}px`
         div.style.height = `${element.height * scale * MM_TO_PX}px`
         div.style.backgroundColor = element.background_color || 'transparent'
-        div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
+        div.style.border = `${(element.border_width || 0.5) * MM_TO_PX * scale}px solid ${element.border_color || '#000000'}`
         break
 
       case 'circle':
         div.style.width = `${element.width * scale * MM_TO_PX}px`
         div.style.height = `${element.height * scale * MM_TO_PX}px`
         div.style.backgroundColor = element.background_color || 'transparent'
-        div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
+        div.style.border = `${(element.border_width || 0.5) * MM_TO_PX * scale}px solid ${element.border_color || '#000000'}`
         // border_radius: 0 = rectangle, 100 = full ellipse (50% CSS border-radius)
         const circleRoundness = (element.border_radius ?? 100) / 100
         const circleMaxRadius = Math.min(element.width, element.height) * scale * MM_TO_PX / 2
@@ -488,7 +496,7 @@ const PrintEngine = {
           }
         }
 
-        return `<div class="element" style="${style} width: ${element.width}mm; font-size: ${element.font_size || 12}pt; font-family: ${element.font_family || 'Arial'}; font-weight: ${element.font_weight || 'normal'}; color: ${element.color || '#000000'}; text-align: ${element.text_align || 'left'}; overflow: hidden; white-space: nowrap;">
+        return `<div class="element" style="${style} width: ${element.width}mm; font-size: ${(element.font_size || 12) / PX_PER_MM}mm; font-family: ${element.font_family || 'Arial'}; font-weight: ${element.font_weight || 'normal'}; color: ${element.color || '#000000'}; text-align: ${element.text_align || 'left'}; overflow: visible; white-space: normal; word-break: break-word;">
           ${this.escapeHtml(textContent)}
         </div>`
 
@@ -617,7 +625,9 @@ const PrintEngine = {
           }
         }
 
-        pdf.setFontSize(element.font_size || 12)
+        const fontSizePt = (element.font_size || 12) * FONT_PX_TO_PT
+        const fontSizeMM = (element.font_size || 12) / PX_PER_MM
+        pdf.setFontSize(fontSizePt)
         pdf.setTextColor(element.color || '#000000')
 
         if (element.font_weight === 'bold') {
@@ -633,7 +643,7 @@ const PrintEngine = {
           textX = x + element.width
         }
 
-        pdf.text(textContent, textX, y + (element.font_size || 12) * 0.35, {
+        pdf.text(textContent, textX, y + fontSizeMM * 0.75, {
           align: element.text_align || 'left',
           maxWidth: element.width
         })

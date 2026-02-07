@@ -1128,6 +1128,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           background_color: "transparent",
           border_width: 0.5,
           border_color: "#000000",
+          border_radius: 0,
           name: "Rectángulo #{number}"
         })
 

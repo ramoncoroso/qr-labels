@@ -51,7 +51,8 @@ const LabelPreview = {
     labelDiv.style.width = `${design.width_mm * MM_TO_PX * scale}px`
     labelDiv.style.height = `${design.height_mm * MM_TO_PX * scale}px`
     labelDiv.style.backgroundColor = design.background_color || '#FFFFFF'
-    labelDiv.style.border = `${Math.max((design.border_width || 0) * scale, 1)}px solid ${design.border_color || '#000000'}`
+    const borderPx = (design.border_width || 0) * MM_TO_PX * scale
+    labelDiv.style.border = borderPx > 0 ? `${borderPx}px solid ${design.border_color || '#000000'}` : 'none'
     labelDiv.style.borderRadius = `${(design.border_radius || 0) * MM_TO_PX * scale}px`
     labelDiv.style.overflow = 'hidden'
 
@@ -98,7 +99,11 @@ const LabelPreview = {
       return await QRCode.toDataURL(content, {
         width: Math.round((config.width || 20) * MM_TO_PX * scale),
         margin: 0,
-        errorCorrectionLevel: config.qr_error_level || 'M'
+        errorCorrectionLevel: config.qr_error_level || 'M',
+        color: {
+          dark: config.color || '#000000',
+          light: config.background_color || '#ffffff'
+        }
       })
     } catch (err) {
       console.error('Error generating QR:', err)
@@ -193,14 +198,14 @@ const LabelPreview = {
         div.style.width = `${element.width * scale * MM_TO_PX}px`
         div.style.height = `${element.height * scale * MM_TO_PX}px`
         div.style.backgroundColor = element.background_color || 'transparent'
-        div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
+        div.style.border = `${(element.border_width || 0.5) * MM_TO_PX * scale}px solid ${element.border_color || '#000000'}`
         break
 
       case 'circle':
         div.style.width = `${element.width * scale * MM_TO_PX}px`
         div.style.height = `${element.height * scale * MM_TO_PX}px`
         div.style.backgroundColor = element.background_color || 'transparent'
-        div.style.border = `${(element.border_width || 0.5) * scale}px solid ${element.border_color || '#000000'}`
+        div.style.border = `${(element.border_width || 0.5) * MM_TO_PX * scale}px solid ${element.border_color || '#000000'}`
         // border_radius: 0 = rectangle, 100 = full ellipse (50% CSS border-radius)
         const circleRoundness = (element.border_radius ?? 100) / 100
         const circleMaxRadius = Math.min(element.width, element.height) * scale * MM_TO_PX / 2

@@ -970,7 +970,7 @@ const CanvasDesigner = {
       // Generate QR code asynchronously
       QRCode.toDataURL(content, {
         width: size,
-        margin: 1,
+        margin: 0,
         errorCorrectionLevel: element.qr_error_level || 'M',
         color: {
           dark: element.color || '#000000',
