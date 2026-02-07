@@ -634,9 +634,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </.link>
 
-        <!-- Filter Tabs -->
-        <div :if={@has_designs} class="mb-4 border-b border-gray-200">
-          <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+        <!-- Filter Tabs + Tag Chips (same row) -->
+        <div :if={@has_designs} class="mb-4 border-b border-gray-200 flex items-end justify-between gap-4">
+          <nav class="-mb-px flex space-x-6 flex-shrink-0" aria-label="Tabs">
             <button
               phx-click="filter"
               phx-value-type="all"
@@ -678,33 +678,31 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
               </span>
             </button>
           </nav>
-        </div>
-
-        <!-- Tag Filter Chips -->
-        <div :if={@has_designs && @tags != []} class="mb-4 flex flex-wrap items-center gap-2">
-          <span class="text-sm text-gray-500 mr-1">Tags:</span>
-          <%= for tag <- @tags do %>
+          <!-- Tag Filter Chips -->
+          <div :if={@tags != []} class="flex flex-wrap items-center gap-2 pb-2">
+            <%= for tag <- @tags do %>
+              <button
+                phx-click="toggle_tag_filter"
+                phx-value-id={tag.id}
+                class={"inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border " <>
+                  if(tag.id in @active_tag_ids,
+                    do: "ring-2 ring-offset-1 ring-blue-400",
+                    else: "opacity-75 hover:opacity-100"
+                  )}
+                style={"background-color: #{tag.color}20; color: #{tag.color}; border-color: #{tag.color}40;"}
+              >
+                <span class="w-2 h-2 rounded-full" style={"background-color: #{tag.color};"}></span>
+                <%= tag.name %>
+              </button>
+            <% end %>
             <button
-              phx-click="toggle_tag_filter"
-              phx-value-id={tag.id}
-              class={"inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border " <>
-                if(tag.id in @active_tag_ids,
-                  do: "ring-2 ring-offset-1 ring-blue-400",
-                  else: "opacity-75 hover:opacity-100"
-                )}
-              style={"background-color: #{tag.color}20; color: #{tag.color}; border-color: #{tag.color}40;"}
+              :if={@active_tag_ids != []}
+              phx-click="clear_tag_filters"
+              class="text-xs text-gray-500 hover:text-gray-700 underline ml-1"
             >
-              <span class="w-2 h-2 rounded-full" style={"background-color: #{tag.color};"}></span>
-              <%= tag.name %>
+              Limpiar filtros
             </button>
-          <% end %>
-          <button
-            :if={@active_tag_ids != []}
-            phx-click="clear_tag_filters"
-            class="text-xs text-gray-500 hover:text-gray-700 underline ml-1"
-          >
-            Limpiar filtros
-          </button>
+          </div>
         </div>
 
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
