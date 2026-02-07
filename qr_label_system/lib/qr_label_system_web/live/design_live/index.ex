@@ -814,7 +814,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                   </div>
                 </div>
                 <!-- Tag Chips -->
-                <div class="relative z-10 flex items-center gap-1.5 mt-3 flex-wrap">
+                <div class="relative z-10 flex items-center gap-1.5 mt-3 flex-wrap pointer-events-none [&>*]:pointer-events-auto">
               <%= for tag <- (design.tags || []) do %>
                 <span
                   class="group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
