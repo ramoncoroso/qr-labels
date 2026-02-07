@@ -1784,14 +1784,15 @@ Xlsxir devolvía `nil` para estas celdas. xlsx_reader tampoco funcionó porque e
 |---------|---------|
 | `lib/qr_label_system/data_sources/excel_parser.ex` | Parser SAX propio reemplaza Xlsxir |
 | `lib/qr_label_system_web/live/generate_live/data_first.ex` | Fix upload, cancel-upload, live_file_input |
-| `mix.exs` | xlsxir → xlsx_reader |
-| `mix.lock` | Nuevas deps: xlsx_reader, saxy |
+| `mix.exs` | xlsxir → xlsx_reader → eliminado (solo queda nimble_csv) |
+| `mix.lock` | Eliminadas deps: xlsxir, erlsom, xlsx_reader, saxy |
 
 ## Commits (2026-02-07 — sesión Excel)
 
 | Hash | Descripción |
 |------|-------------|
 | `d185da2` | fix: Replace Xlsxir with custom SAX parser for Excel and fix file upload |
+| `918913d` | fix: Harden Excel parser and clean up unused dependencies |
 
 ## Verificación (2026-02-07 — sesión Excel)
 
@@ -1802,6 +1803,46 @@ Xlsxir devolvía `nil` para estas celdas. xlsx_reader tampoco funcionó porque e
 - [x] Drop zone oculta después de seleccionar archivo
 - [x] Botón eliminar archivo funciona (cancel-upload)
 - [x] Botón "Procesar archivo" procesa y muestra preview de datos
+
+---
+
+## Sesión 2026-02-07 (cont.) — Code review y hardening
+
+### Resumen
+
+Revisión de código post-implementación. Se encontraron y corrigieron 4 issues:
+
+### 1. ✅ Fix zip handle leak
+
+**Archivo:** `lib/qr_label_system/data_sources/excel_parser.ex`
+
+**Problema:** Si `read_shared_strings()` o `read_first_sheet()` lanzaban excepción, `zip_handle` nunca se cerraba (leak de recursos).
+
+**Solución:** Envuelto en `try/after` para garantizar `zip_close` en todos los caminos de ejecución.
+
+### 2. ✅ Fix shared strings con rich text
+
+**Archivo:** `lib/qr_label_system/data_sources/excel_parser.ex`
+
+**Problema:** La regex de `parse_shared_strings` solo manejaba `<si><t>text</t></si>`. Excel puede guardar shared strings con formato rico: `<si><r><rPr>...</rPr><t>part1</t></r><r><t>part2</t></r></si>`.
+
+**Solución:** Extraer cada bloque `<si>...</si>`, luego recoger todos los `<t>...</t>` dentro y unirlos.
+
+### 3. ✅ Downgrade debug logging
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Problema:** `Logger.info` con rutas de archivos y `inspect(result)` completo se ejecuta en producción. Filtra información interna y puede generar logs masivos con datos de usuarios.
+
+**Solución:** Cambiado a `Logger.debug` y eliminado el dump completo del resultado.
+
+### 4. ✅ Limpieza de dependencias no usadas
+
+**Archivo:** `mix.exs`, `mix.lock`
+
+**Problema:** `xlsx_reader` en mix.exs nunca se importaba ni usaba en el código (el parser propio usa `:zip` de Erlang). Además `xlsxir`, `erlsom` y `saxy` seguían en mix.lock como deps fantasma.
+
+**Solución:** Eliminado `xlsx_reader` de mix.exs. Limpiados xlsxir, erlsom, xlsx_reader y saxy de mix.lock con `mix deps.clean --unlock`.
 
 ---
 
@@ -1822,10 +1863,6 @@ Xlsxir devolvía `nil` para estas celdas. xlsx_reader tampoco funcionó porque e
 
 4. **Fix compilation warning**
    - `editor.ex:349` — agrupar cláusulas de `handle_event/3`
-
-5. **Limpiar dependencia xlsxir**
-   - Verificar que no queden referencias a Xlsxir en el código
-   - Considerar si xlsx_reader se usa o si puede eliminarse (solo se usa saxy indirectamente)
 
 ---
 
@@ -1866,3 +1903,5 @@ Xlsxir devolvía `nil` para estas celdas. xlsx_reader tampoco funcionó porque e
 | 2026-02-07 | **REEMPLAZO DE CATEGORÍAS POR TAGS (many-to-many) + BUG FIXES + LAYOUT** |
 | 2026-02-07 | **FIX IMPRESIÓN + AUTO-DETECT SEPARATOR + UX CARGA ARCHIVOS** |
 | 2026-02-07 | **UX /designs: TAGS EN HEADER, RENAME INLINE, STRETCHED LINK** |
+| 2026-02-07 | **FIX EXCEL PARSER + UPLOAD ARCHIVOS** |
+| 2026-02-07 | **CODE REVIEW: zip leak, rich text, logging, deps cleanup** |
