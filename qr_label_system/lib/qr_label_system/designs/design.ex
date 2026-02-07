@@ -110,6 +110,7 @@ defmodule QrLabelSystem.Designs.Design do
       border_width: design.border_width,
       border_color: design.border_color,
       border_radius: design.border_radius,
+      label_type: design.label_type,
       elements: Enum.map(design.elements || [], &element_to_json/1)
     }
   end

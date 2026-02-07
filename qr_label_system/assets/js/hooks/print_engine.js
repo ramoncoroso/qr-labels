@@ -14,6 +14,7 @@ const PrintEngine = {
     this.labels = []
     this.design = null
     this.printConfig = null
+    this.columnMapping = {}
     this.setupEventListeners()
   },
 
@@ -21,6 +22,7 @@ const PrintEngine = {
     this.handleEvent("generate_batch", async ({design, data, column_mapping, print_config}) => {
       this.design = design
       this.printConfig = print_config
+      this.columnMapping = column_mapping || {}
 
       try {
         this.labels = await this.generateAllLabels(design, data, column_mapping)
@@ -101,7 +103,14 @@ const PrintEngine = {
   },
 
   renderPreview() {
-    const container = this.el
+    // Find or create a dedicated preview container (don't overwrite hook element children)
+    let container = this.el.querySelector('[data-print-preview]')
+    if (!container) {
+      // If no dedicated preview container exists, skip inline preview
+      // (the editor uses LabelPreview for preview, PrintEngine is only for print/PDF)
+      return
+    }
+
     container.innerHTML = ''
 
     if (this.labels.length === 0) {
@@ -260,9 +269,14 @@ const PrintEngine = {
       case 'text':
         let textContent = element.text_content || ''
 
-        // If bound to a column, get value from row data
-        if (element.binding && label.rowData) {
-          textContent = label.rowData[element.binding] || textContent
+        // Use column_mapping to resolve the actual column name, then fall back to binding
+        if (label.rowData) {
+          const columnName = this.columnMapping[element.id]
+          if (columnName && label.rowData[columnName] != null) {
+            textContent = String(label.rowData[columnName])
+          } else if (element.binding && label.rowData[element.binding] != null) {
+            textContent = String(label.rowData[element.binding])
+          }
         }
 
         div.textContent = textContent
@@ -465,8 +479,13 @@ const PrintEngine = {
 
       case 'text':
         let textContent = element.text_content || ''
-        if (element.binding && label.rowData) {
-          textContent = label.rowData[element.binding] || textContent
+        if (label.rowData) {
+          const columnName = this.columnMapping[element.id]
+          if (columnName && label.rowData[columnName] != null) {
+            textContent = String(label.rowData[columnName])
+          } else if (element.binding && label.rowData[element.binding] != null) {
+            textContent = String(label.rowData[element.binding])
+          }
         }
 
         return `<div class="element" style="${style} width: ${element.width}mm; font-size: ${element.font_size || 12}pt; font-family: ${element.font_family || 'Arial'}; font-weight: ${element.font_weight || 'normal'}; color: ${element.color || '#000000'}; text-align: ${element.text_align || 'left'}; overflow: hidden; white-space: nowrap;">
@@ -589,8 +608,13 @@ const PrintEngine = {
 
       case 'text':
         let textContent = element.text_content || ''
-        if (element.binding && label.rowData) {
-          textContent = label.rowData[element.binding] || textContent
+        if (label.rowData) {
+          const columnName = this.columnMapping[element.id]
+          if (columnName && label.rowData[columnName] != null) {
+            textContent = String(label.rowData[columnName])
+          } else if (element.binding && label.rowData[element.binding] != null) {
+            textContent = String(label.rowData[element.binding])
+          }
         }
 
         pdf.setFontSize(element.font_size || 12)

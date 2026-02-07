@@ -33,6 +33,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Load available columns from persistent store (from data-first flow)
       user_id = socket.assigns.current_user.id
       {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id, design.id)
+      Logger.info("Editor mount - Design #{id} (#{design.label_type}): upload_data=#{if upload_data, do: "#{length(upload_data)} rows", else: "nil"}, columns=#{inspect(available_columns)}")
 
       # Ensure we have lists (not nil)
       upload_data = upload_data || []
@@ -82,7 +83,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:rename_value, design.name)
        |> assign(:canvas_loaded, false)
        |> assign(:show_binding_mode, show_binding_mode)
-       |> assign(:pending_deletes, MapSet.new())  # Track pending delete operations
+       |> assign(:pending_deletes, MapSet.new())
+       |> assign(:pending_print_action, nil)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -962,6 +964,83 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   # ============================================================================
+  # Print / PDF Generation Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("generate_and_print", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:pending_print_action, :print)
+     |> push_generate_batch()}
+  end
+
+  @impl true
+  def handle_event("generate_and_download_pdf", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:pending_print_action, :pdf)
+     |> push_generate_batch()}
+  end
+
+  @impl true
+  def handle_event("generation_complete", _params, socket) do
+    case socket.assigns[:pending_print_action] do
+      :print ->
+        {:noreply,
+         socket
+         |> assign(:pending_print_action, nil)
+         |> push_event("print_labels", %{})}
+
+      :pdf ->
+        design = socket.assigns.design
+        {:noreply,
+         socket
+         |> assign(:pending_print_action, nil)
+         |> push_event("export_pdf", %{filename: "etiquetas-#{design.name}.pdf"})}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("print_recorded", %{"count" => count}, socket) do
+    {:noreply, put_flash(socket, :info, "#{count} etiquetas enviadas a impresión")}
+  end
+
+  defp push_generate_batch(socket) do
+    design = socket.assigns.design
+    upload_data = socket.assigns.upload_data
+    preview_data = socket.assigns.preview_data
+
+    # Build mapping from element IDs to column names
+    column_mapping = build_auto_mapping(design.elements || [], preview_data)
+
+    # Default print config (A4, auto-calculated grid)
+    print_config = %{
+      printer_type: "normal",
+      page_size: "a4",
+      orientation: "portrait",
+      columns: max(1, trunc(190 / (design.width_mm + 5))),
+      rows: max(1, trunc(277 / (design.height_mm + 5))),
+      margin_top: 10,
+      margin_right: 10,
+      margin_bottom: 10,
+      margin_left: 10,
+      gap_horizontal: 5,
+      gap_vertical: 5
+    }
+
+    push_event(socket, "generate_batch", %{
+      design: Design.to_json(design),
+      data: upload_data,
+      column_mapping: column_mapping,
+      print_config: print_config
+    })
+  end
+
+  # ============================================================================
   # Helper Functions
   # ============================================================================
 
@@ -1643,6 +1722,30 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </p>
             </div>
 
+            <!-- No data warning for multiple labels -->
+            <div :if={@design.label_type == "multiple" && length(@available_columns) == 0} class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+              <div class="flex items-start space-x-2">
+                <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <p class="text-sm font-medium text-amber-800">Sin datos vinculados</p>
+                  <p class="text-xs text-amber-700 mt-1">
+                    Carga un archivo Excel o pega datos para vincular columnas a los elementos.
+                  </p>
+                  <.link
+                    navigate={~p"/generate/data/#{@design.id}"}
+                    class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <span>Vincular datos</span>
+                  </.link>
+                </div>
+              </div>
+            </div>
+
             <%= if @selected_element do %>
               <div class="flex items-center justify-between mb-4">
                 <h3 class="font-semibold text-gray-900">Propiedades</h3>
@@ -1759,7 +1862,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
-          <!-- Summary when data is loaded -->
+          <!-- Summary and Print Actions when data is loaded -->
           <%= if length(@upload_data) > 0 do %>
             <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
               <div class="flex items-center space-x-2 text-green-700">
@@ -1768,9 +1871,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </svg>
                 <span class="font-medium"><%= length(@upload_data) %> registros cargados</span>
               </div>
-              <p class="mt-1 text-xs text-green-600">
-                Usa las flechas para navegar entre etiquetas
-              </p>
+            </div>
+
+            <!-- Print / PDF Actions -->
+            <div class="mt-3 space-y-2" id="print-engine-container" phx-hook="PrintEngine">
+              <button
+                phx-click="generate_and_print"
+                class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                <span>Imprimir <%= length(@upload_data) %> etiquetas</span>
+              </button>
+              <button
+                phx-click="generate_and_download_pdf"
+                class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Descargar PDF</span>
+              </button>
             </div>
           <% end %>
         </div>

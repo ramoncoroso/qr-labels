@@ -1,6 +1,8 @@
 defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   use QrLabelSystemWeb, :live_view
 
+  require Logger
+
   alias QrLabelSystem.DataSources.ExcelParser
   alias QrLabelSystem.Security.FileSanitizer
   alias QrLabelSystem.Designs
@@ -177,6 +179,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
       # Store data in persistent store for the workflow
       user_id = socket.assigns.current_user.id
       design_id = socket.assigns.design_id
+
+      Logger.info("DataFirst continue - Storing #{length(socket.assigns.upload_data)} rows, #{length(socket.assigns.upload_columns)} columns for user=#{user_id}, design=#{inspect(design_id)}")
 
       QrLabelSystem.UploadDataStore.put(
         user_id,
