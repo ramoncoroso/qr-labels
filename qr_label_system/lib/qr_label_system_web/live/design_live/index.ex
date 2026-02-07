@@ -100,18 +100,23 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("start_rename", %{"id" => id, "name" => name}, socket) do
+    design = find_design(socket.assigns.all_designs, String.to_integer(id))
     {:noreply,
      socket
      |> assign(:renaming_id, id)
-     |> assign(:rename_value, name)}
+     |> assign(:rename_value, name)
+     |> stream_insert(:designs, design)}
   end
 
   @impl true
   def handle_event("cancel_rename", _params, socket) do
-    {:noreply,
-     socket
+    old_id = socket.assigns.renaming_id
+    design = if old_id, do: find_design(socket.assigns.all_designs, String.to_integer(old_id))
+    socket = socket
      |> assign(:renaming_id, nil)
-     |> assign(:rename_value, "")}
+     |> assign(:rename_value, "")
+    socket = if design, do: stream_insert(socket, :designs, design), else: socket
+    {:noreply, socket}
   end
 
   @impl true
@@ -717,60 +722,78 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
               <!-- Right content -->
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between">
-                  <.link navigate={~p"/designs/#{design.id}/edit"} class="min-w-0 flex-1 cursor-pointer">
-                    <div class="min-w-0 flex-1">
-                  <%= if @renaming_id == design.id do %>
-                    <form phx-submit="save_rename" phx-value-id={design.id} class="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={@rename_value}
-                        phx-change="update_rename"
-                        phx-debounce="100"
-                        name="value"
-                        autofocus
-                        class="text-base font-semibold text-gray-900 border border-blue-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <button type="submit" class="p-1 text-green-600 hover:text-green-700">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </button>
-                      <button type="button" phx-click="cancel_rename" class="p-1 text-gray-400 hover:text-gray-600">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </form>
-                  <% else %>
-                    <h3 class="text-base font-semibold text-gray-900 truncate group-hover/card:text-blue-700 transition-colors">
-                      <%= design.name %>
-                    </h3>
-                  <% end %>
-                  <p class="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
-                    <span class="inline-flex items-center">
-                      <svg class="w-3.5 h-3.5 mr-1 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-                      </svg>
-                      <%= design.width_mm %> × <%= design.height_mm %> mm
-                    </span>
-                    <span class="text-gray-300">·</span>
-                    <%= if design.label_type == "single" do %>
-                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                        Única
-                      </span>
+                  <div class="min-w-0 flex-1">
+                    <!-- Name row: editable inline -->
+                    <%= if @renaming_id == design.id do %>
+                      <form phx-submit="save_rename" phx-value-id={design.id} class="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={@rename_value}
+                          phx-change="update_rename"
+                          phx-debounce="100"
+                          name="value"
+                          autofocus
+                          class="text-base font-semibold text-gray-900 border border-blue-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button type="submit" class="p-1 text-green-600 hover:text-green-700">
+                          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button type="button" phx-click="cancel_rename" class="p-1 text-gray-400 hover:text-gray-600">
+                          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </form>
                     <% else %>
-                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                        Múltiple
-                      </span>
+                      <div class="flex items-center gap-1.5 group/name">
+                        <.link navigate={~p"/designs/#{design.id}/edit"} class="min-w-0">
+                          <h3 class="text-base font-semibold text-gray-900 truncate group-hover/card:text-blue-700 transition-colors">
+                            <%= design.name %>
+                          </h3>
+                        </.link>
+                        <button
+                          type="button"
+                          phx-click="start_rename"
+                          phx-value-id={design.id}
+                          phx-value-name={design.name}
+                          class="p-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover/card:opacity-100 transition-opacity flex-shrink-0"
+                          title="Renombrar"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                          </svg>
+                        </button>
+                      </div>
                     <% end %>
-                    <%= if design.is_template do %>
-                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                        Plantilla
-                      </span>
-                    <% end %>
-                  </p>
-                    </div>
-                  </.link>
+                    <!-- Info row: clickable to editor -->
+                    <.link navigate={~p"/designs/#{design.id}/edit"} class="cursor-pointer">
+                      <p class="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
+                        <span class="inline-flex items-center">
+                          <svg class="w-3.5 h-3.5 mr-1 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                          </svg>
+                          <%= design.width_mm %> × <%= design.height_mm %> mm
+                        </span>
+                        <span class="text-gray-300">·</span>
+                        <%= if design.label_type == "single" do %>
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                            Única
+                          </span>
+                        <% else %>
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                            Múltiple
+                          </span>
+                        <% end %>
+                        <%= if design.is_template do %>
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                            Plantilla
+                          </span>
+                        <% end %>
+                      </p>
+                    </.link>
+                  </div>
 
                   <div class="flex items-center gap-2">
                     <!-- Duplicate Button -->
