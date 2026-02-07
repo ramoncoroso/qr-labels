@@ -15,7 +15,7 @@ Sistema web **production-ready** para generar etiquetas con códigos QR y de bar
 
 ## Estado Actual del Proyecto
 
-**Fecha de última actualización:** 2026-01-31
+**Fecha de última actualización:** 2026-02-07
 
 ### Progreso de Fases
 
@@ -107,7 +107,8 @@ qr_label_system/
 │   │   │   └── user_token.ex      # Tokens de sesión
 │   │   ├── designs/               # Diseños etiquetas
 │   │   │   ├── design.ex          # Schema diseño
-│   │   │   └── element.ex         # Elementos (QR, barcode, text)
+│   │   │   ├── element.ex         # Elementos (QR, barcode, text)
+│   │   │   └── tag.ex             # Tags many-to-many
 │   │   ├── data_sources/          # Fuentes de datos
 │   │   │   ├── data_source.ex     # Schema data source
 │   │   │   ├── db_connector.ex    # Conexión BD externa
@@ -183,6 +184,8 @@ qr_label_system/
 | `data_sources` | Fuentes de datos | type, name, db_config (encrypted) |
 | `label_batches` | Lotes generados | design_id, data_source_id, status, column_mapping |
 | `audit_logs` | Trazabilidad | user_id, action, resource_type, changes |
+| `design_tags` | Tags para organizar diseños | name, color, user_id (unique: user_id+name) |
+| `design_tag_assignments` | Tabla pivot diseño↔tag | design_id, tag_id (unique: design_id+tag_id) |
 
 ---
 
@@ -1446,6 +1449,139 @@ test/qr_label_system_web/live/design_live/show_test.exs     # Tests de show
 
 ---
 
+## Cambios Implementados (2026-02-07) - Reemplazo de Categorías por Tags (many-to-many)
+
+### Resumen
+
+Se reemplazó completamente el sistema de categorías (one-to-many) por un sistema de tags (many-to-many) que permite asignar múltiples etiquetas a cada diseño. Incluye creación inline con autocompletado, filtrado por chips, y gestión dinámica directa en las tarjetas.
+
+### 1. ✅ Migración de BD
+
+**Archivo nuevo:** `priv/repo/migrations/20260207200000_replace_categories_with_tags.exs`
+
+- Crea tabla `design_tags` (name, color, user_id) con unique index en `(user_id, name)`
+- Crea tabla pivot `design_tag_assignments` (design_id, tag_id) sin PK propio
+- Migra datos existentes: categorías → tags via SQL INSERT...SELECT
+- Migra asignaciones: category_id → tabla pivot
+- Elimina columna `category_id` de `label_designs`
+- Elimina tabla `design_categories`
+- Rollback completo en `down/0`
+
+### 2. ✅ Schema Tag
+
+**Archivo nuevo:** `lib/qr_label_system/designs/tag.ex`
+
+- Schema sobre tabla `design_tags`
+- Campos: name, color (default "#6366F1")
+- `belongs_to :user`, `many_to_many :designs` via `design_tag_assignments`
+- Changeset: validación nombre 1-50 chars, color hex, unique per user
+
+### 3. ✅ Schema Design actualizado
+
+**Archivo:** `lib/qr_label_system/designs/design.ex`
+
+- Reemplazado `belongs_to :category` → `many_to_many :tags, Tag, join_through: "design_tag_assignments"`
+- Eliminado `:category_id` del changeset
+- Eliminado `put_change(:category_id, ...)` del `duplicate_changeset`
+
+### 4. ✅ Contexto Designs actualizado
+
+**Archivo:** `lib/qr_label_system/designs.ex`
+
+Eliminadas todas las funciones de categoría. Nuevas funciones de tags:
+- `list_user_tags/1`, `get_tag/1`, `get_tag!/1`, `create_tag/1`, `delete_tag/1`
+- `find_or_create_tag/3` — busca por nombre, crea si no existe (clave para UX inline)
+- `add_tag_to_design/2` — insert en pivot con `on_conflict: :nothing`
+- `remove_tag_from_design/2` — delete de pivot
+- `preload_tags/1`, `search_user_tags/2` (autocompletado por prefijo, limit 10)
+- `list_user_designs_by_tags/2` — filtro con semántica "todos los tags deben coincidir" (GROUP BY + HAVING COUNT)
+- `duplicate_design` actualizado para copiar tags via `Repo.insert_all`
+
+### 5. ✅ Eliminado category.ex
+
+**Archivo eliminado:** `lib/qr_label_system/designs/category.ex`
+
+### 6. ✅ UI completa en index.ex
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+**Nuevos assigns:** `tags`, `active_tag_ids`, `tag_input`, `tag_suggestions`, `tagging_design_id`
+
+**Nuevos event handlers:**
+- `toggle_tag_filter` / `clear_tag_filters` — filtrado por chips de tags
+- `open_tag_input` / `close_tag_input` — input inline en tarjeta
+- `tag_input_change` — autocompletado al escribir
+- `add_tag_to_design` / `select_tag_suggestion` — crear/asignar tag
+- `remove_tag_from_design` — quitar tag
+
+**UI:**
+- Chips de tags clickeables en zona de filtros con "Limpiar filtros"
+- Múltiples chips de tags en cada tarjeta con "x" para quitar
+- Botón "+ Tag" siempre visible (chip con borde dashed)
+- Eliminados todos los modales de categoría (~155 líneas)
+
+### 7. ✅ Bug fixes aplicados
+
+| Bug | Causa | Solución |
+|-----|-------|----------|
+| Click en + Tag navega al canvas | Tag chips dentro de `<.link navigate=...>` | Movidos fuera del link |
+| + Tag button invisible | `opacity-0 group-hover/card:opacity-100` | Chip siempre visible con borde dashed |
+| Click en + Tag no hace nada | Stream items no re-renderizan por cambio de assigns | `stream_insert` en open/close_tag_input |
+
+### 8. ✅ Layout de tarjetas mejorado
+
+- Thumbnail en columna izquierda spanning altura completa
+- Tags separados de medidas con más espaciado (`mt-3`)
+- Thumbnail reducido a 80x80px para que el texto dicte la altura de la tarjeta
+
+---
+
+## Archivos Nuevos (2026-02-07)
+
+```
+priv/repo/migrations/
+└── 20260207200000_replace_categories_with_tags.exs
+
+lib/qr_label_system/designs/
+└── tag.ex
+```
+
+## Archivos Eliminados (2026-02-07)
+
+```
+lib/qr_label_system/designs/category.ex
+```
+
+## Archivos Modificados (2026-02-07)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system/designs/design.ex` | many_to_many :tags en vez de belongs_to :category |
+| `lib/qr_label_system/designs.ex` | Todas las funciones de categoría → funciones de tags |
+| `lib/qr_label_system_web/live/design_live/index.ex` | UI completa de tags, layout tarjetas, bug fixes |
+
+## Commits (2026-02-07)
+
+| Hash | Descripción |
+|------|-------------|
+| `314c984` | feat: Replace categories with tags (many-to-many) |
+| `6458708` | fix: Move tag chips outside link and make +Tag button always visible |
+| `c45b059` | fix: Improve design card layout - thumbnail spans full height, tags separated |
+
+## Verificación (2026-02-07)
+
+- [x] `mix ecto.migrate` ejecuta sin errores
+- [x] `mix compile` sin warnings de categoría
+- [x] 707 tests, 0 failures
+- [x] Tags visibles como chips en tarjetas
+- [x] Click "+" → input inline con autocompletado
+- [x] Enter → tag creado y asignado
+- [x] Click "x" → tag removido del diseño
+- [x] Filtrado por tags funciona
+- [x] Duplicar diseño copia tags
+
+---
+
 ## Tareas Pendientes (TODO)
 
 ### 🔴 Bug Prioritario
@@ -1456,15 +1592,11 @@ test/qr_label_system_web/live/design_live/show_test.exs     # Tests de show
 
 ### 🟠 Mejoras Funcionales
 
-2. **Mejorar categorización en /designs**
-   - La UX actual de asignar categorías no convence
-   - Revisar cómo se asignan, filtran y visualizan en las tarjetas
-
-3. **Permitir renombrar etiqueta desde /designs**
+2. **Permitir renombrar etiqueta desde /designs**
    - Poder cambiar el nombre sin entrar al editor
    - Ya existe funcionalidad de rename en index.ex, revisar accesibilidad
 
-4. **Preguntar antes de importar etiquetas duplicadas**
+3. **Preguntar antes de importar etiquetas duplicadas**
    - Al importar, si ya existe un diseño con el mismo nombre, preguntar al usuario si desea duplicar o saltar
 
 ---
@@ -1484,3 +1616,4 @@ test/qr_label_system_web/live/design_live/show_test.exs     # Tests de show
 | 2026-02-04 | **REORGANIZACIÓN HEADER DEL EDITOR** (3 secciones) |
 | 2026-02-06 | **MINIATURAS DE DISEÑOS + FIX LAYOUT @conn** |
 | 2026-02-06 | **LIMPIEZA UX /designs + MEJORAS /generate/data + BOTÓN DATOS EN EDITOR** |
+| 2026-02-07 | **REEMPLAZO DE CATEGORÍAS POR TAGS (many-to-many) + BUG FIXES + LAYOUT** |
