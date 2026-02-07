@@ -7,6 +7,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   alias QrLabelSystem.Designs.Design
   alias QrLabelSystem.Security.FileSanitizer
 
+  # Whitelist of allowed fields for element updates (security)
+  @allowed_element_fields ~w(x y width height rotation binding qr_error_level
+    barcode_format barcode_show_text font_size font_family font_weight
+    text_align text_content color background_color border_width border_color border_radius
+    z_index visible locked name image_data image_filename)
+
   @impl true
   def mount(%{"id" => id} = params, _session, socket) do
     case Designs.get_design(id) do
@@ -281,69 +287,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         do_save_elements(socket, design, elements_json)
     end
   end
-
-  defp do_save_elements(socket, design, elements_json) do
-    # Debug: Log what we're about to save
-    current_count = length(design.elements || [])
-    new_count = length(elements_json || [])
-    new_ids = Enum.map(elements_json || [], fn el -> Map.get(el, "id") end)
-    Logger.info("do_save_elements - Design #{design.id}: #{current_count} -> #{new_count} elements. New IDs: #{inspect(new_ids)}")
-
-    case Designs.update_design(design, %{elements: elements_json}) do
-      {:ok, updated_design} ->
-        # Get the ID of the element that should remain selected
-        # Priority: pending_selection_id > current selected_element
-        selected_id = Map.get(socket.assigns, :pending_selection_id) ||
-          (socket.assigns.selected_element &&
-            (Map.get(socket.assigns.selected_element, :id) ||
-             Map.get(socket.assigns.selected_element, "id")))
-
-        # Find the element in the updated design
-        updated_selected =
-          if selected_id do
-            Enum.find(updated_design.elements || [], fn el ->
-              (Map.get(el, :id) || Map.get(el, "id")) == selected_id
-            end)
-          else
-            nil
-          end
-
-        # Check if this save was triggered by the "Guardar" button
-        show_flash = Map.get(socket.assigns, :pending_save_flash, false)
-
-        socket =
-          socket
-          |> push_to_history(design)
-          |> assign(:design, updated_design)
-          |> assign(:selected_element, updated_selected)
-          |> assign(:pending_selection_id, nil)  # Clear pending selection after sync
-          |> assign(:pending_save_flash, false)
-          |> assign(:pending_deletes, MapSet.new())  # Clear pending deletes after successful save
-
-        socket = if show_flash do
-          socket
-          |> assign(:has_unsaved_changes, false)
-          |> put_flash(:info, "Diseño guardado")
-        else
-          socket
-        end
-
-        {:noreply, socket}
-
-      {:error, changeset} ->
-        Logger.error("Failed to save design #{design.id}: #{inspect(changeset.errors)}")
-        {:noreply,
-         socket
-         |> assign(:pending_save_flash, false)
-         |> put_flash(:error, "Error al guardar cambios")}
-    end
-  end
-
-  # Whitelist of allowed fields for element updates (security)
-  @allowed_element_fields ~w(x y width height rotation binding qr_error_level
-    barcode_format barcode_show_text font_size font_family font_weight
-    text_align text_content color background_color border_width border_color border_radius
-    z_index visible locked name image_data image_filename)
 
   @impl true
   def handle_event("update_element", %{"field" => field, "value" => value}, socket)
@@ -1043,6 +986,63 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # ============================================================================
   # Helper Functions
   # ============================================================================
+
+  defp do_save_elements(socket, design, elements_json) do
+    # Debug: Log what we're about to save
+    current_count = length(design.elements || [])
+    new_count = length(elements_json || [])
+    new_ids = Enum.map(elements_json || [], fn el -> Map.get(el, "id") end)
+    Logger.info("do_save_elements - Design #{design.id}: #{current_count} -> #{new_count} elements. New IDs: #{inspect(new_ids)}")
+
+    case Designs.update_design(design, %{elements: elements_json}) do
+      {:ok, updated_design} ->
+        # Get the ID of the element that should remain selected
+        # Priority: pending_selection_id > current selected_element
+        selected_id = Map.get(socket.assigns, :pending_selection_id) ||
+          (socket.assigns.selected_element &&
+            (Map.get(socket.assigns.selected_element, :id) ||
+             Map.get(socket.assigns.selected_element, "id")))
+
+        # Find the element in the updated design
+        updated_selected =
+          if selected_id do
+            Enum.find(updated_design.elements || [], fn el ->
+              (Map.get(el, :id) || Map.get(el, "id")) == selected_id
+            end)
+          else
+            nil
+          end
+
+        # Check if this save was triggered by the "Guardar" button
+        show_flash = Map.get(socket.assigns, :pending_save_flash, false)
+
+        socket =
+          socket
+          |> push_to_history(design)
+          |> assign(:design, updated_design)
+          |> assign(:selected_element, updated_selected)
+          |> assign(:pending_selection_id, nil)  # Clear pending selection after sync
+          |> assign(:pending_save_flash, false)
+          |> assign(:pending_deletes, MapSet.new())  # Clear pending deletes after successful save
+
+        socket = if show_flash do
+          socket
+          |> assign(:has_unsaved_changes, false)
+          |> put_flash(:info, "Diseño guardado")
+        else
+          socket
+        end
+
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        Logger.error("Failed to save design #{design.id}: #{inspect(changeset.errors)}")
+        {:noreply,
+         socket
+         |> assign(:pending_save_flash, false)
+         |> put_flash(:error, "Error al guardar cambios")}
+    end
+  end
 
   defp element_to_map(element) when is_struct(element) do
     Map.from_struct(element)
