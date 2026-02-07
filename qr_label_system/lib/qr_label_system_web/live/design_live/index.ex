@@ -777,19 +777,10 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                           <%= design.width_mm %> × <%= design.height_mm %> mm
                         </span>
                         <span class="text-gray-300">·</span>
-                        <%= if design.label_type == "single" do %>
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                            Única
-                          </span>
-                        <% else %>
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                            Múltiple
-                          </span>
-                        <% end %>
+                        <span><%= if design.label_type == "single", do: "Única", else: "Múltiple" %></span>
                         <%= if design.is_template do %>
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                            Plantilla
-                          </span>
+                          <span class="text-gray-300">·</span>
+                          <span>Plantilla</span>
                         <% end %>
                       </p>
                     </.link>
