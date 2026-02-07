@@ -362,20 +362,34 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("open_tag_input", %{"id" => design_id}, socket) do
+    design = find_design(socket.assigns.all_designs, String.to_integer(design_id))
+
     {:noreply,
      socket
      |> assign(:tagging_design_id, design_id)
      |> assign(:tag_input, "")
-     |> assign(:tag_suggestions, [])}
+     |> assign(:tag_suggestions, [])
+     |> stream_insert(:designs, design)}
   end
 
   @impl true
   def handle_event("close_tag_input", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:tagging_design_id, nil)
-     |> assign(:tag_input, "")
-     |> assign(:tag_suggestions, [])}
+    prev_id = socket.assigns.tagging_design_id
+    socket = socket
+      |> assign(:tagging_design_id, nil)
+      |> assign(:tag_input, "")
+      |> assign(:tag_suggestions, [])
+
+    # Re-render the previously open design to show the button again
+    socket =
+      if prev_id do
+        design = find_design(socket.assigns.all_designs, String.to_integer(prev_id))
+        stream_insert(socket, :designs, design)
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -758,74 +772,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                       </span>
                     <% end %>
                   </p>
-                  <!-- Tag Chips on Card -->
-                  <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <%= for tag <- (design.tags || []) do %>
-                      <span
-                        class="group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                        style={"background-color: #{tag.color}20; color: #{tag.color};"}
-                      >
-                        <%= tag.name %>
-                        <button
-                          type="button"
-                          phx-click="remove_tag_from_design"
-                          phx-value-design-id={design.id}
-                          phx-value-tag-id={tag.id}
-                          class="ml-0.5 opacity-0 group-hover/tag:opacity-100 hover:text-red-500 transition-opacity"
-                          title="Quitar tag"
-                        >
-                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </span>
-                    <% end %>
-
-                    <!-- Add Tag Button / Inline Input -->
-                    <%= if to_string(design.id) == @tagging_design_id do %>
-                      <div class="relative" phx-click-away="close_tag_input">
-                        <form phx-submit="add_tag_to_design" phx-value-design-id={design.id}>
-                          <input
-                            type="text"
-                            value={@tag_input}
-                            phx-keyup="tag_input_change"
-                            phx-debounce="200"
-                            name="value"
-                            placeholder="Nombre del tag..."
-                            autofocus
-                            class="text-xs border border-gray-300 rounded-full px-2.5 py-0.5 w-32 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </form>
-                        <!-- Suggestions dropdown -->
-                        <div :if={@tag_suggestions != []} class="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
-                          <%= for suggestion <- @tag_suggestions do %>
-                            <button
-                              type="button"
-                              phx-click="select_tag_suggestion"
-                              phx-value-id={suggestion.id}
-                              phx-value-design-id={design.id}
-                              class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
-                            >
-                              <span class="w-3 h-3 rounded-full flex-shrink-0" style={"background-color: #{suggestion.color};"}></span>
-                              <span class="truncate"><%= suggestion.name %></span>
-                            </button>
-                          <% end %>
-                        </div>
-                      </div>
-                    <% else %>
-                      <button
-                        type="button"
-                        phx-click="open_tag_input"
-                        phx-value-id={design.id}
-                        class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-400 hover:text-blue-500 transition opacity-0 group-hover/card:opacity-100"
-                        title="Añadir tag"
-                      >
-                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                      </button>
-                    <% end %>
-                  </div>
                 </div>
               </.link>
 
@@ -855,6 +801,74 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                   Eliminar
                 </button>
               </div>
+            </div>
+            <!-- Tag Chips on Card (outside <.link> to prevent navigation) -->
+            <div class="flex items-center gap-1.5 mt-2 pl-[96px] flex-wrap">
+              <%= for tag <- (design.tags || []) do %>
+                <span
+                  class="group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={"background-color: #{tag.color}20; color: #{tag.color};"}
+                >
+                  <%= tag.name %>
+                  <button
+                    type="button"
+                    phx-click="remove_tag_from_design"
+                    phx-value-design-id={design.id}
+                    phx-value-tag-id={tag.id}
+                    class="ml-0.5 opacity-0 group-hover/tag:opacity-100 hover:text-red-500 transition-opacity"
+                    title="Quitar tag"
+                  >
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              <% end %>
+
+              <!-- Add Tag Button / Inline Input -->
+              <%= if to_string(design.id) == @tagging_design_id do %>
+                <div class="relative" phx-click-away="close_tag_input">
+                  <form phx-submit="add_tag_to_design" phx-value-design-id={design.id}>
+                    <input
+                      type="text"
+                      value={@tag_input}
+                      phx-keyup="tag_input_change"
+                      phx-debounce="200"
+                      name="value"
+                      placeholder="Nombre del tag..."
+                      autofocus
+                      class="text-xs border border-gray-300 rounded-full px-2.5 py-0.5 w-32 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </form>
+                  <!-- Suggestions dropdown -->
+                  <div :if={@tag_suggestions != []} class="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+                    <%= for suggestion <- @tag_suggestions do %>
+                      <button
+                        type="button"
+                        phx-click="select_tag_suggestion"
+                        phx-value-id={suggestion.id}
+                        phx-value-design-id={design.id}
+                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <span class="w-3 h-3 rounded-full flex-shrink-0" style={"background-color: #{suggestion.color};"}></span>
+                        <span class="truncate"><%= suggestion.name %></span>
+                      </button>
+                    <% end %>
+                  </div>
+                </div>
+              <% else %>
+                <button
+                  type="button"
+                  phx-click="open_tag_input"
+                  phx-value-id={design.id}
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 hover:bg-blue-100 text-gray-400 hover:text-blue-500 border border-dashed border-gray-300 hover:border-blue-300 transition"
+                >
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Tag
+                </button>
+              <% end %>
             </div>
           </div>
         </div>
