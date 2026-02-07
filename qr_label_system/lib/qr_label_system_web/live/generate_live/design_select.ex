@@ -2,7 +2,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
   use QrLabelSystemWeb, :live_view
 
   alias QrLabelSystem.Designs
-  alias QrLabelSystem.Designs.SvgPreview
+
+  import QrLabelSystemWeb.DesignComponents
 
   @impl true
   def mount(params, _session, socket) do
@@ -332,7 +333,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
               <!-- Mini Preview -->
               <div class="bg-gray-100 rounded-lg p-3 flex justify-center items-center min-h-[80px]">
-                <%= raw(SvgPreview.generate(design, max_width: 140, max_height: 90)) %>
+                <.design_thumbnail design={design} max_width={140} max_height={90} />
               </div>
 
               <!-- Action buttons when selected -->
@@ -423,7 +424,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
             <!-- Modal Body - Large Preview -->
             <div class="p-6 bg-gray-100 flex justify-center">
-              <%= raw(SvgPreview.generate(@preview_design, max_width: 400, max_height: 300)) %>
+              <.design_thumbnail design={@preview_design} max_width={400} max_height={300} />
             </div>
 
             <!-- Design Info -->
