@@ -530,13 +530,36 @@ const CanvasDesigner = {
     })
 
     // Element modification (drag, resize, rotate)
+    // Uses saveElementsImmediate() (no debounce) because object:modified only fires
+    // once when the user releases the handle — saving immediately prevents race
+    // conditions where a subsequent click could reset scale before the debounced save runs.
     this.canvas.on('object:modified', (e) => {
       this.clearAlignmentLines()
-      // Mark the element as modified so we know to recalculate its dimensions
-      if (e.target && e.target.elementId) {
-        e.target._wasModified = true
+      const obj = e.target
+      if (obj && obj.elementId) {
+        obj._wasModified = true
+
+        // Normalize scale immediately for regular elements.
+        // QR/barcode need to be recreated (not just resized) so they are
+        // handled via _pendingRecreate in saveElementsImmediate.
+        // Textboxes have width managed by Fabric.js directly.
+        const isCodeElement = obj.elementType === 'qr' || obj.elementType === 'barcode'
+        if (!isCodeElement && obj.type !== 'textbox') {
+          const sx = obj.scaleX || 1
+          const sy = obj.scaleY || 1
+          if (Math.abs(sx - 1) > 0.01 || Math.abs(sy - 1) > 0.01) {
+            const newW = obj.width * sx
+            const newH = obj.height * sy
+            obj.set({ width: newW, height: newH, scaleX: 1, scaleY: 1 })
+            obj.setCoords()
+            if (obj.elementData) {
+              obj.elementData.width = Math.round((newW / PX_PER_MM) * 100) / 100
+              obj.elementData.height = Math.round((newH / PX_PER_MM) * 100) / 100
+            }
+          }
+        }
       }
-      this.saveElements()
+      this.saveElementsImmediate()
     })
 
     // Snap while moving
@@ -1056,16 +1079,12 @@ const CanvasDesigner = {
           const obj = this.elements.get(element.id)
           if (!obj || !obj._barcodeLoading || obj._barcodeContent !== content) return
 
-          // Scale to fit the target dimensions
-          const scaleX = w / img.width
-          const scaleY = h / img.height
-          const scale = Math.min(scaleX, scaleY)
-
+          // Scale to fill the exact target dimensions
           img.set({
             left: x,
             top: y,
-            scaleX: scale,
-            scaleY: scale,
+            scaleX: w / img.width,
+            scaleY: h / img.height,
             angle: element.rotation || 0
           })
 
@@ -1485,17 +1504,16 @@ const CanvasDesigner = {
       case 'y':
         obj.set('top', this.labelBounds.top + value * PX_PER_MM)
         break
-      case 'width':
-        if (obj.type === 'textbox') {
+      case 'width': {
+        const isCode = obj.elementType === 'qr' || obj.elementType === 'barcode'
+        if (isCode) {
+          // QR/barcode: recreate at new size (regenerates the image)
+          this.recreateGroupAtSize(obj, value, data.height)
+          return // recreateGroupAtSize handles save
+        } else if (obj.type === 'textbox') {
           obj.set('width', value * PX_PER_MM)
-        } else if (obj.type === 'group') {
-          // For placeholder groups (QR/barcode): scale visually without recreating
-          const currentGroupWidth = obj.getScaledWidth()
-          const targetWidth = value * PX_PER_MM
-          obj.set('scaleX', (obj.scaleX || 1) * (targetWidth / currentGroupWidth))
         } else if (obj.type === 'rect') {
           obj.set('width', value * PX_PER_MM)
-          // If it's a circle element, recalculate rx/ry based on border_radius
           if (obj.elementType === 'circle') {
             const roundness = (data.border_radius ?? 100) / 100
             const maxRadius = Math.min(value * PX_PER_MM, obj.height) / 2
@@ -1507,15 +1525,15 @@ const CanvasDesigner = {
           obj._explicitSizeUpdate = true
         }
         break
-      case 'height':
-        if (obj.type === 'group') {
-          // For placeholder groups (QR/barcode): scale visually without recreating
-          const currentGroupHeight = obj.getScaledHeight()
-          const targetHeight = value * PX_PER_MM
-          obj.set('scaleY', (obj.scaleY || 1) * (targetHeight / currentGroupHeight))
+      }
+      case 'height': {
+        const isCode = obj.elementType === 'qr' || obj.elementType === 'barcode'
+        if (isCode) {
+          // QR/barcode: recreate at new size (regenerates the image)
+          this.recreateGroupAtSize(obj, data.width, value)
+          return // recreateGroupAtSize handles save
         } else if (obj.type === 'rect') {
           obj.set('height', value * PX_PER_MM)
-          // If it's a circle element, recalculate rx/ry based on border_radius
           if (obj.elementType === 'circle') {
             const roundness = (data.border_radius ?? 100) / 100
             const maxRadius = Math.min(obj.width, value * PX_PER_MM) / 2
@@ -1528,6 +1546,7 @@ const CanvasDesigner = {
         }
         // Height is auto-calculated for textbox
         break
+      }
       case 'rotation':
         obj.set('angle', value)
         break
@@ -1729,7 +1748,9 @@ const CanvasDesigner = {
       this.canvas.add(newObj)
       this.canvas.setActiveObject(newObj)
       this.canvas.renderAll()
-      this.saveElements()
+      // Save immediately (not debounced) to persist the correct dimensions
+      // before the async image generation can replace the placeholder
+      this.saveElementsImmediate()
     }
   },
 
@@ -2011,8 +2032,12 @@ const CanvasDesigner = {
       const scaleX = obj.scaleX || 1
       const scaleY = obj.scaleY || 1
 
-      if (obj.type === 'group') {
-        // For groups (QR/barcode): Get actual visual dimensions
+      // Detect QR/barcode by elementType (they can be fabric.Group or fabric.Image
+      // depending on whether async generation has completed)
+      const isCodeElement = obj.elementType === 'qr' || obj.elementType === 'barcode'
+
+      if (isCodeElement) {
+        // For QR/barcode: Get actual visual dimensions
         const visualWidthMM = Math.round((obj.getScaledWidth() / PX_PER_MM) * 100) / 100
         const visualHeightMM = Math.round((obj.getScaledHeight() / PX_PER_MM) * 100) / 100
 
@@ -2027,7 +2052,7 @@ const CanvasDesigner = {
           obj.elementData = data
         }
 
-        // If scale != 1, we need to recreate the group to normalize
+        // If scale != 1, mark for recreation (regenerate image at new size)
         if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
           if (!obj._pendingRecreate) {
             obj._pendingRecreate = { width, height }
@@ -2117,9 +2142,9 @@ const CanvasDesigner = {
     this._lastSaveTime = Date.now()
     this.pushEvent("element_modified", { elements })
 
-    // After saving, recreate any groups marked for recreation (to normalize scale)
+    // After saving, recreate any QR/barcode marked for recreation (regenerate at new size)
     this.elements.forEach((obj, id) => {
-      if (obj._pendingRecreate && obj.type === 'group') {
+      if (obj._pendingRecreate && (obj.elementType === 'qr' || obj.elementType === 'barcode')) {
         const { width, height } = obj._pendingRecreate
         delete obj._pendingRecreate
         this.recreateGroupWithoutSave(obj, width, height)
