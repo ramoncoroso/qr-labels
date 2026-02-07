@@ -63,7 +63,7 @@ defmodule QrLabelSystem.MixProject do
       {:cloak_ecto, "~> 1.2"},
 
       # Excel/CSV parsing
-      {:xlsxir, "~> 1.6"},
+      {:xlsx_reader, "~> 0.8"},
       {:nimble_csv, "~> 1.2"},
 
       # External DB connections (optional)

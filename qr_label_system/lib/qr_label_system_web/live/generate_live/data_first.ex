@@ -105,22 +105,29 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   end
 
   @impl true
+  def handle_event("cancel-upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :data_file, ref)}
+  end
+
+  @impl true
   def handle_event("upload_file", _params, socket) do
     uploaded_files =
       consume_uploaded_entries(socket, :data_file, fn %{path: path}, entry ->
         case FileSanitizer.safe_upload_path(entry.client_name) do
           {:ok, dest} ->
             File.cp!(path, dest)
-            {:ok, dest}
+            {:ok, {:ok, dest}}
 
           {:error, :path_traversal_detected} ->
-            {:error, "Nombre de archivo inválido"}
+            {:ok, {:error, "Nombre de archivo inválido"}}
         end
       end)
 
     case uploaded_files do
       [{:ok, file_path}] ->
+        Logger.info("Upload file path: #{file_path}, extension: #{Path.extname(file_path)}")
         result = ExcelParser.parse_file(file_path)
+        Logger.info("Parse result: #{inspect(result)}")
 
         # Schedule cleanup
         Task.start(fn ->
@@ -404,29 +411,28 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
           </h3>
 
           <form phx-submit="upload_file" phx-change="validate_upload">
+            <.live_file_input upload={@uploads.data_file} class="sr-only" />
             <%= if length(@uploads.data_file.entries) == 0 do %>
               <!-- Drop zone: only visible when no file is selected -->
-              <div
-                class="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-indigo-400 transition-colors cursor-pointer"
+              <label
+                for={@uploads.data_file.ref}
+                class="block border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-indigo-400 transition-colors cursor-pointer"
                 phx-drop-target={@uploads.data_file.ref}
               >
-                <.live_file_input upload={@uploads.data_file} class="hidden" />
-
                 <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
 
                 <p class="mt-4 text-base text-gray-600">
                   Arrastra tu archivo aquí o
-                  <label class="text-indigo-600 hover:text-indigo-800 cursor-pointer font-medium">
+                  <span class="text-indigo-600 hover:text-indigo-800 font-medium">
                     selecciona uno
-                    <.live_file_input upload={@uploads.data_file} class="sr-only" />
-                  </label>
+                  </span>
                 </p>
                 <p class="mt-2 text-sm text-gray-500">
                   Excel (.xlsx) o CSV (.csv) hasta 10MB
                 </p>
-              </div>
+              </label>
             <% else %>
               <!-- File selected: show file info + process button -->
               <%= for entry <- @uploads.data_file.entries do %>
