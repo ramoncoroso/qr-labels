@@ -173,7 +173,7 @@ const LabelPreview = {
 
         div.textContent = textContent || '[Texto]'
         div.style.width = `${element.width * scale * MM_TO_PX}px`
-        div.style.fontSize = `${(element.font_size || 12) * scale}px`
+        div.style.fontSize = `${(element.font_size || 12) * (MM_TO_PX / 6) * scale}px`
         div.style.fontFamily = element.font_family || 'Arial'
         div.style.fontWeight = element.font_weight || 'normal'
         div.style.color = element.color || '#000000'
