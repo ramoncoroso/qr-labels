@@ -574,6 +574,40 @@ const CanvasDesigner = {
       this.clearAlignmentLines()
     })
 
+    // Text editing: clear placeholder on enter, restore on exit
+    this.canvas.on('text:editing:entered', (e) => {
+      const obj = e.target
+      if (obj && obj._isPlaceholder) {
+        obj.set('text', '')
+        obj.set('fill', obj._originalColor || '#000000')
+        obj._isPlaceholder = false
+        this.canvas.renderAll()
+      }
+    })
+
+    this.canvas.on('text:editing:exited', (e) => {
+      const obj = e.target
+      if (obj && obj.elementId && (!obj.text || obj.text.trim() === '')) {
+        // Restore placeholder
+        obj.set('text', 'Completar')
+        obj.set('fill', '#999999')
+        obj._isPlaceholder = true
+        // Save empty text_content to backend
+        if (obj.elementData) {
+          obj.elementData.text_content = ''
+        }
+        this.canvas.renderAll()
+      } else if (obj && obj.elementId) {
+        // User typed real content - update elementData and push to backend
+        obj._isPlaceholder = false
+        obj.set('fill', obj._originalColor || '#000000')
+        if (obj.elementData) {
+          obj.elementData.text_content = obj.text
+        }
+        this.pushEvent("update_element", { id: obj.elementId, field: "text_content", value: obj.text })
+      }
+    })
+
     // Drag and drop from sidebar
     this.setupDragAndDrop()
 
@@ -1000,22 +1034,24 @@ const CanvasDesigner = {
     }
 
     // No content - show placeholder
-    return this.createQRPlaceholder(size, x, y, element.rotation, 'QR')
+    return this.createQRPlaceholder(size, x, y, element.rotation, 'Completar', '#999999')
   },
 
-  createQRPlaceholder(size, x, y, rotation, label) {
+  createQRPlaceholder(size, x, y, rotation, label, color) {
+    const fillColor = color || '#3b82f6'
+    const bgColor = color ? '#f3f4f6' : '#dbeafe'
     const rect = new fabric.Rect({
       width: size,
       height: size,
-      fill: '#dbeafe',
-      stroke: '#3b82f6',
+      fill: bgColor,
+      stroke: fillColor,
       strokeWidth: 2,
       strokeDashArray: [4, 4]
     })
 
     const text = new fabric.Text(label, {
       fontSize: size * 0.25,
-      fill: '#3b82f6',
+      fill: fillColor,
       fontWeight: 'bold',
       originX: 'center',
       originY: 'center',
@@ -1148,7 +1184,7 @@ const CanvasDesigner = {
     }
 
     // No content - show placeholder
-    return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'BARCODE')
+    return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'Completar', '#999999')
   },
 
   /**
@@ -1209,19 +1245,21 @@ const CanvasDesigner = {
     }
   },
 
-  createBarcodePlaceholder(w, h, x, y, rotation, label) {
+  createBarcodePlaceholder(w, h, x, y, rotation, label, color) {
+    const fillColor = color || '#3b82f6'
+    const bgColor = color ? '#f3f4f6' : '#dbeafe'
     const rect = new fabric.Rect({
       width: w,
       height: h,
-      fill: '#dbeafe',
-      stroke: '#3b82f6',
+      fill: bgColor,
+      stroke: fillColor,
       strokeWidth: 2,
       strokeDashArray: [4, 4]
     })
 
     const text = new fabric.Text(label, {
       fontSize: Math.min(w, h) * 0.2,
-      fill: '#3b82f6',
+      fill: fillColor,
       fontWeight: 'bold',
       originX: 'center',
       originY: 'center',
@@ -1271,7 +1309,10 @@ const CanvasDesigner = {
   },
 
   createText(element, x, y) {
-    const content = element.text_content || element.binding || 'Escriba aqui...'
+    // Show binding as [ColumnName] indicator, or text_content, or placeholder
+    const hasContent = element.binding || (element.text_content && element.text_content.trim() !== '')
+    const content = element.binding ? `[${element.binding}]` : (hasContent ? element.text_content : 'Completar')
+    const isPlaceholder = !hasContent
     const fontSize = element.font_size || 12
 
     // Create textbox with initial width
@@ -1282,12 +1323,16 @@ const CanvasDesigner = {
       fontSize: fontSize,
       fontFamily: element.font_family || 'Arial',
       fontWeight: element.font_weight || 'normal',
-      fill: element.color || '#000000',
+      fill: isPlaceholder ? '#999999' : (element.color || '#000000'),
       textAlign: element.text_align || 'left',
       angle: element.rotation || 0,
       // Allow text to wrap but also allow manual resize
       splitByGrapheme: false
     })
+
+    // Track placeholder state and original color
+    textbox._isPlaceholder = isPlaceholder
+    textbox._originalColor = element.color || '#000000'
 
     // Auto-fit width to content
     const textWidth = textbox.calcTextWidth()
@@ -1557,11 +1602,23 @@ const CanvasDesigner = {
           this.recreateCodeElement(obj, data.binding || data.text_content, 'preserve')
           return // recreateCodeElement handles save
         }
-        obj.set('fill', value)
+        obj._originalColor = value
+        // Only apply color if not showing placeholder
+        if (!obj._isPlaceholder) {
+          obj.set('fill', value)
+        }
         break
       case 'text_content':
         if (obj.type === 'textbox') {
-          obj.set('text', value || '')
+          if (value && value.trim() !== '') {
+            obj.set('text', value)
+            obj.set('fill', obj._originalColor || data.color || '#000000')
+            obj._isPlaceholder = false
+          } else {
+            obj.set('text', 'Completar')
+            obj.set('fill', '#999999')
+            obj._isPlaceholder = true
+          }
           // Force text recalculation
           obj.initDimensions()
           obj.setCoords()
@@ -1633,6 +1690,27 @@ const CanvasDesigner = {
           obj.elementData = data  // Update elementData before recreating
           this.recreateCodeElement(obj, value, 'binding')
           return // recreateCodeElement handles save
+        }
+        // For text elements, show column name as visual indicator
+        if (obj.type === 'textbox') {
+          if (value) {
+            obj.set('text', `[${value}]`)
+            obj.set('fill', obj._originalColor || data.color || '#000000')
+            obj._isPlaceholder = false
+          } else if (data.text_content && data.text_content.trim() !== '') {
+            // Binding cleared: restore text_content
+            obj.set('text', data.text_content)
+            obj.set('fill', obj._originalColor || data.color || '#000000')
+            obj._isPlaceholder = false
+          } else {
+            // Binding cleared, no text_content: show placeholder
+            obj.set('text', 'Completar')
+            obj.set('fill', '#999999')
+            obj._isPlaceholder = true
+          }
+          obj.initDimensions()
+          obj.setCoords()
+          this.autoFitTextWidth(obj)
         }
         break
       case 'qr_error_level':

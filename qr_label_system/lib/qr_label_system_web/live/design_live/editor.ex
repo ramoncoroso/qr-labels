@@ -1081,7 +1081,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           width: 20.0,
           height: 20.0,
           qr_error_level: "M",
-          text_content: "QR-#{number}",
+          text_content: "",
           binding: nil,
           name: "Código QR #{number}"
         })
@@ -1092,7 +1092,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           height: 15.0,
           barcode_format: "CODE128",
           barcode_show_text: true,
-          text_content: "CODE#{number}",
+          text_content: "",
           binding: nil,
           name: "Código de Barras #{number}"
         })
@@ -1105,7 +1105,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           font_family: "Arial",
           font_weight: "normal",
           text_align: "left",
-          text_content: "Escriba aqui...",
+          text_content: "",
           color: "#000000",
           binding: nil,
           name: "Texto #{number}"
@@ -2057,15 +2057,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <% end %>
           <% else %>
             <!-- Modo: Texto fijo -->
-            <input
-              type="text"
-              name="value"
-              value={Map.get(@element, :text_content) || ""}
-              placeholder={get_fixed_text_placeholder(@element.type)}
-              phx-blur="update_element"
-              phx-value-field="text_content"
-              class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            />
+            <form phx-change="update_element">
+              <input type="hidden" name="field" value="text_content" />
+              <input
+                type="text"
+                name="value"
+                value={Map.get(@element, :text_content) || ""}
+                placeholder={get_fixed_text_placeholder(@element.type)}
+                phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
+                class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </form>
             <p class="text-xs text-gray-500">
               Este contenido será igual en todas las etiquetas
             </p>
@@ -2079,15 +2081,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <%= if @label_type == "single" do %>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Contenido código QR</label>
-                <input
-                  type="text"
-                  name="value"
-                  value={@element.text_content || ""}
-                  phx-blur="update_element"
-                  phx-value-field="text_content"
-                  placeholder="Texto a codificar"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
+                <form phx-change="update_element">
+                  <input type="hidden" name="field" value="text_content" />
+                  <input
+                    type="text"
+                    name="value"
+                    value={@element.text_content || ""}
+                    phx-debounce="500"
+                    placeholder="Completar"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </form>
               </div>
             <% end %>
             <div>
@@ -2134,15 +2138,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <%= if @label_type == "single" do %>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Contenido código Barras</label>
-                <input
-                  type="text"
-                  name="value"
-                  value={@element.text_content || ""}
-                  phx-blur="update_element"
-                  phx-value-field="text_content"
-                  placeholder="Texto a codificar"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
+                <form phx-change="update_element">
+                  <input type="hidden" name="field" value="text_content" />
+                  <input
+                    type="text"
+                    name="value"
+                    value={@element.text_content || ""}
+                    phx-debounce="500"
+                    placeholder="Completar"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </form>
                 <%= case @element.barcode_format do %>
                   <% "EAN13" -> %>
                     <p class="text-xs text-gray-400 mt-1">Ej: 5901234123457 (13 dígitos)</p>
@@ -2223,16 +2229,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <%= if @label_type == "single" do %>
               <div>
                 <label for="text_content_input" class="block text-sm font-medium text-gray-700">Contenido</label>
-                <input
-                  type="text"
-                  id="text_content_input"
-                  name="value"
-                  value={@element.text_content || ""}
-                  phx-blur="update_element"
-                  phx-value-field="text_content"
-                  onfocus="if(this.value === 'Texto') this.value = ''"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
+                <form phx-change="update_element">
+                  <input type="hidden" name="field" value="text_content" />
+                  <input
+                    type="text"
+                    id="text_content_input"
+                    name="value"
+                    value={@element.text_content || ""}
+                    phx-debounce="300"
+                    placeholder="Completar"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </form>
               </div>
             <% end %>
             <div class="grid grid-cols-2 gap-3">
@@ -2611,8 +2619,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   # Placeholder text for fixed content input
-  defp get_fixed_text_placeholder("qr"), do: "URL o texto a codificar"
-  defp get_fixed_text_placeholder("barcode"), do: "Código a mostrar"
-  defp get_fixed_text_placeholder("text"), do: "Texto fijo"
-  defp get_fixed_text_placeholder(_), do: "Contenido"
+  defp get_fixed_text_placeholder("qr"), do: "Completar"
+  defp get_fixed_text_placeholder("barcode"), do: "Completar"
+  defp get_fixed_text_placeholder("text"), do: "Completar"
+  defp get_fixed_text_placeholder(_), do: "Completar"
 end
