@@ -1717,6 +1717,94 @@ Patrón CSS "stretched link": el link del nombre usa `after:absolute after:inset
 
 ---
 
+## Sesión 2026-02-07 — Fix Excel parser y upload de archivos
+
+### Resumen
+
+Se resolvieron 3 problemas críticos en la carga de archivos Excel/CSV:
+1. **Excel no procesaba archivos** — `consume_uploaded_entries` crasheaba por pattern matching incorrecto
+2. **Datos de Excel corruptos** — Xlsxir no soportaba inline strings (`t="inlineStr"`), devolviendo `nil` para columnas de texto
+3. **Selector de archivos no abría** — `<.live_file_input>` desaparecía del DOM al cambiar de vista
+
+### 1. ✅ Fix consume_uploaded_entries (crash al procesar)
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Problema:** Phoenix LiveView unwraps `{:ok, result}` del callback de `consume_uploaded_entries`. El callback devolvía `{:ok, dest}` → unwrapped a `dest` → el `case` esperaba `[{:ok, file_path}]` pero recibía `["/path/to/file"]` → `CaseClauseError` → LiveView crasheaba y remontaba (parecía "volver a la pantalla de carga").
+
+**Solución:** Callback ahora devuelve `{:ok, {:ok, dest}}` y `{:ok, {:error, reason}}` para preservar el wrapping.
+
+**Mismo bug que se corrigió el 2026-02-02 en 3 archivos**, pero `data_first.ex` fue omitido.
+
+### 2. ✅ Reemplazo de Xlsxir por parser SAX propio
+
+**Archivo:** `lib/qr_label_system/data_sources/excel_parser.ex`
+
+**Problema:** Xlsxir v1.6.4 no leía celdas con `t="inlineStr"` (inline strings), devolviendo `nil`. Los archivos xlsx generados por herramientas JS (como ExcelJS) usan inline strings en vez de shared strings. Resultado: headers todos `Column_1..Column_N` y datos desplazados.
+
+**Investigación:** Se inspeccionó el XML del xlsx directamente:
+```xml
+<c r="A1" s="1" t="inlineStr"><is><t>Producto</t></is></c>
+```
+Xlsxir devolvía `nil` para estas celdas. xlsx_reader tampoco funcionó porque el archivo usaba rutas absolutas en rels (`/xl/worksheets/sheet1.xml`), causando path duplicado `xl/xl/...`.
+
+**Solución:** Parser SAX propio que:
+- Usa `:zip.zip_open/2` para leer el xlsx
+- Parsea `xl/sharedStrings.xml` para shared strings
+- Parsea `xl/worksheets/sheet1.xml` con regex para extraer celdas
+- Soporta tipos: `inlineStr`, `s` (shared string index), `n` (numérico), `b` (boolean)
+- Convierte letras de columna a índices (`A`→0, `B`→1, `AA`→26)
+- Unescape XML entities (`&amp;`, `&lt;`, etc.)
+
+### 3. ✅ Fix live_file_input y selector de archivos
+
+**Archivo:** `lib/qr_label_system_web/live/generate_live/data_first.ex`
+
+**Problema 1:** Dos `<.live_file_input>` en el template causaban conflictos.
+**Problema 2:** Al ocultar el drop zone (rama `else`), el `<.live_file_input>` desaparecía del DOM, impidiendo que el upload completara (`progress: 0, preflighted?: false`).
+**Problema 3:** Sin handler `cancel-upload`, el botón de eliminar archivo crasheaba el LiveView.
+
+**Solución:**
+- Un solo `<.live_file_input class="sr-only">` siempre en el DOM, fuera del `if/else`
+- Drop zone cambiado de `<div>` a `<label for={@uploads.data_file.ref}>` para que todo el área abra el file picker
+- Añadido handler `cancel-upload` con `cancel_upload(socket, :data_file, ref)`
+
+### 4. ✅ Dependencias actualizadas
+
+**Archivo:** `mix.exs`
+
+- Reemplazado `{:xlsxir, "~> 1.6"}` por `{:xlsx_reader, "~> 0.8"}` (trae `saxy` para SAX parsing)
+- El parser propio no usa xlsx_reader directamente, pero saxy queda disponible para futuro uso
+
+---
+
+## Archivos Modificados (2026-02-07 — sesión Excel)
+
+| Archivo | Cambios |
+|---------|---------|
+| `lib/qr_label_system/data_sources/excel_parser.ex` | Parser SAX propio reemplaza Xlsxir |
+| `lib/qr_label_system_web/live/generate_live/data_first.ex` | Fix upload, cancel-upload, live_file_input |
+| `mix.exs` | xlsxir → xlsx_reader |
+| `mix.lock` | Nuevas deps: xlsx_reader, saxy |
+
+## Commits (2026-02-07 — sesión Excel)
+
+| Hash | Descripción |
+|------|-------------|
+| `d185da2` | fix: Replace Xlsxir with custom SAX parser for Excel and fix file upload |
+
+## Verificación (2026-02-07 — sesión Excel)
+
+- [x] 707 tests, 0 failures
+- [x] Excel (.xlsx) parsea headers y datos correctamente (inline strings)
+- [x] CSV (.csv) sigue funcionando sin cambios
+- [x] Selector de archivos se abre al click
+- [x] Drop zone oculta después de seleccionar archivo
+- [x] Botón eliminar archivo funciona (cancel-upload)
+- [x] Botón "Procesar archivo" procesa y muestra preview de datos
+
+---
+
 ## Plan de Continuación
 
 ### Próximos pasos prioritarios
@@ -1734,6 +1822,10 @@ Patrón CSS "stretched link": el link del nombre usa `after:absolute after:inset
 
 4. **Fix compilation warning**
    - `editor.ex:349` — agrupar cláusulas de `handle_event/3`
+
+5. **Limpiar dependencia xlsxir**
+   - Verificar que no queden referencias a Xlsxir en el código
+   - Considerar si xlsx_reader se usa o si puede eliminarse (solo se usa saxy indirectamente)
 
 ---
 
