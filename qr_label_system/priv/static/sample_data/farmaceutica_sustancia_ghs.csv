@@ -1,0 +1,6 @@
+nombre_sustancia,palabra_señal,frase_h,frase_p
+Ácido clorhídrico 37%,Peligro,"H314: Provoca quemaduras graves en la piel y lesiones oculares graves; H335: Puede irritar las vías respiratorias","P260: No respirar los vapores; P280: Llevar guantes y gafas de protección; P310: Llamar al centro de toxicología"
+Metanol,Peligro,"H225: Líquido y vapores muy inflamables; H301+H311+H331: Tóxico en caso de ingestión, contacto con la piel o inhalación; H370: Provoca daños en los órganos","P210: Mantener alejado del calor; P233: Mantener el recipiente herméticamente cerrado; P280: Llevar guantes de protección"
+Acetona,Atención,"H225: Líquido y vapores muy inflamables; H319: Provoca irritación ocular grave; H336: Puede provocar somnolencia o vértigo","P210: Mantener alejado del calor; P261: Evitar respirar los vapores; P305+P351+P338: Aclarar cuidadosamente con agua"
+Hidróxido de sodio 1M,Peligro,"H314: Provoca quemaduras graves en la piel y lesiones oculares graves; H290: Puede ser corrosivo para los metales","P260: No respirar los vapores; P280: Llevar guantes y gafas de protección; P301+P330+P331: En caso de ingestión enjuagar la boca"
+Etanol 96%,Peligro,"H225: Líquido y vapores muy inflamables; H319: Provoca irritación ocular grave","P210: Mantener alejado del calor; P233: Mantener el recipiente herméticamente cerrado; P305+P351+P338: Aclarar con agua"

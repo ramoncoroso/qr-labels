@@ -333,6 +333,108 @@ defmodule QrLabelSystem.DesignsTest do
     end
   end
 
+  describe "list_system_templates/0" do
+    test "returns only system templates" do
+      _regular = design_fixture()
+      _user_template = template_fixture()
+      system = system_template_fixture(%{name: "System Template"})
+
+      templates = Designs.list_system_templates()
+      assert length(templates) == 1
+      assert hd(templates).id == system.id
+    end
+
+    test "orders system templates by name" do
+      system_template_fixture(%{name: "Zebra System"})
+      system_template_fixture(%{name: "Alpha System"})
+
+      templates = Designs.list_system_templates()
+      assert length(templates) == 2
+      assert hd(templates).name == "Alpha System"
+    end
+
+    test "returns empty list when no system templates exist" do
+      _regular = design_fixture()
+      _user_template = template_fixture()
+
+      assert Designs.list_system_templates() == []
+    end
+  end
+
+  describe "template_source and template_category validation" do
+    test "accepts valid template_source values" do
+      attrs = valid_design_attributes(%{template_source: "system"})
+      assert {:ok, design} = Designs.create_design(attrs)
+      assert design.template_source == "system"
+
+      attrs = valid_design_attributes(%{template_source: "user"})
+      assert {:ok, design} = Designs.create_design(attrs)
+      assert design.template_source == "user"
+    end
+
+    test "rejects invalid template_source values" do
+      attrs = valid_design_attributes(%{template_source: "invalid"})
+      assert {:error, changeset} = Designs.create_design(attrs)
+      assert "must be system or user" in errors_on(changeset).template_source
+    end
+
+    test "accepts valid template_category values" do
+      for category <- ~w(alimentacion farmaceutica logistica manufactura) do
+        attrs = valid_design_attributes(%{template_category: category})
+        assert {:ok, design} = Designs.create_design(attrs)
+        assert design.template_category == category
+      end
+    end
+
+    test "rejects invalid template_category values" do
+      attrs = valid_design_attributes(%{template_category: "invalid"})
+      assert {:error, changeset} = Designs.create_design(attrs)
+      assert "must be a valid category" in errors_on(changeset).template_category
+    end
+  end
+
+  describe "duplicate_design with system template" do
+    test "resets template_source and template_category on duplicate" do
+      user = user_fixture()
+
+      template =
+        system_template_fixture(%{
+          user_id: user.id,
+          name: "System Original",
+          template_category: "farmaceutica"
+        })
+
+      assert {:ok, duplicate} = Designs.duplicate_design(template, user.id)
+      assert duplicate.is_template == false
+      assert duplicate.template_source == nil
+      assert duplicate.template_category == nil
+      assert duplicate.name == "System Original (copia)"
+    end
+
+    test "preserves design properties when duplicating system template" do
+      user = user_fixture()
+
+      template =
+        system_template_fixture(%{
+          user_id: user.id,
+          width_mm: 100.0,
+          height_mm: 60.0,
+          background_color: "#FFCC00",
+          template_category: "alimentacion",
+          elements: [
+            %{id: "el_1", type: "qr", x: 5, y: 5, width: 15, height: 15},
+            %{id: "el_2", type: "text", x: 25, y: 5, width: 40, height: 8, text_content: "Test"}
+          ]
+        })
+
+      assert {:ok, duplicate} = Designs.duplicate_design(template, user.id)
+      assert duplicate.width_mm == 100.0
+      assert duplicate.height_mm == 60.0
+      assert duplicate.background_color == "#FFCC00"
+      assert length(duplicate.elements) == 2
+    end
+  end
+
   describe "export_design/1" do
     test "exports design to a map with version info" do
       design = design_fixture(%{

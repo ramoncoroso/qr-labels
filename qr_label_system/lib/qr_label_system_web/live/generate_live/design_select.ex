@@ -18,6 +18,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
       no_data_mode ->
         all_designs = Designs.list_user_designs_by_type(user_id, "multiple")
         tags = Designs.list_user_tags(user_id)
+        system_templates = Designs.list_system_templates()
 
         {:ok,
          socket
@@ -30,12 +31,14 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
          |> assign(:upload_columns, [])
          |> assign(:no_data_mode, true)
          |> assign(:selected_design_id, nil)
-         |> assign(:preview_design, nil)}
+         |> assign(:preview_design, nil)
+         |> assign(:system_templates, system_templates)}
 
       # Mode: with uploaded data
       not is_nil(upload_data) and length(upload_data) > 0 ->
         all_designs = Designs.list_user_designs_by_type(user_id, "multiple")
         tags = Designs.list_user_tags(user_id)
+        system_templates = Designs.list_system_templates()
 
         {:ok,
          socket
@@ -48,7 +51,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
          |> assign(:upload_columns, upload_columns)
          |> assign(:no_data_mode, false)
          |> assign(:selected_design_id, nil)
-         |> assign(:preview_design, nil)}
+         |> assign(:preview_design, nil)
+         |> assign(:system_templates, system_templates)}
 
       # No data and not in no_data mode - redirect
       true ->
@@ -115,6 +119,38 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
        socket
        |> put_flash(:return_to, "design_select")
        |> push_navigate(to: ~p"/designs/new?type=multiple")}
+    end
+  end
+
+  @impl true
+  def handle_event("use_template", %{"id" => id}, socket) do
+    case Designs.get_design(id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "La plantilla ya no existe")}
+
+      template ->
+        user_id = socket.assigns.current_user.id
+        no_data_mode = socket.assigns.no_data_mode
+
+        case Designs.duplicate_design(template, user_id) do
+          {:ok, new_design} ->
+            if no_data_mode do
+              {:noreply,
+               socket
+               |> put_flash(:info, "Plantilla \"#{template.name}\" lista para editar")
+               |> push_navigate(to: ~p"/designs/#{new_design.id}/edit?no_data=true")}
+            else
+              QrLabelSystem.UploadDataStore.associate_with_design(user_id, new_design.id)
+
+              {:noreply,
+               socket
+               |> put_flash(:info, "Plantilla \"#{template.name}\" lista. Asigna columnas a los elementos.")
+               |> push_navigate(to: ~p"/designs/#{new_design.id}/edit")}
+            end
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Error al usar la plantilla")}
+        end
     end
   end
 
@@ -385,9 +421,44 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
         <%= if length(@designs) == 0 do %>
           <div class="mt-4 text-center py-8 bg-gray-50 rounded-xl">
-            <p class="text-gray-500">Aún no tienes diseños. Crea tu primer diseño para continuar.</p>
+            <p class="text-gray-500">Aún no tienes diseños. Crea tu primer diseño o usa una plantilla.</p>
           </div>
         <% end %>
+
+        <!-- System Templates Section -->
+        <div :if={@system_templates != []} class="mt-10">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Plantillas del sistema</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              :for={template <- @system_templates}
+              class="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-blue-300 transition-all p-4"
+            >
+              <div class="bg-gray-50 rounded-lg p-3 flex justify-center items-center min-h-[70px] mb-3">
+                <.design_thumbnail design={template} max_width={120} max_height={70} />
+              </div>
+              <h4 class="font-semibold text-gray-900 text-sm"><%= template.name %></h4>
+              <p class="text-xs text-gray-500 mt-1 line-clamp-1"><%= template.description %></p>
+              <p class="text-xs text-gray-400 mt-1"><%= template.width_mm %> × <%= template.height_mm %> mm</p>
+              <% bindings = get_bindings(template.elements) %>
+              <div :if={bindings != []} class="mt-2 flex flex-wrap gap-1">
+                <span
+                  :for={binding <- Enum.take(bindings, 3)}
+                  class={"text-[10px] px-1.5 py-0.5 rounded #{if binding in @upload_columns, do: "bg-green-100 text-green-700", else: "bg-gray-100 text-gray-500"}"}
+                >
+                  <%= binding %>
+                </span>
+                <span :if={length(bindings) > 3} class="text-[10px] text-gray-400">+<%= length(bindings) - 3 %></span>
+              </div>
+              <button
+                phx-click="use_template"
+                phx-value-id={template.id}
+                class="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-medium transition"
+              >
+                Usar plantilla
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- Action Buttons -->
         <div class="mt-8 flex justify-start">

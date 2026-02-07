@@ -617,7 +617,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         </:actions>
       </.header>
 
-      <div class="mt-8">
+      <div class="mt-6">
         <!-- Add New Design Card -->
         <.link navigate={~p"/generate"} class="group block mb-6 bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 hover:from-blue-50 hover:to-indigo-50/50 p-5 transition-all duration-300 hover:shadow-lg hover:shadow-blue-100/50">
           <div class="flex items-center space-x-4">

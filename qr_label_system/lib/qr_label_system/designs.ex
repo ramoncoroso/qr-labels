@@ -57,6 +57,18 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Returns built-in system templates, preloaded with tags.
+  """
+  def list_system_templates do
+    Repo.all(
+      from d in Design,
+        where: d.is_template == true and d.template_source == "system",
+        order_by: [asc: d.name],
+        preload: [:tags]
+    )
+  end
+
+  @doc """
   Returns designs with pagination and optional filters.
   """
   def list_designs(params) do
@@ -394,6 +406,8 @@ defmodule QrLabelSystem.Designs do
           border_radius: design.border_radius,
           label_type: design.label_type,
           is_template: design.is_template,
+          template_source: design.template_source,
+          template_category: design.template_category,
           elements: Enum.map(design.elements || [], &export_element/1)
         }
       end)
@@ -464,6 +478,8 @@ defmodule QrLabelSystem.Designs do
       border_radius: design_data["border_radius"] || 0,
       label_type: design_data["label_type"] || "single",
       is_template: design_data["is_template"] || false,
+      template_source: design_data["template_source"],
+      template_category: design_data["template_category"],
       user_id: user_id,
       elements: elements
     }

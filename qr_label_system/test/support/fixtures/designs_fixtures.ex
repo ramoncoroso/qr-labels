@@ -41,6 +41,20 @@ defmodule QrLabelSystem.DesignsFixtures do
     design
   end
 
+  def system_template_fixture(attrs \\ %{}) do
+    {:ok, design} =
+      attrs
+      |> Enum.into(%{
+        is_template: true,
+        template_source: "system",
+        template_category: "logistica"
+      })
+      |> valid_design_attributes()
+      |> Designs.create_design()
+
+    design
+  end
+
   def design_with_elements_fixture(attrs \\ %{}) do
     elements = [
       qr_element_attrs(),

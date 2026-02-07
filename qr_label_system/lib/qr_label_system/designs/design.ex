@@ -31,6 +31,10 @@ defmodule QrLabelSystem.Designs.Design do
 
     # Template flag for reusable designs
     field :is_template, :boolean, default: false
+    # Template source: "system" (built-in), "user" (user-created), nil (not a template)
+    field :template_source, :string
+    # Template category for system templates: "alimentacion", "farmaceutica", "logistica", "manufactura"
+    field :template_category, :string
 
     # Label type: "single" for static labels, "multiple" for data-bound labels
     field :label_type, :string, default: "single"
@@ -55,8 +59,10 @@ defmodule QrLabelSystem.Designs.Design do
       :name, :description,
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
-      :is_template, :label_type, :user_id
+      :is_template, :template_source, :template_category, :label_type, :user_id
     ])
+    |> validate_inclusion(:template_source, ~w(system user), message: "must be system or user")
+    |> validate_inclusion(:template_category, ~w(alimentacion farmaceutica logistica manufactura), message: "must be a valid category")
     |> cast_embed(:elements, with: &Element.changeset/2)
     |> validate_required([:name, :width_mm, :height_mm])
     |> validate_number(:width_mm, greater_than: 0, less_than_or_equal_to: 500)
@@ -81,6 +87,8 @@ defmodule QrLabelSystem.Designs.Design do
     |> put_change(:border_color, design.border_color)
     |> put_change(:border_radius, design.border_radius)
     |> put_change(:is_template, false)
+    |> put_change(:template_source, nil)
+    |> put_change(:template_category, nil)
     |> put_change(:label_type, design.label_type)
     |> put_embed(:elements, design.elements)
     |> validate_required([:name, :width_mm, :height_mm])
@@ -111,6 +119,8 @@ defmodule QrLabelSystem.Designs.Design do
       border_color: design.border_color,
       border_radius: design.border_radius,
       label_type: design.label_type,
+      template_source: design.template_source,
+      template_category: design.template_category,
       elements: Enum.map(design.elements || [], &element_to_json/1)
     }
   end

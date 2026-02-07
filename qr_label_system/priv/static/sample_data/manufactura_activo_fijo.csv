@@ -1,0 +1,8 @@
+num_activo,descripcion,departamento
+ACT-0001,Torno CNC Mazak QT-250,Mecanizado
+ACT-0002,Centro de mecanizado Haas VF-2,Mecanizado
+ACT-0003,Prensa hidráulica 200T Fagor,Estampación
+ACT-0004,Robot soldadura KUKA KR 16,Soldadura
+ACT-0005,Horno tratamiento térmico Nabertherm,Tratamientos
+ACT-0006,Máquina de medición por coordenadas Zeiss,Control de Calidad
+ACT-0007,Compresor de tornillo Atlas Copco GA30,Servicios Generales

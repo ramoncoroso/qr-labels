@@ -1,0 +1,8 @@
+num_lote,producto,fecha_inicio,fecha_fin,turno,maquina
+L2026-0281,Eje principal motor 45kW,02/02/2026,03/02/2026,Mañana,Torno CNC #1
+L2026-0282,Engranaje helicoidal Z32,02/02/2026,03/02/2026,Tarde,Centro mecanizado #2
+L2026-0290,Carcasa reductora superior,03/02/2026,04/02/2026,Mañana,Centro mecanizado #1
+L2026-0291,Piñón de ataque Z14,03/02/2026,04/02/2026,Noche,Torno CNC #2
+L2026-0298,Tapa cierre reductora,04/02/2026,05/02/2026,Mañana,Centro mecanizado #2
+L2026-0305,Cojinete de apoyo lateral,05/02/2026,06/02/2026,Tarde,Torno CNC #1
+L2026-0306,Eje principal motor 45kW,05/02/2026,06/02/2026,Noche,Torno CNC #2
