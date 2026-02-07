@@ -10,7 +10,7 @@ defmodule QrLabelSystem.Designs do
   alias QrLabelSystem.Repo
   alias QrLabelSystem.Cache
   alias QrLabelSystem.Designs.Design
-  alias QrLabelSystem.Designs.Category
+  alias QrLabelSystem.Designs.Tag
 
   @cache_ttl 30_000  # 30 seconds - reduced to prevent stale data issues
 
@@ -211,9 +211,27 @@ defmodule QrLabelSystem.Designs do
   """
   def duplicate_design(%Design{} = design, new_name, user_id) do
     # Note: elements is an embedded schema, no need to preload
-    design
-    |> Design.duplicate_changeset(%{name: new_name, user_id: user_id})
-    |> Repo.insert()
+    design = Repo.preload(design, :tags)
+
+    case design
+         |> Design.duplicate_changeset(%{name: new_name, user_id: user_id})
+         |> Repo.insert() do
+      {:ok, new_design} ->
+        # Copy tags to the new design
+        tag_assignments =
+          Enum.map(design.tags, fn tag ->
+            %{design_id: new_design.id, tag_id: tag.id}
+          end)
+
+        if tag_assignments != [] do
+          Repo.insert_all("design_tag_assignments", tag_assignments, on_conflict: :nothing)
+        end
+
+        {:ok, Repo.preload(new_design, :tags)}
+
+      error ->
+        error
+    end
   end
 
   # ==========================================
@@ -453,91 +471,128 @@ defmodule QrLabelSystem.Designs do
   end
 
   # ==========================================
-  # CATEGORY FUNCTIONS
+  # TAG FUNCTIONS
   # ==========================================
 
   @doc """
-  Returns the list of categories for a specific user.
+  Returns the list of tags for a specific user.
   """
-  def list_user_categories(user_id) do
+  def list_user_tags(user_id) do
     Repo.all(
-      from c in Category,
-        where: c.user_id == ^user_id,
-        order_by: [asc: c.name]
+      from t in Tag,
+        where: t.user_id == ^user_id,
+        order_by: [asc: t.name]
     )
   end
 
   @doc """
-  Gets a single category.
+  Gets a single tag.
   """
-  def get_category(id), do: Repo.get(Category, id)
+  def get_tag(id), do: Repo.get(Tag, id)
 
   @doc """
-  Gets a single category, raises if not found.
+  Gets a single tag, raises if not found.
   """
-  def get_category!(id), do: Repo.get!(Category, id)
+  def get_tag!(id), do: Repo.get!(Tag, id)
 
   @doc """
-  Creates a category.
+  Creates a tag.
   """
-  def create_category(attrs \\ %{}) do
-    %Category{}
-    |> Category.changeset(attrs)
+  def create_tag(attrs) do
+    %Tag{}
+    |> Tag.changeset(attrs)
     |> Repo.insert()
   end
 
   @doc """
-  Updates a category.
+  Finds an existing tag by name for a user, or creates it if it doesn't exist.
   """
-  def update_category(%Category{} = category, attrs) do
-    category
-    |> Category.changeset(attrs)
-    |> Repo.update()
+  def find_or_create_tag(user_id, name, color \\ "#6366F1") do
+    name = String.trim(name)
+
+    case Repo.one(from t in Tag, where: t.user_id == ^user_id and t.name == ^name) do
+      nil -> create_tag(%{user_id: user_id, name: name, color: color})
+      tag -> {:ok, tag}
+    end
   end
 
   @doc """
-  Deletes a category.
-  Designs with this category will have their category_id set to null.
+  Deletes a tag.
   """
-  def delete_category(%Category{} = category) do
-    Repo.delete(category)
+  def delete_tag(%Tag{} = tag) do
+    Repo.delete(tag)
   end
 
   @doc """
-  Returns an `%Ecto.Changeset{}` for tracking category changes.
+  Adds a tag to a design. Uses on_conflict: :nothing to avoid duplicates.
   """
-  def change_category(%Category{} = category, attrs \\ %{}) do
-    Category.changeset(category, attrs)
+  def add_tag_to_design(%Design{} = design, %Tag{} = tag) do
+    Repo.insert_all(
+      "design_tag_assignments",
+      [%{design_id: design.id, tag_id: tag.id}],
+      on_conflict: :nothing
+    )
+
+    {:ok, Repo.preload(design, :tags, force: true)}
   end
 
   @doc """
-  Returns the list of designs for a user, optionally filtered by category.
+  Removes a tag from a design.
   """
-  def list_user_designs_by_category(user_id, nil) do
-    # No filter - return all designs
+  def remove_tag_from_design(%Design{} = design, tag_id) do
+    from(dta in "design_tag_assignments",
+      where: dta.design_id == ^design.id and dta.tag_id == ^tag_id
+    )
+    |> Repo.delete_all()
+
+    {:ok, Repo.preload(design, :tags, force: true)}
+  end
+
+  @doc """
+  Preloads tags for a design or list of designs.
+  """
+  def preload_tags(design_or_designs) do
+    Repo.preload(design_or_designs, :tags)
+  end
+
+  @doc """
+  Searches user tags by name prefix for autocompletado.
+  Returns up to 10 matching tags.
+  """
+  def search_user_tags(user_id, prefix) do
+    sanitized = prefix
+      |> String.replace("\\", "\\\\")
+      |> String.replace("%", "\\%")
+      |> String.replace("_", "\\_")
+
+    search_term = "#{sanitized}%"
+
+    Repo.all(
+      from t in Tag,
+        where: t.user_id == ^user_id and ilike(t.name, ^search_term),
+        order_by: [asc: t.name],
+        limit: 10
+    )
+  end
+
+  @doc """
+  Returns designs for a user filtered by tag IDs.
+  A design must have ALL specified tags to be included.
+  """
+  def list_user_designs_by_tags(user_id, tag_ids) when tag_ids == [] do
     list_user_designs(user_id)
   end
 
-  def list_user_designs_by_category(user_id, "uncategorized") do
+  def list_user_designs_by_tags(user_id, tag_ids) do
+    tag_count = length(tag_ids)
+
     Repo.all(
       from d in Design,
-        where: d.user_id == ^user_id and is_nil(d.category_id),
+        join: dta in "design_tag_assignments", on: dta.design_id == d.id,
+        where: d.user_id == ^user_id and dta.tag_id in ^tag_ids,
+        group_by: d.id,
+        having: count(dta.tag_id) == ^tag_count,
         order_by: [desc: d.updated_at]
     )
-  end
-
-  def list_user_designs_by_category(user_id, category_id) do
-    Repo.all(
-      from d in Design,
-        where: d.user_id == ^user_id and d.category_id == ^category_id,
-        order_by: [desc: d.updated_at]
-    )
-  end
-
-  @doc """
-  Preloads category for a design or list of designs.
-  """
-  def preload_category(design_or_designs) do
-    Repo.preload(design_or_designs, :category)
   end
 end

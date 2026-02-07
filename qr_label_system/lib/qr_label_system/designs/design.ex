@@ -13,7 +13,7 @@ defmodule QrLabelSystem.Designs.Design do
   use Ecto.Schema
   import Ecto.Changeset
   alias QrLabelSystem.Designs.Element
-  alias QrLabelSystem.Designs.Category
+  alias QrLabelSystem.Designs.Tag
 
   schema "label_designs" do
     field :name, :string
@@ -41,7 +41,7 @@ defmodule QrLabelSystem.Designs.Design do
     embeds_many :elements, Element, on_replace: :delete
 
     belongs_to :user, QrLabelSystem.Accounts.User
-    belongs_to :category, Category
+    many_to_many :tags, Tag, join_through: "design_tag_assignments"
 
     timestamps(type: :utc_datetime)
   end
@@ -55,7 +55,7 @@ defmodule QrLabelSystem.Designs.Design do
       :name, :description,
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
-      :is_template, :label_type, :user_id, :category_id
+      :is_template, :label_type, :user_id
     ])
     |> cast_embed(:elements, with: &Element.changeset/2)
     |> validate_required([:name, :width_mm, :height_mm])
@@ -82,7 +82,6 @@ defmodule QrLabelSystem.Designs.Design do
     |> put_change(:border_radius, design.border_radius)
     |> put_change(:is_template, false)
     |> put_change(:label_type, design.label_type)
-    |> put_change(:category_id, design.category_id)
     |> put_embed(:elements, design.elements)
     |> validate_required([:name, :width_mm, :height_mm])
   end

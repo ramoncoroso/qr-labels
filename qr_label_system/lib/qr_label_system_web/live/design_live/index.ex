@@ -4,7 +4,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   import QrLabelSystemWeb.DesignComponents
 
   alias QrLabelSystem.Designs
-  alias QrLabelSystem.Designs.Category
   alias QrLabelSystem.UploadDataStore
 
   @max_file_size 5 * 1024 * 1024
@@ -12,8 +11,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     user_id = socket.assigns.current_user.id
-    designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
-    categories = Designs.list_user_categories(user_id)
+    designs = Designs.list_user_designs(user_id) |> Designs.preload_tags()
+    tags = Designs.list_user_tags(user_id)
 
     {:ok,
      socket
@@ -26,14 +25,12 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:show_data_modal, false)
      |> assign(:pending_edit_design, nil)
      |> assign(:filter, "all")
-     |> assign(:category_filter, nil)
-     |> assign(:categories, categories)
-     # Category management modal
-     |> assign(:show_category_modal, false)
-     |> assign(:editing_category, nil)
-     |> assign(:category_form, to_form(Designs.change_category(%Designs.Category{})))
-     # Assign category to design
-     |> assign(:assigning_category_to, nil)
+     # Tag state
+     |> assign(:tags, tags)
+     |> assign(:active_tag_ids, [])
+     |> assign(:tag_input, "")
+     |> assign(:tag_suggestions, [])
+     |> assign(:tagging_design_id, nil)
      # Import modal state
      |> assign(:show_import_modal, false)
      |> assign(:import_preview_designs, [])
@@ -85,7 +82,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         case Designs.duplicate_design(design, socket.assigns.current_user.id) do
           {:ok, new_design} ->
             updated_all = [new_design | socket.assigns.all_designs]
-            # Only show in stream if it matches current filter
             socket = socket
               |> assign(:all_designs, updated_all)
               |> put_flash(:info, "Diseño duplicado exitosamente")
@@ -138,6 +134,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       design when design.user_id == socket.assigns.current_user.id and new_name != "" ->
         case Designs.update_design(design, %{name: new_name}) do
           {:ok, updated_design} ->
+            updated_design = Designs.preload_tags(updated_design)
             updated_all = Enum.map(socket.assigns.all_designs, fn d ->
               if d.id == updated_design.id, do: updated_design, else: d
             end)
@@ -176,37 +173,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("validate_import", _params, socket) do
-    # Just validate, actual processing happens in handle_progress when done
     {:noreply, socket}
-  end
-
-  # Called when upload progress changes - we process when it's 100% done
-  def handle_progress(:backup_file, entry, socket) do
-    if entry.done? do
-      # File uploaded, consume and parse it
-      [content] =
-        consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
-          {:ok, File.read!(path)}
-        end)
-
-      case parse_import_file(content) do
-        {:ok, designs} ->
-          # All selected by default
-          selected_ids = MapSet.new(0..(length(designs) - 1))
-          {:noreply,
-           socket
-           |> assign(:show_import_modal, true)
-           |> assign(:import_preview_designs, designs)
-           |> assign(:import_selected_ids, selected_ids)
-           |> assign(:import_filename, entry.client_name)
-           |> assign(:import_file_content, content)}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Error al leer el archivo: #{reason}")}
-      end
-    else
-      {:noreply, socket}
-    end
   end
 
   @impl true
@@ -257,7 +224,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     designs = socket.assigns.import_preview_designs
     selected_ids = socket.assigns.import_selected_ids
 
-    # Filter only selected designs
     selected_designs =
       designs
       |> Enum.with_index()
@@ -284,26 +250,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     end
   end
 
-  # Legacy handler - now import goes through the modal
   @impl true
   def handle_event("import_backup", _params, socket) do
     {:noreply, socket}
-  end
-
-  defp parse_import_file(content) do
-    case Jason.decode(content) do
-      {:ok, %{"type" => "backup", "designs" => designs}} when is_list(designs) ->
-        {:ok, designs}
-
-      {:ok, %{"design" => design}} ->
-        {:ok, [design]}
-
-      {:ok, _} ->
-        {:error, "Formato de archivo no reconocido"}
-
-      {:error, _} ->
-        {:error, "JSON inválido"}
-    end
   end
 
   @impl true
@@ -318,8 +267,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         {:noreply, put_flash(socket, :error, "No tienes permiso para editar este diseño")}
 
       design ->
-        # Navigate directly to editor for all design types
-        # If data is needed, the editor will show "Cargar datos" button
         {:noreply, push_navigate(socket, to: ~p"/designs/#{design.id}/edit")}
     end
   end
@@ -340,7 +287,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     design = socket.assigns.pending_edit_design
     user_id = socket.assigns.current_user.id
 
-    # Clear existing data for this design
     UploadDataStore.clear(user_id, design.id)
 
     {:noreply,
@@ -358,12 +304,16 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:pending_edit_design, nil)}
   end
 
+  # ==========================================
+  # TYPE FILTER
+  # ==========================================
+
   @impl true
   def handle_event("filter", %{"type" => filter_type}, socket) do
     filtered_designs = apply_filters(
       socket.assigns.all_designs,
       filter_type,
-      socket.assigns.category_filter
+      socket.assigns.active_tag_ids
     )
 
     {:noreply,
@@ -372,157 +322,239 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> stream(:designs, filtered_designs, reset: true)}
   end
 
+  # ==========================================
+  # TAG FILTER EVENTS
+  # ==========================================
+
+  @impl true
+  def handle_event("toggle_tag_filter", %{"id" => tag_id_str}, socket) do
+    tag_id = String.to_integer(tag_id_str)
+    active = socket.assigns.active_tag_ids
+
+    new_active =
+      if tag_id in active do
+        List.delete(active, tag_id)
+      else
+        [tag_id | active]
+      end
+
+    filtered = apply_filters(socket.assigns.all_designs, socket.assigns.filter, new_active)
+
+    {:noreply,
+     socket
+     |> assign(:active_tag_ids, new_active)
+     |> stream(:designs, filtered, reset: true)}
+  end
+
+  @impl true
+  def handle_event("clear_tag_filters", _params, socket) do
+    filtered = apply_filters(socket.assigns.all_designs, socket.assigns.filter, [])
+
+    {:noreply,
+     socket
+     |> assign(:active_tag_ids, [])
+     |> stream(:designs, filtered, reset: true)}
+  end
+
+  # ==========================================
+  # TAG INLINE INPUT EVENTS
+  # ==========================================
+
+  @impl true
+  def handle_event("open_tag_input", %{"id" => design_id}, socket) do
+    {:noreply,
+     socket
+     |> assign(:tagging_design_id, design_id)
+     |> assign(:tag_input, "")
+     |> assign(:tag_suggestions, [])}
+  end
+
+  @impl true
+  def handle_event("close_tag_input", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:tagging_design_id, nil)
+     |> assign(:tag_input, "")
+     |> assign(:tag_suggestions, [])}
+  end
+
+  @impl true
+  def handle_event("tag_input_change", %{"value" => value}, socket) do
+    user_id = socket.assigns.current_user.id
+    value = String.trim(value)
+
+    suggestions =
+      if value != "" do
+        Designs.search_user_tags(user_id, value)
+      else
+        []
+      end
+
+    {:noreply,
+     socket
+     |> assign(:tag_input, value)
+     |> assign(:tag_suggestions, suggestions)}
+  end
+
+  @impl true
+  def handle_event("add_tag_to_design", %{"design-id" => design_id_str}, socket) do
+    tag_name = String.trim(socket.assigns.tag_input)
+
+    if tag_name == "" do
+      {:noreply, socket}
+    else
+      do_add_tag(socket, design_id_str, tag_name)
+    end
+  end
+
+  @impl true
+  def handle_event("select_tag_suggestion", %{"id" => tag_id_str, "design-id" => design_id_str}, socket) do
+    tag = Designs.get_tag!(String.to_integer(tag_id_str))
+    design_id = String.to_integer(design_id_str)
+    design = find_design(socket.assigns.all_designs, design_id)
+
+    case Designs.add_tag_to_design(design, tag) do
+      {:ok, updated_design} ->
+        {:noreply, update_design_in_state(socket, updated_design)}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Error al asignar tag")}
+    end
+  end
+
+  @impl true
+  def handle_event("remove_tag_from_design", %{"design-id" => design_id_str, "tag-id" => tag_id_str}, socket) do
+    design_id = String.to_integer(design_id_str)
+    tag_id = String.to_integer(tag_id_str)
+    design = find_design(socket.assigns.all_designs, design_id)
+
+    case Designs.remove_tag_from_design(design, tag_id) do
+      {:ok, updated_design} ->
+        updated_all = Enum.map(socket.assigns.all_designs, fn d ->
+          if d.id == updated_design.id, do: updated_design, else: d
+        end)
+
+        tags = Designs.list_user_tags(socket.assigns.current_user.id)
+        filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids)
+
+        {:noreply,
+         socket
+         |> assign(:all_designs, updated_all)
+         |> assign(:tags, tags)
+         |> stream(:designs, filtered, reset: true)}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Error al remover tag")}
+    end
+  end
+
+  # ==========================================
+  # UPLOAD PROGRESS CALLBACK
+  # ==========================================
+
+  def handle_progress(:backup_file, entry, socket) do
+    if entry.done? do
+      [content] =
+        consume_uploaded_entries(socket, :backup_file, fn %{path: path}, _entry ->
+          {:ok, File.read!(path)}
+        end)
+
+      case parse_import_file(content) do
+        {:ok, designs} ->
+          selected_ids = MapSet.new(0..(length(designs) - 1))
+          {:noreply,
+           socket
+           |> assign(:show_import_modal, true)
+           |> assign(:import_preview_designs, designs)
+           |> assign(:import_selected_ids, selected_ids)
+           |> assign(:import_filename, entry.client_name)
+           |> assign(:import_file_content, content)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Error al leer el archivo: #{reason}")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # ==========================================
+  # PRIVATE HELPERS
+  # ==========================================
+
+  defp parse_import_file(content) do
+    case Jason.decode(content) do
+      {:ok, %{"type" => "backup", "designs" => designs}} when is_list(designs) ->
+        {:ok, designs}
+
+      {:ok, %{"design" => design}} ->
+        {:ok, [design]}
+
+      {:ok, _} ->
+        {:error, "Formato de archivo no reconocido"}
+
+      {:error, _} ->
+        {:error, "JSON inválido"}
+    end
+  end
+
+  defp do_add_tag(socket, design_id_str, tag_name) do
+    user_id = socket.assigns.current_user.id
+    design_id = String.to_integer(design_id_str)
+    design = find_design(socket.assigns.all_designs, design_id)
+
+    case Designs.find_or_create_tag(user_id, tag_name) do
+      {:ok, tag} ->
+        case Designs.add_tag_to_design(design, tag) do
+          {:ok, updated_design} ->
+            {:noreply, update_design_in_state(socket, updated_design)}
+
+          _ ->
+            {:noreply, put_flash(socket, :error, "Error al asignar tag")}
+        end
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Error al crear tag")}
+    end
+  end
+
+  defp update_design_in_state(socket, updated_design) do
+    updated_all = Enum.map(socket.assigns.all_designs, fn d ->
+      if d.id == updated_design.id, do: updated_design, else: d
+    end)
+
+    tags = Designs.list_user_tags(socket.assigns.current_user.id)
+    filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids)
+
+    socket
+    |> assign(:all_designs, updated_all)
+    |> assign(:tags, tags)
+    |> assign(:tagging_design_id, nil)
+    |> assign(:tag_input, "")
+    |> assign(:tag_suggestions, [])
+    |> stream(:designs, filtered, reset: true)
+  end
+
+  defp find_design(all_designs, design_id) do
+    Enum.find(all_designs, fn d -> d.id == design_id end)
+  end
+
+  defp apply_filters(designs, type_filter, active_tag_ids) do
+    designs
+    |> filter_designs(type_filter)
+    |> filter_by_tags(active_tag_ids)
+  end
+
   defp filter_designs(designs, "all"), do: designs
   defp filter_designs(designs, "single"), do: Enum.filter(designs, &(&1.label_type == "single"))
   defp filter_designs(designs, "multiple"), do: Enum.filter(designs, &(&1.label_type == "multiple"))
 
-  # Category filter event
-  @impl true
-  def handle_event("filter_category", %{"category" => category_id}, socket) do
-    category_filter = if category_id == "", do: nil, else: category_id
-
-    filtered = apply_filters(
-      socket.assigns.all_designs,
-      socket.assigns.filter,
-      category_filter
-    )
-
-    {:noreply,
-     socket
-     |> assign(:category_filter, category_filter)
-     |> stream(:designs, filtered, reset: true)}
-  end
-
-  # Category management
-  @impl true
-  def handle_event("open_category_modal", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:show_category_modal, true)
-     |> assign(:editing_category, nil)
-     |> assign(:category_form, to_form(Designs.change_category(%Category{})))}
-  end
-
-  @impl true
-  def handle_event("close_category_modal", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:show_category_modal, false)
-     |> assign(:editing_category, nil)}
-  end
-
-  @impl true
-  def handle_event("edit_category", %{"id" => id}, socket) do
-    category = Designs.get_category!(id)
-    changeset = Designs.change_category(category)
-
-    {:noreply,
-     socket
-     |> assign(:editing_category, category)
-     |> assign(:category_form, to_form(changeset))}
-  end
-
-  @impl true
-  def handle_event("save_category", %{"category" => params}, socket) do
-    user_id = socket.assigns.current_user.id
-
-    result =
-      if socket.assigns.editing_category do
-        Designs.update_category(socket.assigns.editing_category, params)
-      else
-        Designs.create_category(Map.put(params, "user_id", user_id))
-      end
-
-    case result do
-      {:ok, _category} ->
-        categories = Designs.list_user_categories(user_id)
-        designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
-
-        {:noreply,
-         socket
-         |> assign(:categories, categories)
-         |> assign(:all_designs, designs)
-         |> assign(:editing_category, nil)
-         |> assign(:category_form, to_form(Designs.change_category(%Category{})))
-         |> stream(:designs, apply_filters(designs, socket.assigns.filter, socket.assigns.category_filter), reset: true)
-         |> put_flash(:info, "Categoría guardada")}
-
-      {:error, changeset} ->
-        {:noreply, assign(socket, :category_form, to_form(changeset))}
-    end
-  end
-
-  @impl true
-  def handle_event("delete_category", %{"id" => id}, socket) do
-    category = Designs.get_category!(id)
-    {:ok, _} = Designs.delete_category(category)
-
-    user_id = socket.assigns.current_user.id
-    categories = Designs.list_user_categories(user_id)
-    designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
-
-    # Reset category filter if deleted category was selected
-    category_filter =
-      if socket.assigns.category_filter == to_string(id),
-        do: nil,
-        else: socket.assigns.category_filter
-
-    {:noreply,
-     socket
-     |> assign(:categories, categories)
-     |> assign(:all_designs, designs)
-     |> assign(:category_filter, category_filter)
-     |> stream(:designs, apply_filters(designs, socket.assigns.filter, category_filter), reset: true)
-     |> put_flash(:info, "Categoría eliminada")}
-  end
-
-  # Assign category to design
-  @impl true
-  def handle_event("open_assign_category", %{"id" => id}, socket) do
-    {:noreply, assign(socket, :assigning_category_to, id)}
-  end
-
-  @impl true
-  def handle_event("close_assign_category", _params, socket) do
-    {:noreply, assign(socket, :assigning_category_to, nil)}
-  end
-
-  @impl true
-  def handle_event("assign_category", %{"category" => category_id}, socket) do
-    design_id = socket.assigns.assigning_category_to
-    design = Designs.get_design!(design_id)
-
-    category_id = if category_id == "", do: nil, else: category_id
-
-    case Designs.update_design(design, %{category_id: category_id}) do
-      {:ok, updated_design} ->
-        updated_design = Designs.preload_category(updated_design)
-        user_id = socket.assigns.current_user.id
-        designs = Designs.list_user_designs(user_id) |> Designs.preload_category()
-
-        {:noreply,
-         socket
-         |> assign(:all_designs, designs)
-         |> assign(:assigning_category_to, nil)
-         |> stream(:designs, apply_filters(designs, socket.assigns.filter, socket.assigns.category_filter), reset: true)}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Error al asignar categoría")}
-    end
-  end
-
-  defp apply_filters(designs, type_filter, category_filter) do
-    designs
-    |> filter_designs(type_filter)
-    |> filter_by_category(category_filter)
-  end
-
-  defp filter_by_category(designs, nil), do: designs
-  defp filter_by_category(designs, "uncategorized") do
-    Enum.filter(designs, &is_nil(&1.category_id))
-  end
-  defp filter_by_category(designs, category_id) do
-    Enum.filter(designs, &(to_string(&1.category_id) == category_id))
+  defp filter_by_tags(designs, []), do: designs
+  defp filter_by_tags(designs, active_tag_ids) do
+    Enum.filter(designs, fn design ->
+      design_tag_ids = Enum.map(design.tags, & &1.id)
+      Enum.all?(active_tag_ids, &(&1 in design_tag_ids))
+    end)
   end
 
   defp count_by_type(designs, type) do
@@ -590,7 +622,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
         <!-- Filter Tabs -->
         <div :if={@has_designs} class="mb-4 border-b border-gray-200">
-          <div class="flex items-center justify-between">
           <nav class="-mb-px flex space-x-6" aria-label="Tabs">
             <button
               phx-click="filter"
@@ -633,33 +664,33 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
               </span>
             </button>
           </nav>
+        </div>
 
-          <!-- Category Filter -->
-          <div class="flex items-center gap-2 mb-px">
-            <select
-              phx-change="filter_category"
-              name="category"
-              class="text-sm border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 py-1.5"
-            >
-              <option value="">Todas las categorías</option>
-              <option value="uncategorized" selected={@category_filter == "uncategorized"}>Sin categoría</option>
-              <%= for cat <- @categories do %>
-                <option value={cat.id} selected={@category_filter == to_string(cat.id)}>
-                  <%= cat.name %>
-                </option>
-              <% end %>
-            </select>
+        <!-- Tag Filter Chips -->
+        <div :if={@has_designs && @tags != []} class="mb-4 flex flex-wrap items-center gap-2">
+          <span class="text-sm text-gray-500 mr-1">Tags:</span>
+          <%= for tag <- @tags do %>
             <button
-              phx-click="open_category_modal"
-              class="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-              title="Gestionar categorías"
+              phx-click="toggle_tag_filter"
+              phx-value-id={tag.id}
+              class={"inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border " <>
+                if(tag.id in @active_tag_ids,
+                  do: "ring-2 ring-offset-1 ring-blue-400",
+                  else: "opacity-75 hover:opacity-100"
+                )}
+              style={"background-color: #{tag.color}20; color: #{tag.color}; border-color: #{tag.color}40;"}
             >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
-              </svg>
+              <span class="w-2 h-2 rounded-full" style={"background-color: #{tag.color};"}></span>
+              <%= tag.name %>
             </button>
-          </div>
-          </div>
+          <% end %>
+          <button
+            :if={@active_tag_ids != []}
+            phx-click="clear_tag_filters"
+            class="text-xs text-gray-500 hover:text-gray-700 underline ml-1"
+          >
+            Limpiar filtros
+          </button>
         </div>
 
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
@@ -697,7 +728,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                       <%= design.name %>
                     </h3>
                   <% end %>
-                  <p class="text-sm text-gray-500 flex items-center gap-2">
+                  <p class="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
                     <span class="inline-flex items-center">
                       <svg class="w-3.5 h-3.5 mr-1 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
@@ -726,32 +757,79 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                         Plantilla
                       </span>
                     <% end %>
-                    <%= if design.category do %>
+                  </p>
+                  <!-- Tag Chips on Card -->
+                  <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <%= for tag <- (design.tags || []) do %>
                       <span
-                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                        style={"background-color: #{design.category.color}20; color: #{design.category.color};"}
+                        class="group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={"background-color: #{tag.color}20; color: #{tag.color};"}
                       >
-                        <%= design.category.name %>
+                        <%= tag.name %>
+                        <button
+                          type="button"
+                          phx-click="remove_tag_from_design"
+                          phx-value-design-id={design.id}
+                          phx-value-tag-id={tag.id}
+                          class="ml-0.5 opacity-0 group-hover/tag:opacity-100 hover:text-red-500 transition-opacity"
+                          title="Quitar tag"
+                        >
+                          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                       </span>
                     <% end %>
-                  </p>
+
+                    <!-- Add Tag Button / Inline Input -->
+                    <%= if to_string(design.id) == @tagging_design_id do %>
+                      <div class="relative" phx-click-away="close_tag_input">
+                        <form phx-submit="add_tag_to_design" phx-value-design-id={design.id}>
+                          <input
+                            type="text"
+                            value={@tag_input}
+                            phx-keyup="tag_input_change"
+                            phx-debounce="200"
+                            name="value"
+                            placeholder="Nombre del tag..."
+                            autofocus
+                            class="text-xs border border-gray-300 rounded-full px-2.5 py-0.5 w-32 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </form>
+                        <!-- Suggestions dropdown -->
+                        <div :if={@tag_suggestions != []} class="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+                          <%= for suggestion <- @tag_suggestions do %>
+                            <button
+                              type="button"
+                              phx-click="select_tag_suggestion"
+                              phx-value-id={suggestion.id}
+                              phx-value-design-id={design.id}
+                              class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
+                            >
+                              <span class="w-3 h-3 rounded-full flex-shrink-0" style={"background-color: #{suggestion.color};"}></span>
+                              <span class="truncate"><%= suggestion.name %></span>
+                            </button>
+                          <% end %>
+                        </div>
+                      </div>
+                    <% else %>
+                      <button
+                        type="button"
+                        phx-click="open_tag_input"
+                        phx-value-id={design.id}
+                        class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-400 hover:text-blue-500 transition opacity-0 group-hover/card:opacity-100"
+                        title="Añadir tag"
+                      >
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                      </button>
+                    <% end %>
+                  </div>
                 </div>
               </.link>
 
               <div class="flex items-center gap-2">
-                <!-- Category Button -->
-                <button
-                  type="button"
-                  phx-click="open_assign_category"
-                  phx-value-id={design.id}
-                  class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-700 text-sm font-medium transition-all duration-200"
-                  title="Asignar categoría"
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
-                </button>
-
                 <!-- Duplicate Button -->
                 <button
                   phx-click="duplicate"
@@ -829,165 +907,6 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                 class="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-gray-500 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:w-auto sm:text-sm transition"
               >
                 Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Assign Category Modal -->
-      <%= if @assigning_category_to do %>
-        <% design = Enum.find(@all_designs, fn d -> to_string(d.id) == @assigning_category_to end) %>
-        <%= if design do %>
-          <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="assign-category-modal" role="dialog" aria-modal="true">
-            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-              <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" phx-click="close_assign_category"></div>
-              <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-              <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-sm sm:w-full">
-                <div class="bg-white px-6 pt-6 pb-4">
-                  <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-900">Asignar categoría</h3>
-                    <button phx-click="close_assign_category" class="text-gray-400 hover:text-gray-600 transition">
-                      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                  <p class="text-sm text-gray-500 mb-4">Selecciona una categoría para "<%= design.name %>"</p>
-
-                  <div class="space-y-1">
-                    <button
-                      phx-click="assign_category"
-                      phx-value-category=""
-                      class={"w-full text-left px-4 py-3 rounded-lg text-sm transition #{if is_nil(design.category_id), do: "bg-blue-50 text-blue-700 border-2 border-blue-200", else: "hover:bg-gray-100 text-gray-700"}"}
-                    >
-                      Sin categoría
-                    </button>
-                    <%= for cat <- @categories do %>
-                      <button
-                        phx-click="assign_category"
-                        phx-value-category={cat.id}
-                        class={"w-full text-left px-4 py-3 rounded-lg text-sm transition flex items-center #{if design.category_id == cat.id, do: "bg-blue-50 text-blue-700 border-2 border-blue-200", else: "hover:bg-gray-100 text-gray-700"}"}
-                      >
-                        <span class="inline-block w-4 h-4 rounded-full mr-3" style={"background-color: #{cat.color};"}></span>
-                        <%= cat.name %>
-                      </button>
-                    <% end %>
-                  </div>
-                </div>
-
-                <div class="bg-gray-50 px-6 py-4">
-                  <button
-                    phx-click="close_assign_category"
-                    class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        <% end %>
-      <% end %>
-
-      <!-- Category Management Modal -->
-      <div :if={@show_category_modal} class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="category-modal-title" role="dialog" aria-modal="true">
-        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-          <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" phx-click="close_category_modal"></div>
-          <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-          <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full">
-            <div class="bg-white px-6 pt-6 pb-4">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-semibold text-gray-900" id="category-modal-title">
-                  Gestionar categorías
-                </h3>
-                <button phx-click="close_category_modal" class="text-gray-400 hover:text-gray-600 transition">
-                  <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <!-- Category Form -->
-              <.form for={@category_form} phx-submit="save_category" class="mb-4">
-                <div class="flex gap-2">
-                  <div class="flex-1">
-                    <.input field={@category_form[:name]} placeholder="Nueva categoría..." class="text-sm" />
-                  </div>
-                  <div class="w-16">
-                    <.input field={@category_form[:color]} type="color" class="h-10 p-1 cursor-pointer" />
-                  </div>
-                  <button
-                    type="submit"
-                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition"
-                  >
-                    <%= if @editing_category, do: "Guardar", else: "Añadir" %>
-                  </button>
-                </div>
-                <%= if @editing_category do %>
-                  <button
-                    type="button"
-                    phx-click="close_category_modal"
-                    phx-click="edit_category"
-                    phx-value-id=""
-                    class="mt-2 text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    Cancelar edición
-                  </button>
-                <% end %>
-              </.form>
-
-              <!-- Category List -->
-              <div class="border-t border-gray-200 pt-4">
-                <h4 class="text-sm font-medium text-gray-700 mb-2">Categorías existentes</h4>
-                <%= if length(@categories) == 0 do %>
-                  <p class="text-sm text-gray-500 py-4 text-center">No hay categorías creadas</p>
-                <% else %>
-                  <div class="space-y-2 max-h-48 overflow-y-auto">
-                    <%= for category <- @categories do %>
-                      <div class="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
-                        <div class="flex items-center gap-2">
-                          <span class="w-4 h-4 rounded-full" style={"background-color: #{category.color};"}></span>
-                          <span class="text-sm font-medium text-gray-900"><%= category.name %></span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                          <button
-                            phx-click="edit_category"
-                            phx-value-id={category.id}
-                            class="p-1 text-gray-400 hover:text-blue-600 transition"
-                            title="Editar"
-                          >
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                          <button
-                            phx-click="delete_category"
-                            phx-value-id={category.id}
-                            data-confirm="¿Eliminar esta categoría? Los diseños asociados quedarán sin categoría."
-                            class="p-1 text-gray-400 hover:text-red-600 transition"
-                            title="Eliminar"
-                          >
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    <% end %>
-                  </div>
-                <% end %>
-              </div>
-            </div>
-
-            <div class="bg-gray-50 px-6 py-4">
-              <button
-                phx-click="close_category_modal"
-                class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-              >
-                Cerrar
               </button>
             </div>
           </div>
