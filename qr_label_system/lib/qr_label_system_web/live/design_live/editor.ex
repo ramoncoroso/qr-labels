@@ -2420,13 +2420,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
             />
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="block text-sm font-medium text-gray-700">X (mm)</label>
+              <label class="block text-xs font-medium text-gray-500">X</label>
               <input
                 type="number"
                 name="value"
                 step="0.1"
+                placeholder="mm"
                 value={@element.x}
                 phx-blur="update_element"
                 phx-value-field="x"
@@ -2434,11 +2435,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">Y (mm)</label>
+              <label class="block text-xs font-medium text-gray-500">Y</label>
               <input
                 type="number"
                 name="value"
                 step="0.1"
+                placeholder="mm"
                 value={@element.y}
                 phx-blur="update_element"
                 phx-value-field="y"
@@ -2447,13 +2449,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
           <%= if @element.type != "text" do %>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-3 gap-2">
               <div>
-                <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
+                <label class="block text-xs font-medium text-gray-500">Ancho</label>
                 <input
                   type="number"
                   name="value"
                   step="0.1"
+                  placeholder="mm"
                   value={@element.width}
                   phx-blur="update_element"
                   phx-value-field="width"
@@ -2461,31 +2464,49 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 />
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
+                <label class="block text-xs font-medium text-gray-500">Alto</label>
                 <input
                   type="number"
                   name="value"
                   step="0.1"
+                  placeholder="mm"
                   value={@element.height}
                   phx-blur="update_element"
                   phx-value-field="height"
                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
               </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500">Rotacion</label>
+                <input
+                  type="number"
+                  name="value"
+                  step="1"
+                  placeholder="&deg;"
+                  value={@element.rotation || 0}
+                  phx-blur="update_element"
+                  phx-value-field="rotation"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
+              </div>
+            </div>
+          <% else %>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs font-medium text-gray-500">Rotacion</label>
+                <input
+                  type="number"
+                  name="value"
+                  step="1"
+                  placeholder="&deg;"
+                  value={@element.rotation || 0}
+                  phx-blur="update_element"
+                  phx-value-field="rotation"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
+              </div>
             </div>
           <% end %>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Rotación</label>
-            <input
-              type="number"
-              name="value"
-              step="1"
-              value={@element.rotation || 0}
-              phx-blur="update_element"
-              phx-value-field="rotation"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            />
-          </div>
         </div>
       </div>
 
