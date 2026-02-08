@@ -326,11 +326,15 @@ defmodule QrLabelSystemWeb.CoreComponents do
   def input(%{type: "select"} = assigns) do
     ~H"""
     <div phx-feedback-for={@name}>
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}><%= @label %><span :if={@rest[:required]} class="text-indigo-500 ml-0.5">*</span></.label>
       <select
         id={@id}
         name={@name}
-        class="mt-2 block w-full rounded-md border border-gray-300 bg-white shadow-sm focus:border-slate-400 focus:ring-0 sm:text-sm"
+        class={[
+          "mt-2 block w-full rounded-md border bg-white shadow-sm focus:ring-0 sm:text-sm",
+          @rest[:required] && "border-indigo-300 focus:border-indigo-400",
+          !@rest[:required] && "border-gray-300 focus:border-slate-400"
+        ]}
         multiple={@multiple}
         {@rest}
       >
@@ -345,14 +349,16 @@ defmodule QrLabelSystemWeb.CoreComponents do
   def input(%{type: "textarea"} = assigns) do
     ~H"""
     <div phx-feedback-for={@name}>
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}><%= @label %><span :if={@rest[:required]} class="text-indigo-500 ml-0.5">*</span></.label>
       <textarea
         id={@id}
         name={@name}
         class={[
-          "mt-2 block w-full rounded-lg text-slate-900 focus:ring-0 sm:text-sm sm:leading-6",
-          "min-h-[6rem] phx-no-feedback:border-slate-300 phx-no-feedback:focus:border-slate-400",
-          @errors == [] && "border-slate-300 focus:border-slate-400",
+          "mt-2 block w-full rounded-lg text-slate-900 focus:ring-0 sm:text-sm sm:leading-6 min-h-[6rem]",
+          @rest[:required] && "phx-no-feedback:border-indigo-300 phx-no-feedback:focus:border-indigo-400",
+          !@rest[:required] && "phx-no-feedback:border-slate-300 phx-no-feedback:focus:border-slate-400",
+          @errors == [] && @rest[:required] && "border-indigo-300 focus:border-indigo-400",
+          @errors == [] && !@rest[:required] && "border-slate-300 focus:border-slate-400",
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
         {@rest}
@@ -366,7 +372,7 @@ defmodule QrLabelSystemWeb.CoreComponents do
   def input(assigns) do
     ~H"""
     <div phx-feedback-for={@name}>
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}><%= @label %><span :if={@rest[:required]} class="text-indigo-500 ml-0.5">*</span></.label>
       <input
         type={@type}
         name={@name}
@@ -374,8 +380,10 @@ defmodule QrLabelSystemWeb.CoreComponents do
         value={Phoenix.HTML.Form.normalize_value(@type, @value)}
         class={[
           "mt-2 block w-full rounded-lg text-slate-900 focus:ring-0 sm:text-sm sm:leading-6",
-          "phx-no-feedback:border-slate-300 phx-no-feedback:focus:border-slate-400",
-          @errors == [] && "border-slate-300 focus:border-slate-400",
+          @rest[:required] && "phx-no-feedback:border-indigo-300 phx-no-feedback:focus:border-indigo-400",
+          !@rest[:required] && "phx-no-feedback:border-slate-300 phx-no-feedback:focus:border-slate-400",
+          @errors == [] && @rest[:required] && "border-indigo-300 focus:border-indigo-400",
+          @errors == [] && !@rest[:required] && "border-slate-300 focus:border-slate-400",
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
         {@rest}

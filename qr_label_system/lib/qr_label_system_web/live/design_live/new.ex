@@ -160,42 +160,42 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
         <!-- Form Card -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <.simple_form
-            for={@form}
-            id="design-form"
-            phx-change="validate"
-            phx-submit="save"
-            action={~p"/designs/new"}
-            method="post"
-          >
+          <.form for={@form} id="design-form" phx-change="validate" phx-submit="save" action={~p"/designs/new"} method="post">
             <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-            <.input field={@form[:name]} type="text" label="Nombre del diseño" required />
-            <.input field={@form[:description]} type="textarea" label="Descripción" />
+            <div class="space-y-4">
+              <p class="text-xs text-gray-400"><span class="text-indigo-500">*</span> Campos obligatorios</p>
+              <%!-- Row 1: Name + Description --%>
+              <div class="grid grid-cols-3 gap-4">
+                <.input field={@form[:name]} type="text" label="Nombre del diseño" required />
+                <div class="col-span-2">
+                  <.input field={@form[:description]} type="text" label="Descripción" />
+                </div>
+              </div>
 
-            <div class="grid grid-cols-2 gap-4">
-              <.input field={@form[:width_mm]} type="number" label="Ancho (mm)" step="0.1" min="1" max="500" required />
-              <.input field={@form[:height_mm]} type="number" label="Alto (mm)" step="0.1" min="1" max="500" required />
+              <%!-- Row 2: Dimensions + Colors --%>
+              <div class="grid grid-cols-4 gap-4">
+                <.input field={@form[:width_mm]} type="number" label="Ancho (mm)" step="0.1" min="1" max="500" required />
+                <.input field={@form[:height_mm]} type="number" label="Alto (mm)" step="0.1" min="1" max="500" required />
+                <.input field={@form[:background_color]} type="color" label="Color de fondo" value="#FFFFFF" />
+                <.input field={@form[:border_color]} type="color" label="Color del borde" value="#000000" />
+              </div>
+
+              <%!-- Row 3: Border settings --%>
+              <div class="grid grid-cols-2 gap-4">
+                <.input field={@form[:border_width]} type="number" label="Grosor del borde (mm)" step="0.1" min="0" value="0" />
+                <.input field={@form[:border_radius]} type="number" label="Radio del borde (mm)" step="0.1" min="0" value="0" />
+              </div>
+
+              <.input field={@form[:is_template]} type="checkbox" label="Guardar como plantilla reutilizable" />
+
+              <div class="flex items-center justify-between pt-2">
+                <.link navigate={~p"/generate"} class="text-sm text-gray-600 hover:text-gray-900">
+                  Cancelar
+                </.link>
+                <.button phx-disable-with="Guardando...">Crear y Diseñar</.button>
+              </div>
             </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <.input field={@form[:background_color]} type="color" label="Color de fondo" value="#FFFFFF" />
-              <.input field={@form[:border_width]} type="number" label="Grosor del borde (mm)" step="0.1" min="0" value="0" />
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <.input field={@form[:border_color]} type="color" label="Color del borde" value="#000000" />
-              <.input field={@form[:border_radius]} type="number" label="Radio del borde (mm)" step="0.1" min="0" value="0" />
-            </div>
-
-            <.input field={@form[:is_template]} type="checkbox" label="Guardar como plantilla reutilizable" />
-
-            <:actions>
-              <.link navigate={~p"/generate"} class="text-sm text-gray-600 hover:text-gray-900">
-                Cancelar
-              </.link>
-              <.button phx-disable-with="Guardando...">Crear y Diseñar</.button>
-            </:actions>
-          </.simple_form>
+          </.form>
         </div>
       </div>
     </div>
