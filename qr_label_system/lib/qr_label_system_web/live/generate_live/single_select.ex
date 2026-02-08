@@ -10,7 +10,6 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
     user_id = socket.assigns.current_user.id
     all_designs = Designs.list_user_designs_by_type(user_id, "single")
     tags = Designs.list_user_tags(user_id)
-    system_templates = Designs.list_system_templates()
 
     {:ok,
      socket
@@ -18,8 +17,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
      |> assign(:all_designs, all_designs)
      |> assign(:designs, all_designs)
      |> assign(:tags, tags)
-     |> assign(:active_tag_ids, [])
-     |> assign(:system_templates, system_templates)}
+     |> assign(:active_tag_ids, [])}
   end
 
   @impl true
@@ -33,27 +31,6 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
      socket
      |> put_flash(:return_to, "single_select")
      |> push_navigate(to: ~p"/designs/new?type=single")}
-  end
-
-  @impl true
-  def handle_event("use_template", %{"id" => id}, socket) do
-    case Designs.get_design(id) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "La plantilla ya no existe")}
-
-      template ->
-        user_id = socket.assigns.current_user.id
-
-        case Designs.duplicate_design(template, user_id) do
-          {:ok, new_design} ->
-            # Update to single type since we're in single flow
-            {:ok, new_design} = Designs.update_design(new_design, %{label_type: "single"})
-            {:noreply, push_navigate(socket, to: ~p"/designs/#{new_design.id}/edit")}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Error al usar la plantilla")}
-        end
-    end
   end
 
   @impl true
@@ -217,31 +194,6 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
             <p class="text-gray-500">Aún no tienes diseños. Crea tu primer diseño o usa una plantilla.</p>
           </div>
         <% end %>
-
-        <!-- System Templates Section -->
-        <div :if={@system_templates != []} class="mt-10">
-          <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Plantillas del sistema</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div
-              :for={template <- @system_templates}
-              class="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-blue-300 transition-all p-4 cursor-pointer"
-            >
-              <div class="bg-gray-50 rounded-lg p-3 flex justify-center items-center min-h-[70px] mb-3">
-                <.design_thumbnail design={template} max_width={120} max_height={70} />
-              </div>
-              <h4 class="font-semibold text-gray-900 text-sm"><%= template.name %></h4>
-              <p class="text-xs text-gray-500 mt-1 line-clamp-1"><%= template.description %></p>
-              <p class="text-xs text-gray-400 mt-1"><%= template.width_mm %> × <%= template.height_mm %> mm</p>
-              <button
-                phx-click="use_template"
-                phx-value-id={template.id}
-                class="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-medium transition"
-              >
-                Usar plantilla
-              </button>
-            </div>
-          </div>
-        </div>
 
         <!-- Back button -->
         <div class="mt-8">

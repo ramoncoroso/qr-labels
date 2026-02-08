@@ -8,6 +8,22 @@ import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
 
+/**
+ * Print a PDF blob by opening it in a new window and triggering print().
+ */
+function printPdfBlob(blob) {
+  const url = URL.createObjectURL(blob)
+  const win = window.open(url, '_blank')
+  if (!win) return
+
+  win.addEventListener('load', () => {
+    setTimeout(() => {
+      win.focus()
+      win.print()
+    }, 300)
+  })
+}
+
 const SingleLabelPrint = {
   mounted() {
     this.setupEventListeners()
@@ -61,21 +77,20 @@ const SingleLabelPrint = {
     const w = design.width_mm
     const h = design.height_mm
 
-    const pdf = new jsPDF({
-      orientation: w > h ? 'l' : 'p',
-      unit: 'mm',
-      format: [w, h]
-    })
+    // Use A4 pages with the label centered for reliable cross-platform printing.
+    const pageW = 210
+    const pageH = 297
+    const offsetX = (pageW - w) / 2
+    const offsetY = (pageH - h) / 2
+
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
 
     for (let i = 0; i < quantity; i++) {
-      if (i > 0) {
-        pdf.addPage([w, h], w > h ? 'l' : 'p')
-      }
-      await this.renderLabelToPDF(pdf, design, codes, 0, 0)
+      if (i > 0) pdf.addPage('a4', 'p')
+      await this.renderLabelToPDF(pdf, design, codes, offsetX, offsetY)
     }
 
-    pdf.autoPrint()
-    window.open(pdf.output('bloburl'), '_blank')
+    printPdfBlob(pdf.output('blob'))
   },
 
   async exportPDF(design, quantity) {
