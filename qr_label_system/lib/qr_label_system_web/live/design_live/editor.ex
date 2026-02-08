@@ -3347,80 +3347,123 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <%= if @element.type == "text" do %>
         <div class="border-b border-gray-200">
           <.section_header id="typography" title="Tipografía" collapsed={MapSet.member?(@collapsed_sections, "typography")} />
-          <div class={if MapSet.member?(@collapsed_sections, "typography"), do: "hidden", else: "pb-3 space-y-3"}>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Tamaño fuente</label>
-                <input
-                  type="number"
-                  name="value"
-                  value={@element.font_size || 12}
-                  phx-blur="update_element"
-                  phx-value-field="font_size"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
+          <div class={if MapSet.member?(@collapsed_sections, "typography"), do: "hidden", else: "pb-3 space-y-2.5"}>
+            <%!-- Row 1: Font family (full width, no label) --%>
+            <form phx-change="update_element">
+              <input type="hidden" name="field" value="font_family" />
+              <select
+                name="value"
+                class="block w-full rounded-md border-gray-300 shadow-sm text-sm py-1.5"
+              >
+                <option value="Arial" selected={@element.font_family == "Arial"}>Arial</option>
+                <option value="Helvetica" selected={@element.font_family == "Helvetica"}>Helvetica</option>
+                <option value="Verdana" selected={@element.font_family == "Verdana"}>Verdana</option>
+                <option value="Courier New" selected={@element.font_family == "Courier New"}>Courier New</option>
+                <option value="Times New Roman" selected={@element.font_family == "Times New Roman"}>Times New Roman</option>
+                <option value="Georgia" selected={@element.font_family == "Georgia"}>Georgia</option>
+                <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif</option>
+                <option value="serif" selected={@element.font_family == "serif"}>Serif</option>
+                <option value="monospace" selected={@element.font_family == "monospace"}>Monospace</option>
+              </select>
+            </form>
+
+            <%!-- Row 2: Size + Bold + Color + Alignment --%>
+            <div class="flex items-center gap-1.5">
+              <%!-- Font size --%>
+              <input
+                type="number"
+                name="value"
+                value={round(@element.font_size || 12)}
+                phx-blur="update_element"
+                phx-value-field="font_size"
+                step="1"
+                min="4"
+                max="200"
+                class="w-14 rounded-md border-gray-300 shadow-sm text-sm py-1.5 px-2 text-center"
+                title="Tamaño de fuente"
+              />
+
+              <%!-- Bold toggle --%>
+              <button
+                type="button"
+                phx-click="update_element"
+                phx-value-field="font_weight"
+                phx-value-value={if (@element.font_weight || "normal") == "bold", do: "normal", else: "bold"}
+                class={"w-8 h-8 flex items-center justify-center rounded-md border text-sm font-bold transition " <>
+                  if (@element.font_weight || "normal") == "bold",
+                    do: "bg-gray-800 text-white border-gray-800",
+                    else: "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"}
+                title="Negrita"
+              >
+                B
+              </button>
+
+              <%!-- Color picker --%>
+              <input
+                type="color"
+                name="value"
+                value={@element.color || "#000000"}
+                phx-change="update_element"
+                phx-value-field="color"
+                class="w-8 h-8 rounded-md border border-gray-300 cursor-pointer p-0.5"
+                title="Color de texto"
+              />
+
+              <%!-- Spacer --%>
+              <div class="w-px h-5 bg-gray-200 mx-0.5"></div>
+
+              <%!-- Alignment buttons --%>
+              <div class="flex rounded-md border border-gray-300 overflow-hidden">
+                <button
+                  type="button"
+                  phx-click="update_element"
+                  phx-value-field="text_align"
+                  phx-value-value="left"
+                  class={"w-8 h-8 flex items-center justify-center transition " <>
+                    if (@element.text_align || "left") == "left",
+                      do: "bg-gray-800 text-white",
+                      else: "bg-white text-gray-500 hover:bg-gray-50"}
+                  title="Alinear izquierda"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" d="M3 6h18M3 12h12M3 18h16" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  phx-click="update_element"
+                  phx-value-field="text_align"
+                  phx-value-value="center"
+                  class={"w-8 h-8 flex items-center justify-center border-l border-r border-gray-300 transition " <>
+                    if @element.text_align == "center",
+                      do: "bg-gray-800 text-white border-gray-800",
+                      else: "bg-white text-gray-500 hover:bg-gray-50"}
+                  title="Centrar"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" d="M3 6h18M6 12h12M4 18h16" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  phx-click="update_element"
+                  phx-value-field="text_align"
+                  phx-value-value="right"
+                  class={"w-8 h-8 flex items-center justify-center transition " <>
+                    if @element.text_align == "right",
+                      do: "bg-gray-800 text-white",
+                      else: "bg-white text-gray-500 hover:bg-gray-50"}
+                  title="Alinear derecha"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" d="M3 6h18M9 12h12M5 18h16" />
+                  </svg>
+                </button>
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Color</label>
-                <input
-                  type="color"
-                  name="value"
-                  value={@element.color || "#000000"}
-                  phx-change="update_element"
-                  phx-value-field="color"
-                  class="mt-1 block w-full h-9 rounded-md border-gray-300"
-                />
-              </div>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Fuente</label>
-              <form phx-change="update_element" class="mt-1">
-                <input type="hidden" name="field" value="font_family" />
-                <select
-                  name="value"
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                >
-                  <option value="Arial" selected={@element.font_family == "Arial"}>Arial</option>
-                  <option value="Helvetica" selected={@element.font_family == "Helvetica"}>Helvetica</option>
-                  <option value="Verdana" selected={@element.font_family == "Verdana"}>Verdana</option>
-                  <option value="Courier New" selected={@element.font_family == "Courier New"}>Courier New (monospace)</option>
-                  <option value="Times New Roman" selected={@element.font_family == "Times New Roman"}>Times New Roman</option>
-                  <option value="Georgia" selected={@element.font_family == "Georgia"}>Georgia</option>
-                  <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif (generica)</option>
-                  <option value="serif" selected={@element.font_family == "serif"}>Serif (generica)</option>
-                  <option value="monospace" selected={@element.font_family == "monospace"}>Monospace (generica)</option>
-                </select>
-              </form>
-              <p class="mt-1 text-xs text-gray-400">Compatible con impresoras Zebra</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Alineación</label>
-              <form phx-change="update_element" class="mt-1">
-                <input type="hidden" name="field" value="text_align" />
-                <select
-                  name="value"
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                >
-                  <option value="left" selected={@element.text_align == "left"}>Izquierda</option>
-                  <option value="center" selected={@element.text_align == "center"}>Centro</option>
-                  <option value="right" selected={@element.text_align == "right"}>Derecha</option>
-                </select>
-              </form>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Estilo</label>
-              <form phx-change="update_element" class="mt-1">
-                <input type="hidden" name="field" value="font_weight" />
-                <select
-                  name="value"
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                >
-                  <option value="normal" selected={@element.font_weight == "normal"}>Normal</option>
-                  <option value="bold" selected={@element.font_weight == "bold"}>Negrita</option>
-                </select>
-              </form>
-            </div>
-            <div class="border-t pt-3 mt-1">
+
+            <%!-- Row 3: Auto-fit --%>
+            <div class="flex items-center justify-between border-t border-gray-100 pt-2">
               <label class="flex items-center gap-2 text-sm text-gray-700">
                 <form phx-change="update_element" class="flex items-center gap-2">
                   <input type="hidden" name="field" value="text_auto_fit" />
@@ -3430,28 +3473,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     name="value"
                     value="true"
                     checked={Map.get(@element, :text_auto_fit, false) == true}
-                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
                   />
-                  <span class="font-medium">Ajustar al area</span>
+                  <span class="text-xs font-medium">Ajustar al area</span>
                 </form>
               </label>
-              <p class="text-xs text-gray-400 mt-0.5 ml-6">Reduce la fuente para que el texto quepa</p>
               <%= if Map.get(@element, :text_auto_fit, false) == true do %>
-                <div class="mt-2 ml-6">
-                  <label class="block text-xs text-gray-500">Tamaño mínimo (pt)</label>
-                  <form phx-change="update_element" class="mt-0.5">
-                    <input type="hidden" name="field" value="text_min_font_size" />
-                    <input
-                      type="number"
-                      name="value"
-                      value={Map.get(@element, :text_min_font_size, 6.0)}
-                      min="4"
-                      max={Map.get(@element, :font_size, 10)}
-                      step="0.5"
-                      class="block w-20 rounded-md border-gray-300 shadow-sm text-sm"
-                    />
-                  </form>
-                </div>
+                <form phx-change="update_element" class="flex items-center gap-1.5">
+                  <input type="hidden" name="field" value="text_min_font_size" />
+                  <span class="text-xs text-gray-400">min</span>
+                  <input
+                    type="number"
+                    name="value"
+                    value={Map.get(@element, :text_min_font_size, 6.0)}
+                    min="4"
+                    max={Map.get(@element, :font_size, 10)}
+                    step="0.5"
+                    class="w-14 rounded-md border-gray-300 shadow-sm text-xs py-1 px-1.5 text-center"
+                  />
+                </form>
               <% end %>
             </div>
           </div>
