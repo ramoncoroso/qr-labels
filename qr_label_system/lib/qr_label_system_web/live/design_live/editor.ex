@@ -1255,35 +1255,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("download_zpl", _params, socket) do
+    design = socket.assigns.design
     user_id = socket.assigns.current_user.id
-    design_id = socket.assigns.design.id
     dpi = socket.assigns.zpl_dpi
 
-    # Request data from client-side IndexedDB
+    # Generate ZPL entirely client-side — no data round-trip through server
     {:noreply,
-     push_event(socket, "request_data_for_zpl", %{user_id: user_id, design_id: design_id, dpi: dpi})}
+     push_event(socket, "generate_zpl_client", %{
+       design: Design.to_json_light(design),
+       dpi: dpi,
+       user_id: user_id,
+       design_id: design.id,
+       mapping: build_auto_mapping(design.elements || [], socket.assigns.preview_data)
+     })}
   end
 
-  # Called by JS hook with data from IndexedDB for ZPL generation
+  # Called by JS when ZPL download completes (for UI feedback)
   @impl true
-  def handle_event("zpl_data_ready", %{"data" => rows, "dpi" => dpi}, socket) do
-    design = socket.assigns.design
-
-    upload_data = case rows do
-      [] -> [%{}]
-      data -> data
-    end
-
-    zpl_content = QrLabelSystem.Export.ZplGenerator.generate_batch(design, upload_data, dpi: dpi)
-    filename = "#{design.name || "etiquetas"}-#{dpi}dpi.zpl"
-
-    {:noreply,
-     socket
-     |> push_event("download_file", %{
-       content: zpl_content,
-       filename: filename,
-       mime_type: "application/x-zpl"
-     })}
+  def handle_event("zpl_download_complete", _params, socket) do
+    {:noreply, socket}
   end
 
   defp push_generate_batch(socket) do
@@ -2001,7 +1991,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <.link
             :if={@design.label_type == "multiple"}
             navigate={~p"/generate/data/#{@design.id}"}
-            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @upload_total_rows > 0, do: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200", else: "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"}"}
+            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @upload_total_rows > 0, do: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200", else: "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"}"}
           >
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
@@ -2065,7 +2055,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <div class="relative group/print flex">
             <button
               phx-click="generate_and_print"
-              class="flex items-center space-x-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-l-lg transition text-sm font-medium"
+              class="flex items-center space-x-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-l-lg transition text-sm font-medium"
               title="Imprimir etiquetas"
             >
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -2073,7 +2063,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
               <span>Imprimir</span>
             </button>
-            <div class="flex items-center px-1.5 py-2 bg-indigo-600 group-hover/print:bg-indigo-700 border-l border-indigo-500 rounded-r-lg transition text-white cursor-default">
+            <div class="flex items-center px-1.5 py-2 bg-emerald-600 group-hover/print:bg-emerald-700 border-l border-emerald-500 rounded-r-lg transition text-white cursor-default">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
@@ -2098,7 +2088,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   phx-click="generate_and_print"
                   class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
                 >
-                  <svg class="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
                   <div>

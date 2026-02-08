@@ -8,6 +8,7 @@ import { resolveText, resolveCodeValue } from './expression_engine'
 import { calcAutoFitFontSize } from './text_utils'
 import { jsPDF } from 'jspdf'
 import { getDataset, getRow, associateDataset } from './data_store'
+import { generateBatchZpl } from './zpl_generator'
 
 const MM_TO_PX = 3.78
 // Canvas uses PX_PER_MM=6 for font sizes — convert to mm: font_size / PX_PER_MM
@@ -84,10 +85,23 @@ const PrintEngine = {
       }
     })
 
-    // ZPL: read data from IndexedDB and send to server for ZPL generation
-    this.handleEvent("request_data_for_zpl", async ({user_id, design_id, dpi}) => {
-      const dataset = await getDataset(user_id, design_id)
-      this.pushEvent("zpl_data_ready", {data: dataset?.rows || [{}], dpi})
+    // ZPL: generate entirely client-side (no server round-trip)
+    this.handleEvent("generate_zpl_client", async ({design, dpi, user_id, design_id, mapping}) => {
+      try {
+        const dataset = await getDataset(user_id, design_id)
+        const rows = (dataset && dataset.rows.length > 0) ? dataset.rows : [{}]
+        const zpl = generateBatchZpl(design, rows, { dpi, mapping: mapping || {} })
+        const blob = new Blob([zpl], { type: 'application/x-zpl' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${design.name || 'labels'}-${dpi}dpi.zpl`
+        a.click()
+        URL.revokeObjectURL(url)
+        this.pushEvent("zpl_download_complete", {})
+      } catch (err) {
+        console.error('Error generating ZPL client-side:', err)
+      }
     })
 
     // Preview row fetch from IndexedDB
