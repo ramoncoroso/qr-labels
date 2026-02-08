@@ -22,6 +22,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:import_error, nil)
      |> assign(:renaming_id, nil)
      |> assign(:rename_value, "")
+     |> assign(:editing_desc_id, nil)
+     |> assign(:desc_value, "")
      |> assign(:show_data_modal, false)
      |> assign(:pending_edit_design, nil)
      |> assign(:filter, "all")
@@ -163,6 +165,74 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
          socket
          |> assign(:renaming_id, nil)
          |> assign(:rename_value, "")}
+    end
+  end
+
+  @impl true
+  def handle_event("start_edit_desc", %{"id" => id, "desc" => desc}, socket) do
+    {id_int, ""} = Integer.parse(id)
+    design = find_design(socket.assigns.all_designs, id_int)
+    {:noreply,
+     socket
+     |> assign(:editing_desc_id, id)
+     |> assign(:desc_value, desc)
+     |> stream_insert(:designs, design)}
+  end
+
+  @impl true
+  def handle_event("cancel_edit_desc", _params, socket) do
+    old_id = socket.assigns.editing_desc_id
+    design = if old_id do
+      {id_int, ""} = Integer.parse(old_id)
+      find_design(socket.assigns.all_designs, id_int)
+    end
+    socket = socket
+     |> assign(:editing_desc_id, nil)
+     |> assign(:desc_value, "")
+    socket = if design, do: stream_insert(socket, :designs, design), else: socket
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("update_desc", %{"value" => value}, socket) do
+    {:noreply, assign(socket, :desc_value, value)}
+  end
+
+  @impl true
+  def handle_event("save_desc", %{"id" => id}, socket) do
+    new_desc = String.trim(socket.assigns.desc_value)
+
+    case Designs.get_design(id) do
+      nil ->
+        {:noreply,
+         socket
+         |> assign(:editing_desc_id, nil)
+         |> assign(:desc_value, "")
+         |> put_flash(:error, "El diseño ya no existe")}
+
+      design when design.user_id == socket.assigns.current_user.id ->
+        case Designs.update_design(design, %{description: new_desc}) do
+          {:ok, updated_design} ->
+            updated_design = Designs.preload_tags(updated_design)
+            updated_all = Enum.map(socket.assigns.all_designs, fn d ->
+              if d.id == updated_design.id, do: updated_design, else: d
+            end)
+            {:noreply,
+             socket
+             |> assign(:all_designs, updated_all)
+             |> assign(:editing_desc_id, nil)
+             |> assign(:desc_value, "")
+             |> stream_insert(:designs, updated_design)}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "Error al actualizar la descripción")}
+        end
+
+      _design ->
+        {:noreply,
+         socket
+         |> assign(:editing_desc_id, nil)
+         |> assign(:desc_value, "")}
     end
   end
 
@@ -768,16 +838,57 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                           class="relative z-10 p-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover/card:opacity-100 transition-opacity flex-shrink-0"
                           title="Renombrar"
                         >
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                           </svg>
                         </button>
                       </div>
                     <% end %>
                     <!-- Description -->
-                    <p :if={design.description && design.description != ""} class="text-sm text-gray-400 truncate mt-0.5">
-                      <%= design.description %>
-                    </p>
+                    <%= if @editing_desc_id == to_string(design.id) do %>
+                      <form phx-submit="save_desc" phx-value-id={design.id} class="flex items-center gap-2 mt-0.5">
+                        <input
+                          type="text"
+                          value={@desc_value}
+                          phx-change="update_desc"
+                          phx-debounce="100"
+                          name="value"
+                          autofocus
+                          placeholder="Añadir descripción..."
+                          class="text-sm text-gray-500 border border-blue-300 rounded-lg px-2 py-0.5 flex-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button type="submit" class="p-1 text-green-600 hover:text-green-700">
+                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button type="button" phx-click="cancel_edit_desc" class="p-1 text-gray-400 hover:text-gray-600">
+                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </form>
+                    <% else %>
+                      <div class="flex items-center gap-1 group/desc mt-0.5">
+                        <%= if design.description && design.description != "" do %>
+                          <p class="text-sm text-gray-400 truncate"><%= design.description %></p>
+                        <% else %>
+                          <p class="text-sm text-gray-300 italic">Sin descripción</p>
+                        <% end %>
+                        <button
+                          type="button"
+                          phx-click="start_edit_desc"
+                          phx-value-id={design.id}
+                          phx-value-desc={design.description || ""}
+                          class="relative z-10 p-0.5 text-gray-300 hover:text-gray-500 opacity-0 group-hover/card:opacity-100 transition-opacity flex-shrink-0"
+                          title="Editar descripción"
+                        >
+                          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                          </svg>
+                        </button>
+                      </div>
+                    <% end %>
                     <!-- Info row with tags -->
                     <div class="flex items-center gap-2 flex-wrap mt-0.5">
                       <.link navigate={~p"/designs/#{design.id}/edit"} class="cursor-pointer inline-flex items-center gap-2 text-sm text-gray-500">
