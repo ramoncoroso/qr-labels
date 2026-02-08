@@ -22,13 +22,25 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
        |> assign(:printing, false)
        |> assign(:zpl_dpi, 203)
        |> push_event("update_preview", %{
-         design: Design.to_json(design),
+         design: Design.to_json_light(design),
          row: %{},
          mapping: %{},
          preview_index: 0,
          total_rows: 1
        })}
     end
+  end
+
+  @impl true
+  def handle_event("request_preview_data", _params, socket) do
+    {:noreply,
+     push_event(socket, "update_preview", %{
+       design: Design.to_json_light(socket.assigns.design),
+       row: %{},
+       mapping: %{},
+       preview_index: 0,
+       total_rows: 1
+     })}
   end
 
   @impl true
