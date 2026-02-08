@@ -7,6 +7,7 @@ import KeyboardShortcuts from "./keyboard_shortcuts"
 import SortableLayers from "./sortable_layers"
 import SingleLabelPrint from "./single_label_print"
 import DraggableElements from "./draggable_elements"
+import DesignListCleanup from "./design_list_cleanup"
 import AutoHideFlash from "./auto_hide_flash"
 import AutoUploadSubmit from "./auto_upload_submit"
 import PropertyFields from "./property_fields"
@@ -24,6 +25,7 @@ const Hooks = {
   SortableLayers,
   SingleLabelPrint,
   DraggableElements,
+  DesignListCleanup,
   AutoHideFlash,
   AutoUploadSubmit,
   PropertyFields,

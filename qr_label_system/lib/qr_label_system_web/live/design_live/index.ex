@@ -62,12 +62,15 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
       design when design.user_id == socket.assigns.current_user.id ->
         {:ok, _} = Designs.delete_design(design)
+        user_id = socket.assigns.current_user.id
+        UploadDataStore.clear(user_id, design.id)
         updated_all = Enum.reject(socket.assigns.all_designs, &(&1.id == design.id))
         {:noreply,
          socket
          |> assign(:all_designs, updated_all)
          |> assign(:has_designs, length(updated_all) > 0)
-         |> stream_delete(:designs, design)}
+         |> stream_delete(:designs, design)
+         |> push_event("clear_dataset", %{user_id: user_id, design_id: design.id})}
 
       _design ->
         {:noreply, put_flash(socket, :error, "No tienes permiso para eliminar este diseño")}
@@ -663,7 +666,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <div>
+    <div id="design-list" phx-hook="DesignListCleanup">
       <.header>
         Mis diseños
         <:subtitle>Pulsa sobre un diseño para editarlo en el canvas. Usa los botones para duplicar o eliminar.</:subtitle>
