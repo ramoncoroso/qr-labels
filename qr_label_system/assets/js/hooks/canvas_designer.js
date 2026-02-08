@@ -115,8 +115,11 @@ const CanvasDesigner = {
     // Reinitialize
     this.initCanvas()
 
-    // Restore elements
+    // Restore elements (skip overlays during bulk load)
+    this._isBulkLoading = true
     savedElements.forEach(el => this.addElement(el, false))
+    this._isBulkLoading = false
+    this.updateDepthOverlays()
     this.canvas.renderAll()
   },
 
@@ -563,6 +566,7 @@ const CanvasDesigner = {
         }
       }
       this.updateFormatBadgePosition(obj)
+      this.autoBringToFrontIfOverlapping(obj)
       this.updateDepthOverlays()
       this.saveElementsImmediate()
     })
@@ -851,14 +855,20 @@ const CanvasDesigner = {
   },
 
   loadDesign(design) {
-    // Remove existing elements
+    // Remove existing elements and overlays
+    this.clearDepthOverlays()
     this.elements.forEach((obj) => this.canvas.remove(obj))
     this.elements.clear()
 
-    // Add elements from design
+    // Add elements from design (skip overlays during bulk load)
+    this._isBulkLoading = true
     if (design.elements) {
       design.elements.forEach(el => this.addElement(el, false))
     }
+    this._isBulkLoading = false
+
+    // Now calculate overlays once for all elements
+    this.updateDepthOverlays()
     this.canvas.renderAll()
   },
 
@@ -2212,8 +2222,11 @@ const CanvasDesigner = {
       height: height
     }
 
-    // Re-add elements
+    // Re-add elements (skip overlays during bulk load)
+    this._isBulkLoading = true
     savedElements.forEach(el => this.addElement(el, false))
+    this._isBulkLoading = false
+    this.updateDepthOverlays()
 
     this.canvas.renderAll()
 
@@ -2785,6 +2798,7 @@ const CanvasDesigner = {
 
   // Main method: recalculate and draw depth overlays at all intersection areas
   updateDepthOverlays() {
+    if (this._isBulkLoading) return
     this.clearDepthOverlays()
 
     if (this.elements.size <= 1) return
@@ -2818,7 +2832,7 @@ const CanvasDesigner = {
           top: inter.top,
           width: inter.width,
           height: inter.height,
-          fill: 'rgba(0,0,0,0.12)',
+          fill: 'rgba(255,255,255,0.75)',
           selectable: false,
           evented: false,
           excludeFromExport: true,
@@ -2844,6 +2858,36 @@ const CanvasDesigner = {
 
       this.canvas.bringToFront(item.obj)
     })
+  },
+
+  // Auto bring-to-front: when an element is dropped overlapping another with higher z_index,
+  // automatically bring it to the top so the moved element always ends up on top
+  autoBringToFrontIfOverlapping(obj) {
+    if (!obj || !obj.elementId || !obj.elementData) return
+
+    const myZ = obj.elementData.z_index || 0
+    const myBounds = obj.getBoundingRect(true)
+
+    // Check if any visible element with higher z_index overlaps this one
+    let maxZ = myZ
+    this.elements.forEach((other, otherId) => {
+      if (otherId === obj.elementId || !other.visible) return
+      const otherZ = other.elementData?.z_index || 0
+      if (otherZ <= myZ) return
+
+      const otherBounds = other.getBoundingRect(true)
+      const inter = this.getIntersectionRect(myBounds, otherBounds)
+      if (inter) {
+        if (otherZ > maxZ) maxZ = otherZ
+      }
+    })
+
+    if (maxZ > myZ) {
+      obj.elementData.z_index = maxZ + 1
+      this.applyZIndexOrdering()
+      // Notify server of the layer change
+      this.pushEvent("element_selected", { id: obj.elementId })
+    }
   },
 
   reorderLayers(orderedIds) {
