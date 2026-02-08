@@ -313,48 +313,25 @@ const PrintEngine = {
     const html = this.generatePrintHTML()
     printWindow.document.write(html)
     printWindow.document.close()
-    printWindow.onload = () => {
+
+    // Use setTimeout to ensure the document is fully rendered before printing
+    setTimeout(() => {
+      printWindow.focus()
       printWindow.print()
-      // Record print after window closes
       printWindow.onafterprint = () => {
         this.pushEvent("print_recorded", {count: this.labels.length})
       }
-    }
+    }, 500)
   },
 
   generatePrintHTML() {
-    const config = this.printConfig
     const design = this.design
-
-    const pageSizes = {
-      a4: { width: 210, height: 297 },
-      letter: { width: 216, height: 279 },
-      legal: { width: 216, height: 356 }
-    }
-
-    let pageSize = pageSizes[config.page_size] || pageSizes.a4
-    if (config.orientation === 'landscape') {
-      pageSize = { width: pageSize.height, height: pageSize.width }
-    }
-
-    const labelsPerPage = config.columns * config.rows
-    const pages = []
-
-    for (let i = 0; i < this.labels.length; i += labelsPerPage) {
-      const pageLabels = this.labels.slice(i, i + labelsPerPage)
-      pages.push(pageLabels)
-    }
+    const w = design.width_mm
+    const h = design.height_mm
 
     let labelsHTML = ''
-    for (const pageLabels of pages) {
-      labelsHTML += '<div class="page">'
-      labelsHTML += '<div class="grid">'
-
-      for (const label of pageLabels) {
-        labelsHTML += this.labelToHTML(label)
-      }
-
-      labelsHTML += '</div></div>'
+    for (const label of this.labels) {
+      labelsHTML += `<div class="page">${this.labelToHTML(label)}</div>`
     }
 
     return `
@@ -364,7 +341,7 @@ const PrintEngine = {
         <title>Imprimir Etiquetas</title>
         <style>
           @page {
-            size: ${pageSize.width}mm ${pageSize.height}mm;
+            size: ${w}mm ${h}mm;
             margin: 0;
           }
 
@@ -379,9 +356,8 @@ const PrintEngine = {
           }
 
           .page {
-            width: ${pageSize.width}mm;
-            height: ${pageSize.height}mm;
-            padding: ${config.margin_top}mm ${config.margin_right}mm ${config.margin_bottom}mm ${config.margin_left}mm;
+            width: ${w}mm;
+            height: ${h}mm;
             page-break-after: always;
           }
 
@@ -389,15 +365,9 @@ const PrintEngine = {
             page-break-after: auto;
           }
 
-          .grid {
-            display: grid;
-            grid-template-columns: repeat(${config.columns}, 1fr);
-            gap: ${config.gap_vertical}mm ${config.gap_horizontal}mm;
-          }
-
           .label {
-            width: ${design.width_mm}mm;
-            height: ${design.height_mm}mm;
+            width: ${w}mm;
+            height: ${h}mm;
             background-color: ${design.background_color || '#FFFFFF'};
             border: ${design.border_width || 0}mm solid ${design.border_color || '#000000'};
             border-radius: ${design.border_radius || 0}mm;
