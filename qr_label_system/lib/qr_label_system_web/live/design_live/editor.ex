@@ -1909,6 +1909,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </svg>
             <span><%= if @upload_total_rows > 0, do: "Cambiar datos", else: "Vincular datos" %></span>
           </.link>
+
+          <div class="w-px h-6 bg-gray-300"></div>
+
           <button
             phx-click="save_design"
             class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 font-medium"
