@@ -59,17 +59,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       end)
       Logger.info("Editor mount - Design #{id}: #{element_count} elements, IDs: #{inspect(element_ids)}")
 
-      # Load available columns from persistent store (from data-first flow)
+      # Load metadata from persistent store (from data-first flow)
+      # Full row data lives in the browser's IndexedDB
       user_id = socket.assigns.current_user.id
-      {upload_data, available_columns} = QrLabelSystem.UploadDataStore.get(user_id, design.id)
-      Logger.info("Editor mount - Design #{id} (#{design.label_type}): upload_data=#{if upload_data, do: "#{length(upload_data)} rows", else: "nil"}, columns=#{inspect(available_columns)}")
+      {available_columns, upload_total_rows, upload_sample_rows} = QrLabelSystem.UploadDataStore.get_metadata(user_id, design.id)
+      Logger.info("Editor mount - Design #{id} (#{design.label_type}): total_rows=#{upload_total_rows}, columns=#{inspect(available_columns)}")
 
-      # Ensure we have lists (not nil)
-      upload_data = upload_data || []
-      available_columns = available_columns || []
-
-      # Build preview data from first row if we have data
-      preview_data = case upload_data do
+      # Build preview data from first sample row if we have data
+      preview_data = case upload_sample_rows do
         [first_row | _] when is_map(first_row) -> first_row
         _ -> %{"col1" => "Ejemplo 1", "col2" => "Ejemplo 2", "col3" => "12345"}
       end
@@ -95,10 +92,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:pending_selection_id, element_id)
        |> assign(:clipboard, [])
        |> assign(:available_columns, available_columns)
-       |> assign(:upload_data, upload_data)
+       |> assign(:upload_total_rows, upload_total_rows)
+       |> assign(:upload_sample_rows, upload_sample_rows)
        |> assign(:show_properties, true)
        |> assign(:show_preview, false)
-       |> assign(:show_layers, true)
+       |> assign(:sidebar_tab, "properties")
        |> assign(:preview_data, preview_data)
        |> assign(:preview_row_index, 0)
        |> assign(:history, [design.elements || []])
@@ -134,10 +132,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if socket.assigns[:canvas_loaded] do
       {:noreply, socket}
     else
-      {:noreply,
-       socket
-       |> assign(:canvas_loaded, true)
-       |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})}
+      socket = socket
+        |> assign(:canvas_loaded, true)
+        |> push_event("load_design", %{design: Design.to_json(socket.assigns.design)})
+
+      # If ETS has no data (e.g. server restarted), ask browser to check IndexedDB
+      socket = if socket.assigns.upload_total_rows == 0 do
+        push_event(socket, "check_idb_data", %{design_id: socket.assigns.design.id})
+      else
+        socket
+      end
+
+      {:noreply, socket}
     end
   end
 
@@ -247,13 +253,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           true -> {false, false}
         end
 
+        # Collapse "appearance" by default for qr/barcode (many options)
+        el_type = Map.get(element, :type) || Map.get(element, "type")
+        default_collapsed = if el_type in ["qr", "barcode"],
+          do: MapSet.new(["appearance"]),
+          else: MapSet.new()
+
         {:noreply,
          socket
          |> assign(:selected_element, element)
+         |> assign(:sidebar_tab, "properties")
          |> assign(:show_binding_mode, init_binding)
          |> assign(:show_expression_mode, init_expression)
          |> assign(:expression_visual_mode, :cards)
-         |> assign(:expression_builder, %{})}
+         |> assign(:expression_builder, %{})
+         |> assign(:collapsed_sections, default_collapsed)}
     end
   end
 
@@ -909,7 +923,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("toggle_layers", _params, socket) do
-    {:noreply, assign(socket, :show_layers, !socket.assigns.show_layers)}
+    new_tab = if socket.assigns.sidebar_tab == "layers", do: "properties", else: "layers"
+    {:noreply, assign(socket, :sidebar_tab, new_tab)}
+  end
+
+  @impl true
+  def handle_event("switch_sidebar_tab", %{"tab" => tab}, socket)
+      when tab in ["properties", "layers"] do
+    {:noreply, assign(socket, :sidebar_tab, tab)}
   end
 
   @impl true
@@ -1000,16 +1021,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("preview_prev_row", _params, socket) do
-    upload_data = socket.assigns.upload_data
     current_index = socket.assigns.preview_row_index
 
     if current_index > 0 do
       new_index = current_index - 1
-      new_preview_data = Enum.at(upload_data, new_index)
-      {:noreply,
-       socket
-       |> assign(:preview_row_index, new_index)
-       |> assign(:preview_data, new_preview_data)}
+      navigate_to_preview_row(socket, new_index)
     else
       {:noreply, socket}
     end
@@ -1017,19 +1033,66 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("preview_next_row", _params, socket) do
-    upload_data = socket.assigns.upload_data
     current_index = socket.assigns.preview_row_index
-    max_index = length(upload_data) - 1
+    max_index = socket.assigns.upload_total_rows - 1
 
     if current_index < max_index do
       new_index = current_index + 1
-      new_preview_data = Enum.at(upload_data, new_index)
+      navigate_to_preview_row(socket, new_index)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Called by JS hook when a preview row is loaded from IndexedDB
+  @impl true
+  def handle_event("preview_row_loaded", %{"row" => row, "index" => index}, socket) do
+    {:noreply,
+     socket
+     |> assign(:preview_row_index, index)
+     |> assign(:preview_data, row)}
+  end
+
+  # Called by JS hook when IDB data is found after server restart (ETS was empty)
+  @impl true
+  def handle_event("idb_data_available", %{"columns" => cols, "total_rows" => total, "sample_rows" => sample}, socket) do
+    user_id = socket.assigns.current_user.id
+    design_id = socket.assigns.design.id
+
+    # Re-populate ETS metadata from browser data
+    QrLabelSystem.UploadDataStore.put_metadata(user_id, design_id, cols, total, sample)
+
+    preview_data = case sample do
+      [first | _] when is_map(first) -> first
+      _ -> socket.assigns.preview_data
+    end
+
+    {:noreply,
+     socket
+     |> assign(:available_columns, cols)
+     |> assign(:upload_total_rows, total)
+     |> assign(:upload_sample_rows, sample)
+     |> assign(:preview_data, preview_data)}
+  end
+
+  defp navigate_to_preview_row(socket, new_index) do
+    sample_rows = socket.assigns.upload_sample_rows
+
+    if new_index < length(sample_rows) do
+      # Row is in sample_rows — respond directly
+      new_preview_data = Enum.at(sample_rows, new_index)
       {:noreply,
        socket
        |> assign(:preview_row_index, new_index)
        |> assign(:preview_data, new_preview_data)}
     else
-      {:noreply, socket}
+      # Row beyond sample_rows — request from IndexedDB via JS
+      user_id = socket.assigns.current_user.id
+      design_id = socket.assigns.design.id
+      {:noreply,
+       socket
+       |> assign(:preview_row_index, new_index)
+       |> push_event("fetch_preview_row", %{index: new_index, user_id: user_id, design_id: design_id})}
     end
   end
 
@@ -1090,10 +1153,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("download_zpl", _params, socket) do
-    design = socket.assigns.design
+    user_id = socket.assigns.current_user.id
+    design_id = socket.assigns.design.id
     dpi = socket.assigns.zpl_dpi
 
-    upload_data = case socket.assigns.upload_data do
+    # Request data from client-side IndexedDB
+    {:noreply,
+     push_event(socket, "request_data_for_zpl", %{user_id: user_id, design_id: design_id, dpi: dpi})}
+  end
+
+  # Called by JS hook with data from IndexedDB for ZPL generation
+  @impl true
+  def handle_event("zpl_data_ready", %{"data" => rows, "dpi" => dpi}, socket) do
+    design = socket.assigns.design
+
+    upload_data = case rows do
       [] -> [%{}]
       data -> data
     end
@@ -1112,11 +1186,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp push_generate_batch(socket) do
     design = socket.assigns.design
-    upload_data = case socket.assigns.upload_data do
-      [] -> [%{}]
-      data -> data
-    end
     preview_data = socket.assigns.preview_data
+    user_id = socket.assigns.current_user.id
 
     # Build mapping from element IDs to column names
     column_mapping = build_auto_mapping(design.elements || [], preview_data)
@@ -1136,11 +1207,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       gap_vertical: 5
     }
 
-    push_event(socket, "generate_batch", %{
+    # JS hook reads data from IndexedDB instead of receiving it from server
+    push_event(socket, "generate_batch_from_idb", %{
       design: Design.to_json(design),
-      data: upload_data,
       column_mapping: column_mapping,
-      print_config: print_config
+      print_config: print_config,
+      user_id: user_id,
+      design_id: design.id
     })
   end
 
@@ -1740,12 +1813,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <.link
             :if={@design.label_type == "multiple"}
             navigate={~p"/generate/data/#{@design.id}"}
-            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if length(@upload_data) > 0, do: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200", else: "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"}"}
+            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @upload_total_rows > 0, do: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200", else: "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"}"}
           >
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
             </svg>
-            <span><%= if length(@upload_data) > 0, do: "Cambiar datos", else: "Vincular datos" %></span>
+            <span><%= if @upload_total_rows > 0, do: "Cambiar datos", else: "Vincular datos" %></span>
           </.link>
           <button
             phx-click="save_design"
@@ -1990,207 +2063,210 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
         </div>
 
-        <!-- Layers Panel (fixed width, won't shrink) -->
-        <div :if={@show_layers} class="w-56 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
-          <div class="p-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-gray-900">Capas</h3>
-            <button phx-click="toggle_layers" class="text-gray-400 hover:text-gray-600">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+        <!-- Right Sidebar - Properties & Layers Tabs (fixed width, won't shrink) -->
+        <div class="w-72 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
+          <!-- Tab bar -->
+          <div class="flex border-b border-gray-200 flex-shrink-0">
+            <button
+              phx-click="switch_sidebar_tab"
+              phx-value-tab="properties"
+              class={"flex-1 px-3 py-2.5 text-sm font-medium transition border-b-2 #{if @sidebar_tab == "properties", do: "text-blue-600 border-blue-600", else: "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"}"}
+            >
+              Propiedades
+            </button>
+            <button
+              phx-click="switch_sidebar_tab"
+              phx-value-tab="layers"
+              class={"flex-1 px-3 py-2.5 text-sm font-medium transition border-b-2 flex items-center justify-center gap-1.5 #{if @sidebar_tab == "layers", do: "text-blue-600 border-blue-600", else: "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"}"}
+            >
+              Capas
+              <span class={"inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs rounded-full #{if @sidebar_tab == "layers", do: "bg-blue-100 text-blue-600", else: "bg-gray-100 text-gray-500"}"}>
+                <%= @element_count %>
+              </span>
             </button>
           </div>
 
-          <!-- Layer order controls -->
-          <div :if={@selected_element} class="px-3 py-2 border-b border-gray-100 flex items-center justify-center space-x-1">
-            <button phx-click="bring_to_front" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Traer al frente">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" /></svg>
-            </button>
-            <button phx-click="move_layer_up" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Subir una capa">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-            </button>
-            <button phx-click="move_layer_down" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bajar una capa">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-            </button>
-            <button phx-click="send_to_back" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Enviar atrás">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
-            </button>
-          </div>
-
-          <!-- Layer list -->
-          <div class="flex-1 overflow-y-auto" id="layers-list" phx-hook="SortableLayers">
-            <%= for element <- Enum.sort_by(@design.elements || [], fn el -> Map.get(el, :z_index, 0) end, :desc) do %>
-              <div
-                class={"flex items-center px-3 py-2 border-b border-gray-50 cursor-pointer transition #{if @selected_element && @selected_element.id == element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
-                phx-click="select_layer"
-                phx-value-id={element.id}
-                data-id={element.id}
-              >
-                <!-- Visibility toggle -->
-                <button
-                  phx-click="toggle_element_visibility"
-                  phx-value-id={element.id}
-                  class={"p-1 rounded transition #{if Map.get(element, :visible, true), do: "text-gray-600 hover:text-gray-800", else: "text-gray-300 hover:text-gray-500"}"}
-                  title={if Map.get(element, :visible, true), do: "Ocultar", else: "Mostrar"}
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <%= if Map.get(element, :visible, true) do %>
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    <% else %>
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    <% end %>
-                  </svg>
-                </button>
-
-                <!-- Lock toggle -->
-                <button
-                  phx-click="toggle_element_lock"
-                  phx-value-id={element.id}
-                  class={"p-1 rounded transition #{if Map.get(element, :locked, false), do: "text-yellow-600 hover:text-yellow-700", else: "text-gray-400 hover:text-gray-600"}"}
-                  title={if Map.get(element, :locked, false), do: "Desbloquear", else: "Bloquear"}
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <%= if Map.get(element, :locked, false) do %>
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    <% else %>
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                    <% end %>
-                  </svg>
-                </button>
-
-                <!-- Layer name and type icon -->
-                <div class="flex-1 ml-2 flex items-center min-w-0">
-                  <span class={"text-xs mr-2 #{if Map.get(element, :visible, true), do: "text-gray-500", else: "text-gray-300"}"}>
-                    <%= case element.type do %>
-                      <% "qr" -> %>QR
-                      <% "barcode" -> %>BC
-                      <% "text" -> %>T
-                      <% "line" -> %>—
-                      <% "rectangle" -> %>□
-                      <% "circle" -> %>○
-                      <% "image" -> %>IMG
-                      <% _ -> %>?
-                    <% end %>
-                  </span>
-                  <span class={"text-sm truncate #{if Map.get(element, :visible, true), do: "text-gray-700", else: "text-gray-400"}"}>
-                    <%= Map.get(element, :name) || element.type %>
-                  </span>
+          <!-- Properties tab content -->
+          <div :if={@sidebar_tab == "properties"} class="flex-1 overflow-y-auto">
+            <div class="p-4">
+              <!-- Available Columns Panel (only for multiple labels) -->
+              <div :if={@design.label_type == "multiple" && length(@available_columns) > 0} class="bg-indigo-50 rounded-lg p-3 mb-4">
+                <h4 class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">
+                  Columnas Disponibles
+                </h4>
+                <div class="flex flex-wrap gap-1.5">
+                  <%= for col <- @available_columns do %>
+                    <span class="inline-block px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-mono rounded">
+                      <%= col %>
+                    </span>
+                  <% end %>
                 </div>
+                <p class="mt-2 text-xs text-indigo-600">
+                  Selecciona un elemento para vincularlo a una columna
+                </p>
+              </div>
 
-                <!-- Drag handle -->
-                <div class="text-gray-300 cursor-move drag-handle">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+              <!-- No data warning for multiple labels -->
+              <div :if={@design.label_type == "multiple" && length(@available_columns) == 0} class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                <div class="flex items-start space-x-2">
+                  <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
+                  <div>
+                    <p class="text-sm font-medium text-amber-800">Sin datos vinculados</p>
+                    <p class="text-xs text-amber-700 mt-1">
+                      Carga un archivo Excel o pega datos para vincular columnas a los elementos.
+                    </p>
+                    <.link
+                      navigate={~p"/generate/data/#{@design.id}"}
+                      class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <span>Vincular datos</span>
+                    </.link>
+                  </div>
                 </div>
               </div>
-            <% end %>
-          </div>
 
-          <!-- Empty state -->
-          <div :if={@element_count == 0} class="flex-1 flex items-center justify-center p-4">
-            <p class="text-sm text-gray-400 text-center">No hay elementos</p>
-          </div>
-        </div>
-
-        <!-- Layers toggle button (when panel is hidden) -->
-        <button
-          :if={!@show_layers}
-          phx-click="toggle_layers"
-          class="absolute right-72 top-20 bg-white border border-gray-200 rounded-l-lg p-2 shadow-md text-gray-600 hover:text-gray-800"
-          title="Mostrar capas"
-        >
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-        </button>
-
-        <!-- Right Sidebar - Properties (fixed width, won't shrink) -->
-        <div class="w-72 flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto">
-          <div class="p-4">
-            <!-- Available Columns Panel (only for multiple labels) -->
-            <div :if={@design.label_type == "multiple" && length(@available_columns) > 0} class="bg-indigo-50 rounded-lg p-3 mb-4">
-              <h4 class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">
-                Columnas Disponibles
-              </h4>
-              <div class="flex flex-wrap gap-1.5">
-                <%= for col <- @available_columns do %>
-                  <span class="inline-block px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-mono rounded">
-                    <%= col %>
+              <%= if @selected_element do %>
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="font-semibold text-gray-900">Propiedades</h3>
+                  <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                    <%= String.capitalize(@selected_element.type) %>
                   </span>
-                <% end %>
-              </div>
-              <p class="mt-2 text-xs text-indigo-600">
-                Selecciona un elemento para vincularlo a una columna
-              </p>
-            </div>
+                </div>
+                <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} collapsed_sections={@collapsed_sections} />
 
-            <!-- No data warning for multiple labels -->
-            <div :if={@design.label_type == "multiple" && length(@available_columns) == 0} class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-              <div class="flex items-start space-x-2">
-                <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <div>
-                  <p class="text-sm font-medium text-amber-800">Sin datos vinculados</p>
-                  <p class="text-xs text-amber-700 mt-1">
-                    Carga un archivo Excel o pega datos para vincular columnas a los elementos.
-                  </p>
-                  <.link
-                    navigate={~p"/generate/data/#{@design.id}"}
-                    class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
+                <div class="mt-6 pt-4 border-t">
+                  <button
+                    phx-click="delete_element"
+                    class="w-full bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center justify-center space-x-2"
                   >
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
-                    <span>Vincular datos</span>
-                  </.link>
+                    <span>Eliminar</span>
+                  </button>
                 </div>
-              </div>
+              <% else %>
+                <h3 class="font-semibold text-gray-900 mb-4">Propiedades de Etiqueta</h3>
+                <.label_properties design={@design} />
+
+                <!-- Data loaded indicator (only for multiple labels) -->
+                <%= if @design.label_type == "multiple" && @upload_total_rows > 0 do %>
+                  <div class="mt-6 pt-4 border-t">
+                    <div class="bg-indigo-50 rounded-lg p-3">
+                      <div class="flex items-center space-x-2 text-indigo-700 mb-2">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                        </svg>
+                        <span class="font-medium"><%= @upload_total_rows %> registros</span>
+                      </div>
+                      <p class="text-xs text-indigo-600">
+                        Datos Excel cargados. Asigna columnas a los elementos y usa Vista previa para ver el resultado.
+                      </p>
+                    </div>
+                  </div>
+                <% end %>
+              <% end %>
+            </div>
+          </div>
+
+          <!-- Layers tab content -->
+          <div :if={@sidebar_tab == "layers"} class="flex-1 flex flex-col overflow-hidden">
+            <!-- Layer order controls -->
+            <div :if={@selected_element} class="px-3 py-2 border-b border-gray-100 flex items-center justify-center space-x-1 flex-shrink-0">
+              <button phx-click="bring_to_front" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Traer al frente">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" /></svg>
+              </button>
+              <button phx-click="move_layer_up" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Subir una capa">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+              </button>
+              <button phx-click="move_layer_down" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bajar una capa">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              <button phx-click="send_to_back" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Enviar atras">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
+              </button>
             </div>
 
-            <%= if @selected_element do %>
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="font-semibold text-gray-900">Propiedades</h3>
-                <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                  <%= String.capitalize(@selected_element.type) %>
-                </span>
-              </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} />
-
-              <div class="mt-6 pt-4 border-t">
-                <button
-                  phx-click="delete_element"
-                  class="w-full bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center justify-center space-x-2"
+            <!-- Layer list -->
+            <div class="flex-1 overflow-y-auto" id="layers-list" phx-hook="SortableLayers">
+              <%= for element <- Enum.sort_by(@design.elements || [], fn el -> Map.get(el, :z_index, 0) end, :desc) do %>
+                <div
+                  class={"flex items-center px-3 py-2 border-b border-gray-50 cursor-pointer transition #{if @selected_element && @selected_element.id == element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
+                  phx-click="select_layer"
+                  phx-value-id={element.id}
+                  data-id={element.id}
                 >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  <span>Eliminar</span>
-                </button>
-              </div>
-            <% else %>
-              <h3 class="font-semibold text-gray-900 mb-4">Propiedades de Etiqueta</h3>
-              <.label_properties design={@design} />
+                  <!-- Visibility toggle -->
+                  <button
+                    phx-click="toggle_element_visibility"
+                    phx-value-id={element.id}
+                    class={"p-1 rounded transition #{if Map.get(element, :visible, true), do: "text-gray-600 hover:text-gray-800", else: "text-gray-300 hover:text-gray-500"}"}
+                    title={if Map.get(element, :visible, true), do: "Ocultar", else: "Mostrar"}
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <%= if Map.get(element, :visible, true) do %>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      <% else %>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      <% end %>
+                    </svg>
+                  </button>
 
-              <!-- Data loaded indicator (only for multiple labels) -->
-              <%= if @design.label_type == "multiple" && length(@upload_data) > 0 do %>
-                <div class="mt-6 pt-4 border-t">
-                  <div class="bg-indigo-50 rounded-lg p-3">
-                    <div class="flex items-center space-x-2 text-indigo-700 mb-2">
-                      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                      </svg>
-                      <span class="font-medium"><%= length(@upload_data) %> registros</span>
-                    </div>
-                    <p class="text-xs text-indigo-600">
-                      Datos Excel cargados. Asigna columnas a los elementos y usa Vista previa para ver el resultado.
-                    </p>
+                  <!-- Lock toggle -->
+                  <button
+                    phx-click="toggle_element_lock"
+                    phx-value-id={element.id}
+                    class={"p-1 rounded transition #{if Map.get(element, :locked, false), do: "text-yellow-600 hover:text-yellow-700", else: "text-gray-400 hover:text-gray-600"}"}
+                    title={if Map.get(element, :locked, false), do: "Desbloquear", else: "Bloquear"}
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <%= if Map.get(element, :locked, false) do %>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      <% else %>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                      <% end %>
+                    </svg>
+                  </button>
+
+                  <!-- Layer name and type icon -->
+                  <div class="flex-1 ml-2 flex items-center min-w-0">
+                    <span class={"text-xs mr-2 #{if Map.get(element, :visible, true), do: "text-gray-500", else: "text-gray-300"}"}>
+                      <%= case element.type do %>
+                        <% "qr" -> %>QR
+                        <% "barcode" -> %>BC
+                        <% "text" -> %>T
+                        <% "line" -> %>—
+                        <% "rectangle" -> %>□
+                        <% "circle" -> %>○
+                        <% "image" -> %>IMG
+                        <% _ -> %>?
+                      <% end %>
+                    </span>
+                    <span class={"text-sm truncate #{if Map.get(element, :visible, true), do: "text-gray-700", else: "text-gray-400"}"}>
+                      <%= Map.get(element, :name) || element.type %>
+                    </span>
+                  </div>
+
+                  <!-- Drag handle -->
+                  <div class="text-gray-300 cursor-move drag-handle">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                    </svg>
                   </div>
                 </div>
               <% end %>
-            <% end %>
+            </div>
+
+            <!-- Empty state -->
+            <div :if={@element_count == 0} class="flex-1 flex items-center justify-center p-4">
+              <p class="text-sm text-gray-400 text-center">No hay elementos.<br/>Agrega uno desde la barra de herramientas.</p>
+            </div>
           </div>
         </div>
 
@@ -2206,7 +2282,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
 
           <!-- Row Navigation (when multiple rows available) -->
-          <%= if length(@upload_data) > 1 do %>
+          <%= if @upload_total_rows > 1 do %>
             <div class="bg-indigo-50 rounded-lg p-3 mb-4">
               <div class="flex items-center justify-between">
                 <button
@@ -2220,13 +2296,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </button>
                 <div class="text-center">
                   <span class="text-lg font-bold text-indigo-700"><%= @preview_row_index + 1 %></span>
-                  <span class="text-sm text-indigo-600"> de <%= length(@upload_data) %></span>
+                  <span class="text-sm text-indigo-600"> de <%= @upload_total_rows %></span>
                   <p class="text-xs text-indigo-500">etiquetas</p>
                 </div>
                 <button
                   phx-click="preview_next_row"
-                  disabled={@preview_row_index >= length(@upload_data) - 1}
-                  class={"p-2 rounded-lg transition #{if @preview_row_index >= length(@upload_data) - 1, do: "text-gray-300 cursor-not-allowed", else: "text-indigo-600 hover:bg-indigo-100"}"}
+                  disabled={@preview_row_index >= @upload_total_rows - 1}
+                  class={"p-2 rounded-lg transition #{if @preview_row_index >= @upload_total_rows - 1, do: "text-gray-300 cursor-not-allowed", else: "text-indigo-600 hover:bg-indigo-100"}"}
                 >
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -2238,7 +2314,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           <div class="bg-white rounded-lg shadow p-3 mb-4">
             <h4 class="text-xs font-medium text-gray-500 mb-2">
-              <%= if length(@upload_data) > 0 do %>
+              <%= if @upload_total_rows > 0 do %>
                 DATOS DE FILA <%= @preview_row_index + 1 %>
               <% else %>
                 DATOS DE EJEMPLO
@@ -2262,20 +2338,20 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               data-row={Jason.encode!(@preview_data)}
               data-mapping={Jason.encode!(build_auto_mapping(@design.elements || [], @preview_data))}
               data-preview-index={@preview_row_index}
-              data-total-rows={max(length(@upload_data), 1)}
+              data-total-rows={max(@upload_total_rows, 1)}
               class="inline-block"
             >
             </div>
           </div>
 
           <!-- Summary when data is loaded -->
-          <%= if length(@upload_data) > 0 do %>
+          <%= if @upload_total_rows > 0 do %>
             <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
               <div class="flex items-center space-x-2 text-green-700">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span class="font-medium"><%= length(@upload_data) %> registros cargados</span>
+                <span class="font-medium"><%= @upload_total_rows %> registros cargados</span>
               </div>
             </div>
           <% end %>
@@ -2289,7 +2365,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
               </svg>
-              <span>Imprimir <%= if length(@upload_data) > 0, do: "#{length(@upload_data)} etiquetas", else: "etiqueta" %></span>
+              <span>Imprimir <%= if @upload_total_rows > 0, do: "#{@upload_total_rows} etiquetas", else: "etiqueta" %></span>
             </button>
             <div class="flex items-center justify-center gap-3 mt-2 text-xs">
               <button phx-click="generate_and_download_pdf" class="text-gray-500 hover:text-indigo-600 transition flex items-center gap-1">
@@ -2309,7 +2385,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       </div>
     </div>
     <!-- PrintEngine hook (always mounted) -->
-    <div id="print-engine-container" phx-hook="PrintEngine" class="hidden"></div>
+    <div id="print-engine-container" phx-hook="PrintEngine" data-user-id={@current_user.id} data-design-id={@design.id} class="hidden"></div>
     """
   end
 
@@ -2327,758 +2403,534 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp element_properties(assigns) do
     ~H"""
-    <div class="space-y-4" id="property-fields" phx-hook="PropertyFields">
-      <!-- Layer name -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Nombre</label>
-        <input
-          type="text"
-          name="value"
-          value={Map.get(@element, :name) || @element.type}
-          phx-blur="update_element"
-          phx-value-field="name"
-          onfocus="this.setSelectionRange(this.value.length, this.value.length)"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-        />
-      </div>
-
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700">X (mm)</label>
-          <input
-            type="number"
-            name="value"
-            step="0.1"
-            value={@element.x}
-            phx-blur="update_element"
-            phx-value-field="x"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Y (mm)</label>
-          <input
-            type="number"
-            name="value"
-            step="0.1"
-            value={@element.y}
-            phx-blur="update_element"
-            phx-value-field="y"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-          />
-        </div>
-      </div>
-
-      <%= if @element.type != "text" do %>
-        <div class="grid grid-cols-2 gap-3">
+    <div class="space-y-1" id="property-fields" phx-hook="PropertyFields">
+      <!-- Section: Posición y tamaño -->
+      <div class="border-b border-gray-200">
+        <.section_header id="position" title="Posición y tamaño" collapsed={MapSet.member?(@collapsed_sections, "position")} />
+        <div class={if MapSet.member?(@collapsed_sections, "position"), do: "hidden", else: "pb-3 space-y-3"}>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
+            <label class="block text-sm font-medium text-gray-700">Nombre</label>
             <input
-              type="number"
+              type="text"
               name="value"
-              step="0.1"
-              value={@element.width}
+              value={Map.get(@element, :name) || @element.type}
               phx-blur="update_element"
-              phx-value-field="width"
+              phx-value-field="name"
+              onfocus="this.setSelectionRange(this.value.length, this.value.length)"
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
             />
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
-            <input
-              type="number"
-              name="value"
-              step="0.1"
-              value={@element.height}
-              phx-blur="update_element"
-              phx-value-field="height"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-            />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">X (mm)</label>
+              <input
+                type="number"
+                name="value"
+                step="0.1"
+                value={@element.x}
+                phx-blur="update_element"
+                phx-value-field="x"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Y (mm)</label>
+              <input
+                type="number"
+                name="value"
+                step="0.1"
+                value={@element.y}
+                phx-blur="update_element"
+                phx-value-field="y"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </div>
           </div>
-        </div>
-      <% end %>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Rotación (°)</label>
-        <input
-          type="number"
-          name="value"
-          step="1"
-          value={@element.rotation || 0}
-          phx-blur="update_element"
-          phx-value-field="rotation"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-        />
-      </div>
-
-      <%= if @label_type == "multiple" && @element.type in ["qr", "barcode", "text"] do %>
-        <% cm = content_mode(@element, @show_binding_mode, @show_expression_mode) %>
-        <!-- Contenido del elemento: columna, texto fijo, o expresión -->
-        <div class="border-t pt-4 space-y-3">
-          <label class="block text-sm font-medium text-gray-700">Contenido del elemento</label>
-
-          <!-- Selector de modo (3 tabs) -->
-          <div class="flex rounded-lg border border-gray-300 overflow-hidden">
-            <button
-              type="button"
-              phx-click="set_content_mode"
-              phx-value-mode="binding"
-              class={"flex-1 px-2 py-2 text-xs font-medium transition-colors #{if cm == :column, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
-            >
-              Columna
-            </button>
-            <button
-              type="button"
-              phx-click="set_content_mode"
-              phx-value-mode="fixed"
-              class={"flex-1 px-2 py-2 text-xs font-medium transition-colors border-l border-gray-300 #{if cm == :text, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
-            >
-              Texto fijo
-            </button>
-            <button
-              type="button"
-              phx-click="set_content_mode"
-              phx-value-mode="expression"
-              class={"flex-1 px-2 py-2 text-xs font-medium transition-colors border-l border-gray-300 #{if cm == :expression, do: "bg-violet-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
-            >
-              Expresion
-            </button>
-          </div>
-
-          <%= case cm do %>
-            <% :column -> %>
-              <!-- Modo: Vincular a columna -->
-              <%= if length(@available_columns) > 0 do %>
-                <form phx-change="update_element">
-                  <input type="hidden" name="field" value="binding" />
-                  <select
-                    name="value"
-                    class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                  >
-                    <option value="">Seleccionar columna...</option>
-                    <%= for col <- @available_columns do %>
-                      <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
-                    <% end %>
-                  </select>
-                </form>
-                <p class="text-xs text-gray-500">
-                  El contenido cambiará según cada fila de datos
-                </p>
-              <% else %>
-                <!-- No hay datos cargados -->
-                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <div class="flex items-start space-x-3">
-                    <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <div class="flex-1">
-                      <p class="text-sm font-medium text-amber-800">No hay datos cargados</p>
-                      <p class="text-xs text-amber-700 mt-1">
-                        Para vincular a una columna, primero debes cargar un archivo de datos.
-                      </p>
-                      <.link
-                        navigate={~p"/generate/data?design_id=#{@design_id}&element_id=#{@element.id}"}
-                        class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
-                      >
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        <span>Cargar datos</span>
-                      </.link>
-                    </div>
-                  </div>
-                </div>
-              <% end %>
-
-            <% :text -> %>
-              <!-- Modo: Texto fijo -->
-              <% bc_validation = if @element.type == "barcode", do: validate_barcode_content(Map.get(@element, :text_content), @element.barcode_format), else: nil %>
-              <form phx-change="update_element">
-                <input type="hidden" name="field" value="text_content" />
+          <%= if @element.type != "text" do %>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Ancho (mm)</label>
                 <input
-                  type="text"
+                  type="number"
                   name="value"
-                  data-field="text_content"
-                  value={Map.get(@element, :text_content) || ""}
-                  placeholder={get_fixed_text_placeholder(@element.type)}
-                  phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
-                  class={[
-                    "block w-full rounded-md shadow-sm text-sm",
-                    if(bc_validation && not bc_validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
-                  ]}
+                  step="0.1"
+                  value={@element.width}
+                  phx-blur="update_element"
+                  phx-value-field="width"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
-              </form>
-              <%= if bc_validation && bc_validation.hint do %>
-                <p class={[
-                  "text-xs mt-1",
-                  if(not bc_validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
-                ]}><%= bc_validation.hint %></p>
-              <% else %>
-                <p class="text-xs text-gray-500 mt-1">
-                  Este contenido será igual en todas las etiquetas
-                </p>
-              <% end %>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Alto (mm)</label>
+                <input
+                  type="number"
+                  name="value"
+                  step="0.1"
+                  value={@element.height}
+                  phx-blur="update_element"
+                  phx-value-field="height"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                />
+              </div>
+            </div>
+          <% end %>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Rotación</label>
+            <input
+              type="number"
+              name="value"
+              step="1"
+              value={@element.rotation || 0}
+              phx-blur="update_element"
+              phx-value-field="rotation"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
+          </div>
+        </div>
+      </div>
 
-            <% :expression -> %>
-              <!-- Modo: Expresión — Constructor Visual -->
-              <%= case @expression_visual_mode do %>
-                <% :cards -> %>
-                  <!-- Grid de patrones -->
-                  <div class="grid grid-cols-2 gap-2">
-                    <%= for pattern <- expression_patterns() do %>
-                      <% {card_cls, text_cls, icon_cls} = pattern_color_classes(pattern.color) %>
-                      <% disabled = pattern.needs_column && length(@available_columns) == 0 %>
-                      <button
-                        type="button"
-                        phx-click="select_expression_pattern"
-                        phx-value-pattern={pattern.id}
-                        disabled={disabled}
-                        class={"flex items-center gap-1.5 p-2 rounded-lg border text-left transition-colors min-w-0 #{card_cls} #{if disabled, do: "opacity-40 cursor-not-allowed", else: "cursor-pointer"}"}
-                      >
-                        <span class={"text-xs font-bold px-1.5 py-0.5 rounded shrink-0 #{icon_cls}"}><%= pattern.icon %></span>
-                        <span class={"text-xs font-medium line-clamp-2 #{text_cls}"}><%= pattern.description %></span>
-                      </button>
-                    <% end %>
-                  </div>
-                  <button
-                    type="button"
-                    phx-click="toggle_expression_advanced"
-                    class="text-xs text-gray-500 hover:text-gray-700 mt-1"
-                  >
-                    Modo avanzado &rarr;
-                  </button>
+      <!-- Section: Contenido (only for qr/barcode/text) -->
+      <%= if @element.type in ["qr", "barcode", "text"] do %>
+        <div class="border-b border-gray-200">
+          <.section_header id="content" title="Contenido" collapsed={MapSet.member?(@collapsed_sections, "content")} />
+          <div class={if MapSet.member?(@collapsed_sections, "content"), do: "hidden", else: "pb-3 space-y-3"}>
+            <%= if @label_type == "multiple" do %>
+              <% cm = content_mode(@element, @show_binding_mode, @show_expression_mode) %>
+              <!-- Selector de modo (3 tabs) -->
+              <div class="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  type="button"
+                  phx-click="set_content_mode"
+                  phx-value-mode="binding"
+                  class={"flex-1 px-2 py-2 text-xs font-medium transition-colors #{if cm == :column, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+                >
+                  Columna
+                </button>
+                <button
+                  type="button"
+                  phx-click="set_content_mode"
+                  phx-value-mode="fixed"
+                  class={"flex-1 px-2 py-2 text-xs font-medium transition-colors border-l border-gray-300 #{if cm == :text, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+                >
+                  Texto fijo
+                </button>
+                <button
+                  type="button"
+                  phx-click="set_content_mode"
+                  phx-value-mode="expression"
+                  class={"flex-1 px-2 py-2 text-xs font-medium transition-colors border-l border-gray-300 #{if cm == :expression, do: "bg-violet-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+                >
+                  Expresion
+                </button>
+              </div>
 
-                <% {:form, pattern_id} -> %>
-                  <% pattern = get_pattern(pattern_id) %>
-                  <%= if pattern do %>
-                    <% {_, text_cls, icon_cls} = pattern_color_classes(pattern.color) %>
-                    <!-- Header -->
-                    <div class="flex items-center gap-2 mb-3">
-                      <button type="button" phx-click="back_to_expression_cards" class="text-gray-400 hover:text-gray-600">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-                      </button>
-                      <span class={"text-xs font-bold px-1.5 py-0.5 rounded #{icon_cls}"}><%= pattern.icon %></span>
-                      <span class={"text-sm font-semibold #{text_cls}"}><%= pattern.description %></span>
-                    </div>
-
-                    <!-- Formulario contextual -->
-                    <form phx-change="update_expression_builder" class="space-y-3">
-                      <%= case pattern_id do %>
-                        <% p when p in [:uppercase, :lowercase] -> %>
-                          <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
-                            <%= if length(@available_columns) > 0 do %>
-                              <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                <%= for col <- @available_columns do %>
-                                  <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
-                                <% end %>
-                              </select>
-                            <% else %>
-                              <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
-                            <% end %>
-                          </div>
-
-                        <% :today -> %>
-                          <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Formato</label>
-                            <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                              <%= for fmt <- ["DD/MM/AAAA", "AAAA-MM-DD", "MM/DD/AAAA", "DD-MM-AAAA"] do %>
-                                <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
-                              <% end %>
-                            </select>
-                          </div>
-
-                        <% :counter -> %>
-                          <div class="grid grid-cols-2 gap-2">
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Inicio</label>
-                              <input type="number" name="start" min="0" value={Map.get(@expression_builder, "start", "1")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
-                            </div>
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Digitos</label>
-                              <input type="number" name="digits" min="1" max="10" value={Map.get(@expression_builder, "digits", "4")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
-                            </div>
-                          </div>
-
-                        <% :batch -> %>
-                          <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Formato de lote</label>
-                            <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                              <%= for fmt <- ["AAMM-####", "AAAAMMDD-####", "AAAA-####", "####"] do %>
-                                <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
-                              <% end %>
-                            </select>
-                          </div>
-
-                        <% :expiry -> %>
-                          <div class="space-y-2">
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Dias a futuro</label>
-                              <input type="number" name="days" min="1" value={Map.get(@expression_builder, "days", "30")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
-                            </div>
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Formato</label>
-                              <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                <%= for fmt <- ["DD/MM/AAAA", "AAAA-MM-DD", "MM/DD/AAAA", "DD-MM-AAAA"] do %>
-                                  <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
-                                <% end %>
-                              </select>
-                            </div>
-                          </div>
-
-                        <% :conditional -> %>
-                          <div class="space-y-2">
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
-                              <%= if length(@available_columns) > 0 do %>
-                                <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                  <%= for col <- @available_columns do %>
-                                    <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
-                                  <% end %>
-                                </select>
-                              <% else %>
-                                <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
-                              <% end %>
-                            </div>
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Texto si vacio</label>
-                              <input type="text" name="alt_text" value={Map.get(@expression_builder, "alt_text", "N/A")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
-                            </div>
-                          </div>
-
-                        <% :format_number -> %>
-                          <div class="space-y-2">
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
-                              <%= if length(@available_columns) > 0 do %>
-                                <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                  <%= for col <- @available_columns do %>
-                                    <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
-                                  <% end %>
-                                </select>
-                              <% else %>
-                                <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
-                              <% end %>
-                            </div>
-                            <div>
-                              <label class="block text-xs font-medium text-gray-600 mb-1">Decimales</label>
-                              <input type="number" name="decimals" min="0" max="10" value={Map.get(@expression_builder, "decimals", "2")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
-                            </div>
-                          </div>
-
-                        <% _ -> %>
-                          <p class="text-xs text-gray-500">Sin opciones adicionales.</p>
-                      <% end %>
-                    </form>
-
-                    <!-- Vista previa -->
-                    <% {expr, result} = preview_expression(pattern_id, @expression_builder, @preview_data) %>
-                    <div class="bg-gray-50 rounded-lg p-2.5 space-y-1 border border-gray-200">
-                      <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Vista previa</p>
-                      <p class="text-xs font-mono text-gray-600 break-all"><%= expr %></p>
-                      <p class="text-sm font-semibold text-gray-900"><%= result %></p>
-                    </div>
-
-                    <!-- Botón aplicar -->
-                    <%= if @expression_applied do %>
-                      <button
-                        type="button"
-                        phx-click="apply_expression_pattern"
-                        class="w-full bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-                        Aplicado
-                      </button>
-                    <% else %>
-                      <button
-                        type="button"
-                        phx-click="apply_expression_pattern"
-                        class="w-full bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                      >
-                        Aplicar
-                      </button>
-                    <% end %>
-                  <% end %>
-
-                <% :advanced -> %>
-                  <!-- Modo avanzado: textarea + quick-insert (el original) -->
-                  <form phx-change="update_element">
-                    <input type="hidden" name="field" value="binding" />
-                    <textarea
-                      name="value"
-                      rows="3"
-                      phx-debounce="500"
-                      placeholder={"Ej: Lote: {{lote}} - {{HOY()}}"}
-                      class="block w-full rounded-md border-gray-300 shadow-sm text-sm font-mono"
-                    ><%= Map.get(@element, :binding) || "" %></textarea>
-                  </form>
-
-                  <!-- Quick-insert function buttons -->
-                  <div class="space-y-2">
-                    <p class="text-xs font-medium text-gray-500">Insertar funcion:</p>
-                    <div class="flex flex-wrap gap-1">
-                      <span class="text-xs text-gray-400 w-full">Texto</span>
-                      <%= for {label, tmpl} <- [{"MAYUS", "MAYUS(valor)"}, {"MINUS", "MINUS(valor)"}, {"CONCAT", "CONCAT(v1, v2)"}, {"RECORTAR", "RECORTAR(valor, largo)"}] do %>
-                        <button
-                          type="button"
-                          phx-click="insert_expression_function"
-                          phx-value-template={"{{#{tmpl}}}"}
-                          class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100"
-                        ><%= label %></button>
-                      <% end %>
-                    </div>
-                    <div class="flex flex-wrap gap-1">
-                      <span class="text-xs text-gray-400 w-full">Fechas</span>
-                      <%= for {label, tmpl} <- [{"HOY", "HOY()"}, {"AHORA", "AHORA()"}, {"+DIAS", "SUMAR_DIAS(HOY(), 30)"}, {"+MESES", "SUMAR_MESES(HOY(), 6)"}] do %>
-                        <button
-                          type="button"
-                          phx-click="insert_expression_function"
-                          phx-value-template={"{{#{tmpl}}}"}
-                          class="px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 rounded border border-emerald-200 hover:bg-emerald-100"
-                        ><%= label %></button>
-                      <% end %>
-                    </div>
-                    <div class="flex flex-wrap gap-1">
-                      <span class="text-xs text-gray-400 w-full">Contadores</span>
-                      <%= for {label, tmpl} <- [{"CONTADOR", "CONTADOR(1, 1, 4)"}, {"LOTE", "LOTE(AAMM-####)"}, {"#NUM", "FORMATO_NUM(valor, 2)"}] do %>
-                        <button
-                          type="button"
-                          phx-click="insert_expression_function"
-                          phx-value-template={"{{#{tmpl}}}"}
-                          class="px-2 py-0.5 text-xs bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100"
-                        ><%= label %></button>
-                      <% end %>
-                    </div>
-                    <div class="flex flex-wrap gap-1">
-                      <span class="text-xs text-gray-400 w-full">Condicionales</span>
-                      <%= for {label, tmpl} <- [{"SI", "SI(valor == X, si, no)"}, {"VACIO", "VACIO(valor)"}, {"DEFECTO", "POR_DEFECTO(valor, alt)"}] do %>
-                        <button
-                          type="button"
-                          phx-click="insert_expression_function"
-                          phx-value-template={"{{#{tmpl}}}"}
-                          class="px-2 py-0.5 text-xs bg-violet-50 text-violet-700 rounded border border-violet-200 hover:bg-violet-100"
-                        ><%= label %></button>
-                      <% end %>
-                    </div>
-                  </div>
-
-                  <!-- Column references -->
+              <%= case cm do %>
+                <% :column -> %>
                   <%= if length(@available_columns) > 0 do %>
-                    <div class="space-y-1">
-                      <p class="text-xs font-medium text-gray-500">Insertar columna:</p>
-                      <div class="flex flex-wrap gap-1">
+                    <form phx-change="update_element">
+                      <input type="hidden" name="field" value="binding" />
+                      <select
+                        name="value"
+                        class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                      >
+                        <option value="">Seleccionar columna...</option>
                         <%= for col <- @available_columns do %>
-                          <button
-                            type="button"
-                            phx-click="insert_expression_function"
-                            phx-value-template={"{{#{col}}}"}
-                            class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
-                          ><%= col %></button>
+                          <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
                         <% end %>
+                      </select>
+                    </form>
+                    <p class="text-xs text-gray-500">
+                      El contenido cambiara segun cada fila de datos
+                    </p>
+                  <% else %>
+                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <div class="flex items-start space-x-3">
+                        <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div class="flex-1">
+                          <p class="text-sm font-medium text-amber-800">No hay datos cargados</p>
+                          <p class="text-xs text-amber-700 mt-1">
+                            Para vincular a una columna, primero debes cargar un archivo de datos.
+                          </p>
+                          <.link
+                            navigate={~p"/generate/data?design_id=#{@design_id}&element_id=#{@element.id}"}
+                            class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            <span>Cargar datos</span>
+                          </.link>
+                        </div>
                       </div>
                     </div>
                   <% end %>
 
-                  <button
-                    type="button"
-                    phx-click="toggle_expression_advanced"
-                    class="text-xs text-gray-500 hover:text-gray-700"
-                  >
-                    &larr; Volver al constructor visual
-                  </button>
+                <% :text -> %>
+                  <% bc_validation = if @element.type == "barcode", do: validate_barcode_content(Map.get(@element, :text_content), @element.barcode_format), else: nil %>
+                  <form phx-change="update_element">
+                    <input type="hidden" name="field" value="text_content" />
+                    <input
+                      type="text"
+                      name="value"
+                      data-field="text_content"
+                      value={Map.get(@element, :text_content) || ""}
+                      placeholder={get_fixed_text_placeholder(@element.type)}
+                      phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
+                      class={[
+                        "block w-full rounded-md shadow-sm text-sm",
+                        if(bc_validation && not bc_validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
+                      ]}
+                    />
+                  </form>
+                  <%= if bc_validation && bc_validation.hint do %>
+                    <p class={[
+                      "text-xs mt-1",
+                      if(not bc_validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
+                    ]}><%= bc_validation.hint %></p>
+                  <% else %>
+                    <p class="text-xs text-gray-500 mt-1">
+                      Este contenido sera igual en todas las etiquetas
+                    </p>
+                  <% end %>
 
-                <% _ -> %>
-                  <!-- Fallback -->
-                  <p class="text-xs text-gray-500">Modo no reconocido.</p>
+                <% :expression -> %>
+                  <%= case @expression_visual_mode do %>
+                    <% :cards -> %>
+                      <div class="grid grid-cols-2 gap-2">
+                        <%= for pattern <- expression_patterns() do %>
+                          <% {card_cls, text_cls, icon_cls} = pattern_color_classes(pattern.color) %>
+                          <% disabled = pattern.needs_column && length(@available_columns) == 0 %>
+                          <button
+                            type="button"
+                            phx-click="select_expression_pattern"
+                            phx-value-pattern={pattern.id}
+                            disabled={disabled}
+                            class={"flex items-center gap-1.5 p-2 rounded-lg border text-left transition-colors min-w-0 #{card_cls} #{if disabled, do: "opacity-40 cursor-not-allowed", else: "cursor-pointer"}"}
+                          >
+                            <span class={"text-xs font-bold px-1.5 py-0.5 rounded shrink-0 #{icon_cls}"}><%= pattern.icon %></span>
+                            <span class={"text-xs font-medium line-clamp-2 #{text_cls}"}><%= pattern.description %></span>
+                          </button>
+                        <% end %>
+                      </div>
+                      <button
+                        type="button"
+                        phx-click="toggle_expression_advanced"
+                        class="text-xs text-gray-500 hover:text-gray-700 mt-1"
+                      >
+                        Modo avanzado &rarr;
+                      </button>
+
+                    <% {:form, pattern_id} -> %>
+                      <% pattern = get_pattern(pattern_id) %>
+                      <%= if pattern do %>
+                        <% {_, text_cls, icon_cls} = pattern_color_classes(pattern.color) %>
+                        <div class="flex items-center gap-2 mb-3">
+                          <button type="button" phx-click="back_to_expression_cards" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                          </button>
+                          <span class={"text-xs font-bold px-1.5 py-0.5 rounded #{icon_cls}"}><%= pattern.icon %></span>
+                          <span class={"text-sm font-semibold #{text_cls}"}><%= pattern.description %></span>
+                        </div>
+
+                        <form phx-change="update_expression_builder" class="space-y-3">
+                          <%= case pattern_id do %>
+                            <% p when p in [:uppercase, :lowercase] -> %>
+                              <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
+                                <%= if length(@available_columns) > 0 do %>
+                                  <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                    <%= for col <- @available_columns do %>
+                                      <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
+                                    <% end %>
+                                  </select>
+                                <% else %>
+                                  <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
+                                <% end %>
+                              </div>
+
+                            <% :today -> %>
+                              <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Formato</label>
+                                <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                  <%= for fmt <- ["DD/MM/AAAA", "AAAA-MM-DD", "MM/DD/AAAA", "DD-MM-AAAA"] do %>
+                                    <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
+                                  <% end %>
+                                </select>
+                              </div>
+
+                            <% :counter -> %>
+                              <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Inicio</label>
+                                  <input type="number" name="start" min="0" value={Map.get(@expression_builder, "start", "1")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                                </div>
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Digitos</label>
+                                  <input type="number" name="digits" min="1" max="10" value={Map.get(@expression_builder, "digits", "4")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                                </div>
+                              </div>
+
+                            <% :batch -> %>
+                              <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Formato de lote</label>
+                                <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                  <%= for fmt <- ["AAMM-####", "AAAAMMDD-####", "AAAA-####", "####"] do %>
+                                    <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
+                                  <% end %>
+                                </select>
+                              </div>
+
+                            <% :expiry -> %>
+                              <div class="space-y-2">
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Dias a futuro</label>
+                                  <input type="number" name="days" min="1" value={Map.get(@expression_builder, "days", "30")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                                </div>
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Formato</label>
+                                  <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                    <%= for fmt <- ["DD/MM/AAAA", "AAAA-MM-DD", "MM/DD/AAAA", "DD-MM-AAAA"] do %>
+                                      <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
+                                    <% end %>
+                                  </select>
+                                </div>
+                              </div>
+
+                            <% :conditional -> %>
+                              <div class="space-y-2">
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
+                                  <%= if length(@available_columns) > 0 do %>
+                                    <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                      <%= for col <- @available_columns do %>
+                                        <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
+                                      <% end %>
+                                    </select>
+                                  <% else %>
+                                    <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
+                                  <% end %>
+                                </div>
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Texto si vacio</label>
+                                  <input type="text" name="alt_text" value={Map.get(@expression_builder, "alt_text", "N/A")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                                </div>
+                              </div>
+
+                            <% :format_number -> %>
+                              <div class="space-y-2">
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
+                                  <%= if length(@available_columns) > 0 do %>
+                                    <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                      <%= for col <- @available_columns do %>
+                                        <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
+                                      <% end %>
+                                    </select>
+                                  <% else %>
+                                    <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
+                                  <% end %>
+                                </div>
+                                <div>
+                                  <label class="block text-xs font-medium text-gray-600 mb-1">Decimales</label>
+                                  <input type="number" name="decimals" min="0" max="10" value={Map.get(@expression_builder, "decimals", "2")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                                </div>
+                              </div>
+
+                            <% _ -> %>
+                              <p class="text-xs text-gray-500">Sin opciones adicionales.</p>
+                          <% end %>
+                        </form>
+
+                        <% {expr, result} = preview_expression(pattern_id, @expression_builder, @preview_data) %>
+                        <div class="bg-gray-50 rounded-lg p-2.5 space-y-1 border border-gray-200">
+                          <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Vista previa</p>
+                          <p class="text-xs font-mono text-gray-600 break-all"><%= expr %></p>
+                          <p class="text-sm font-semibold text-gray-900"><%= result %></p>
+                        </div>
+
+                        <%= if @expression_applied do %>
+                          <button
+                            type="button"
+                            phx-click="apply_expression_pattern"
+                            class="w-full bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                            Aplicado
+                          </button>
+                        <% else %>
+                          <button
+                            type="button"
+                            phx-click="apply_expression_pattern"
+                            class="w-full bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                          >
+                            Aplicar
+                          </button>
+                        <% end %>
+                      <% end %>
+
+                    <% :advanced -> %>
+                      <form phx-change="update_element">
+                        <input type="hidden" name="field" value="binding" />
+                        <textarea
+                          name="value"
+                          rows="3"
+                          phx-debounce="500"
+                          placeholder={"Ej: Lote: {{lote}} - {{HOY()}}"}
+                          class="block w-full rounded-md border-gray-300 shadow-sm text-sm font-mono"
+                        ><%= Map.get(@element, :binding) || "" %></textarea>
+                      </form>
+
+                      <div class="space-y-2">
+                        <p class="text-xs font-medium text-gray-500">Insertar funcion:</p>
+                        <div class="flex flex-wrap gap-1">
+                          <span class="text-xs text-gray-400 w-full">Texto</span>
+                          <%= for {label, tmpl} <- [{"MAYUS", "MAYUS(valor)"}, {"MINUS", "MINUS(valor)"}, {"CONCAT", "CONCAT(v1, v2)"}, {"RECORTAR", "RECORTAR(valor, largo)"}] do %>
+                            <button
+                              type="button"
+                              phx-click="insert_expression_function"
+                              phx-value-template={"{{#{tmpl}}}"}
+                              class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100"
+                            ><%= label %></button>
+                          <% end %>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                          <span class="text-xs text-gray-400 w-full">Fechas</span>
+                          <%= for {label, tmpl} <- [{"HOY", "HOY()"}, {"AHORA", "AHORA()"}, {"+DIAS", "SUMAR_DIAS(HOY(), 30)"}, {"+MESES", "SUMAR_MESES(HOY(), 6)"}] do %>
+                            <button
+                              type="button"
+                              phx-click="insert_expression_function"
+                              phx-value-template={"{{#{tmpl}}}"}
+                              class="px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 rounded border border-emerald-200 hover:bg-emerald-100"
+                            ><%= label %></button>
+                          <% end %>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                          <span class="text-xs text-gray-400 w-full">Contadores</span>
+                          <%= for {label, tmpl} <- [{"CONTADOR", "CONTADOR(1, 1, 4)"}, {"LOTE", "LOTE(AAMM-####)"}, {"#NUM", "FORMATO_NUM(valor, 2)"}] do %>
+                            <button
+                              type="button"
+                              phx-click="insert_expression_function"
+                              phx-value-template={"{{#{tmpl}}}"}
+                              class="px-2 py-0.5 text-xs bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100"
+                            ><%= label %></button>
+                          <% end %>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                          <span class="text-xs text-gray-400 w-full">Condicionales</span>
+                          <%= for {label, tmpl} <- [{"SI", "SI(valor == X, si, no)"}, {"VACIO", "VACIO(valor)"}, {"DEFECTO", "POR_DEFECTO(valor, alt)"}] do %>
+                            <button
+                              type="button"
+                              phx-click="insert_expression_function"
+                              phx-value-template={"{{#{tmpl}}}"}
+                              class="px-2 py-0.5 text-xs bg-violet-50 text-violet-700 rounded border border-violet-200 hover:bg-violet-100"
+                            ><%= label %></button>
+                          <% end %>
+                        </div>
+                      </div>
+
+                      <%= if length(@available_columns) > 0 do %>
+                        <div class="space-y-1">
+                          <p class="text-xs font-medium text-gray-500">Insertar columna:</p>
+                          <div class="flex flex-wrap gap-1">
+                            <%= for col <- @available_columns do %>
+                              <button
+                                type="button"
+                                phx-click="insert_expression_function"
+                                phx-value-template={"{{#{col}}}"}
+                                class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
+                              ><%= col %></button>
+                            <% end %>
+                          </div>
+                        </div>
+                      <% end %>
+
+                      <button
+                        type="button"
+                        phx-click="toggle_expression_advanced"
+                        class="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        &larr; Volver al constructor visual
+                      </button>
+
+                    <% _ -> %>
+                      <p class="text-xs text-gray-500">Modo no reconocido.</p>
+                  <% end %>
               <% end %>
-          <% end %>
+            <% else %>
+              <!-- Single label: direct content input -->
+              <%= case @element.type do %>
+                <% "qr" -> %>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700">Contenido codigo QR</label>
+                    <form phx-change="update_element">
+                      <input type="hidden" name="field" value="text_content" />
+                      <input
+                        type="text"
+                        name="value"
+                        data-field="text_content"
+                        value={@element.text_content || ""}
+                        phx-debounce="500"
+                        placeholder="Completar"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                      />
+                    </form>
+                  </div>
+                <% "barcode" -> %>
+                  <% validation = validate_barcode_content(@element.text_content, @element.barcode_format) %>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700">Contenido codigo Barras</label>
+                    <form phx-change="update_element">
+                      <input type="hidden" name="field" value="text_content" />
+                      <input
+                        type="text"
+                        name="value"
+                        data-field="text_content"
+                        value={@element.text_content || ""}
+                        phx-debounce="500"
+                        placeholder="Completar"
+                        class={[
+                          "mt-1 block w-full rounded-md shadow-sm text-sm",
+                          if(not validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
+                        ]}
+                      />
+                    </form>
+                    <%= if validation.hint do %>
+                      <p class={[
+                        "text-xs mt-1",
+                        if(not validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
+                      ]}><%= validation.hint %></p>
+                    <% end %>
+                  </div>
+                <% "text" -> %>
+                  <div>
+                    <label for="text_content_input" class="block text-sm font-medium text-gray-700">Contenido</label>
+                    <form phx-change="update_element">
+                      <input type="hidden" name="field" value="text_content" />
+                      <input
+                        type="text"
+                        id="text_content_input"
+                        name="value"
+                        value={@element.text_content || ""}
+                        phx-debounce="300"
+                        placeholder="Completar"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                      />
+                    </form>
+                  </div>
+                <% _ -> %>
+              <% end %>
+            <% end %>
+          </div>
         </div>
       <% end %>
 
-      <%= case @element.type do %>
-        <% "qr" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <%= if @label_type == "single" do %>
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Contenido código QR</label>
-                <form phx-change="update_element">
-                  <input type="hidden" name="field" value="text_content" />
-                  <input
-                    type="text"
-                    name="value"
-                    data-field="text_content"
-                    value={@element.text_content || ""}
-                    phx-debounce="500"
-                    placeholder="Completar"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                  />
-                </form>
-              </div>
-            <% end %>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Nivel de corrección de error</label>
-              <form phx-change="update_element" class="mt-1">
-                <input type="hidden" name="field" value="qr_error_level" />
-                <select
-                  name="value"
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                >
-                  <option value="L" selected={@element.qr_error_level == "L"}>L (7%)</option>
-                  <option value="M" selected={@element.qr_error_level == "M"}>M (15%)</option>
-                  <option value="Q" selected={@element.qr_error_level == "Q"}>Q (25%)</option>
-                  <option value="H" selected={@element.qr_error_level == "H"}>H (30%)</option>
-                </select>
-              </form>
-            </div>
-            <%!-- QR Logo section --%>
-            <div class="border-t pt-3">
-              <label class="block text-sm font-medium text-gray-700 mb-1">Logo en QR</label>
-              <%= if @element.qr_logo_data do %>
-                <div class="flex items-center gap-2 mb-2">
-                  <img src={@element.qr_logo_data} class="w-10 h-10 object-contain border rounded" />
-                  <button
-                    type="button"
-                    phx-click="update_element"
-                    phx-value-field="qr_logo_data"
-                    phx-value-value=""
-                    class="text-xs text-red-600 hover:text-red-800"
-                  >
-                    Quitar logo
-                  </button>
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-500 mb-1">Tamaño del logo (<%= round(@element.qr_logo_size || 25) %>%)</label>
-                  <form phx-change="update_element">
-                    <input type="hidden" name="field" value="qr_logo_size" />
-                    <input
-                      type="range"
-                      name="value"
-                      min="5"
-                      max="30"
-                      step="1"
-                      value={@element.qr_logo_size || 25}
-                      class="w-full"
-                    />
-                  </form>
-                </div>
-              <% else %>
-                <div
-                  id="qr-logo-upload"
-                  phx-hook="QRLogoUpload"
-                  class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition-colors"
-                >
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/svg+xml"
-                    class="hidden"
-                    id="qr-logo-file-input"
-                  />
-                  <p class="text-xs text-gray-500">Click para subir logo</p>
-                  <p class="text-xs text-gray-400">PNG/JPG, máx 500KB</p>
-                </div>
-              <% end %>
-              <p class="text-xs text-gray-400 mt-1">El nivel de error se fija en H con logo</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color del código</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :color) || "#000000"}
-                phx-change="update_element"
-                phx-value-field="color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :background_color) || "#ffffff"}
-                phx-change="update_element"
-                phx-value-field="background_color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-          </div>
-
-        <% "barcode" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <%= if @label_type == "single" do %>
-              <% validation = validate_barcode_content(@element.text_content, @element.barcode_format) %>
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Contenido código Barras</label>
-                <form phx-change="update_element">
-                  <input type="hidden" name="field" value="text_content" />
-                  <input
-                    type="text"
-                    name="value"
-                    data-field="text_content"
-                    value={@element.text_content || ""}
-                    phx-debounce="500"
-                    placeholder="Completar"
-                    class={[
-                      "mt-1 block w-full rounded-md shadow-sm text-sm",
-                      if(not validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
-                    ]}
-                  />
-                </form>
-                <%= if validation.hint do %>
-                  <p class={[
-                    "text-xs mt-1",
-                    if(not validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
-                  ]}><%= validation.hint %></p>
-                <% end %>
-              </div>
-            <% end %>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Formato</label>
-              <form phx-change="update_element">
-              <input type="hidden" name="field" value="barcode_format" />
-              <select
-                name="value"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              >
-                <optgroup label="1D General">
-                  <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"CODE93", "CODE93"}, {"CODABAR", "Codabar"}, {"MSI", "MSI"}, {"pharmacode", "Pharmacode"}] do %>
-                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
-                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
-                    </option>
-                  <% end %>
-                </optgroup>
-                <optgroup label="1D Retail">
-                  <%= for {value, label} <- [{"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC-A"}, {"ITF14", "ITF-14"}, {"GS1_DATABAR", "GS1 DataBar"}, {"GS1_DATABAR_STACKED", "GS1 DataBar Stacked"}, {"GS1_DATABAR_EXPANDED", "GS1 DataBar Expanded"}] do %>
-                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
-                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
-                    </option>
-                  <% end %>
-                </optgroup>
-                <optgroup label="1D Supply Chain">
-                  <%= for {value, label} <- [{"GS1_128", "GS1-128"}] do %>
-                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
-                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
-                    </option>
-                  <% end %>
-                </optgroup>
-                <optgroup label="2D">
-                  <%= for {value, label} <- [{"DATAMATRIX", "DataMatrix"}, {"PDF417", "PDF417"}, {"AZTEC", "Aztec"}, {"MAXICODE", "MaxiCode"}] do %>
-                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
-                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
-                    </option>
-                  <% end %>
-                </optgroup>
-                <optgroup label="Postal">
-                  <%= for {value, label} <- [{"POSTNET", "POSTNET"}, {"PLANET", "PLANET"}, {"ROYALMAIL", "Royal Mail"}] do %>
-                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
-                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
-                    </option>
-                  <% end %>
-                </optgroup>
-              </select>
-              </form>
-            </div>
-            <%= if info = barcode_format_info(@element.barcode_format) do %>
-              <% color = info.color %>
-              <div class={[
-                "rounded-lg border p-2.5 text-xs space-y-1",
-                color == "blue" && "bg-blue-50 border-blue-200",
-                color == "emerald" && "bg-emerald-50 border-emerald-200",
-                color == "cyan" && "bg-cyan-50 border-cyan-200",
-                color == "amber" && "bg-amber-50 border-amber-200",
-                color == "pink" && "bg-pink-50 border-pink-200"
-              ]}>
-                <div class="flex items-center justify-between">
-                  <span class={[
-                    "font-semibold",
-                    color == "blue" && "text-blue-700",
-                    color == "emerald" && "text-emerald-700",
-                    color == "cyan" && "text-cyan-700",
-                    color == "amber" && "text-amber-700",
-                    color == "pink" && "text-pink-700"
-                  ]}><%= info.name %></span>
-                  <span class={[
-                    "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
-                    color == "blue" && "bg-blue-100 text-blue-600",
-                    color == "emerald" && "bg-emerald-100 text-emerald-600",
-                    color == "cyan" && "bg-cyan-100 text-cyan-600",
-                    color == "amber" && "bg-amber-100 text-amber-600",
-                    color == "pink" && "bg-pink-100 text-pink-600"
-                  ]}><%= info.category %></span>
-                </div>
-                <p class="text-gray-600"><%= info.type %></p>
-                <div class="text-gray-500 space-y-0.5">
-                  <p><span class="font-medium text-gray-600">Longitud:</span> <%= info.length %></p>
-                  <p><span class="font-medium text-gray-600">Caracteres:</span> <%= info.chars %></p>
-                  <p><span class="font-medium text-gray-600">Uso:</span> <%= info.usage %></p>
-                </div>
-              </div>
-            <% end %>
-            <%= unless @element.barcode_format in ~w(DATAMATRIX PDF417 AZTEC MAXICODE) do %>
-              <div class="flex items-center">
-                <form phx-change="update_element">
-                  <input type="hidden" name="field" value="barcode_show_text" />
-                  <input type="hidden" name="value" value="false" />
-                  <input
-                    type="checkbox"
-                    id="barcode_show_text"
-                    name="value"
-                    value="true"
-                    checked={@element.barcode_show_text}
-                    class="rounded border-gray-300"
-                  />
-                  <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
-                </form>
-              </div>
-            <% end %>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color del código</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :color) || "#000000"}
-                phx-change="update_element"
-                phx-value-field="color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :background_color) || "#ffffff"}
-                phx-change="update_element"
-                phx-value-field="background_color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-          </div>
-
-        <% "text" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <%= if @label_type == "single" do %>
-              <div>
-                <label for="text_content_input" class="block text-sm font-medium text-gray-700">Contenido</label>
-                <form phx-change="update_element">
-                  <input type="hidden" name="field" value="text_content" />
-                  <input
-                    type="text"
-                    id="text_content_input"
-                    name="value"
-                    value={@element.text_content || ""}
-                    phx-debounce="300"
-                    placeholder="Completar"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                  />
-                </form>
-              </div>
-            <% end %>
+      <!-- Section: Tipografía (only for text) -->
+      <%= if @element.type == "text" do %>
+        <div class="border-b border-gray-200">
+          <.section_header id="typography" title="Tipografía" collapsed={MapSet.member?(@collapsed_sections, "typography")} />
+          <div class={if MapSet.member?(@collapsed_sections, "typography"), do: "hidden", else: "pb-3 space-y-3"}>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-sm font-medium text-gray-700">Tamaño fuente</label>
@@ -3111,17 +2963,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   name="value"
                   class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 >
-                  <!-- Fuentes compatibles con impresoras Zebra y sistemas comunes -->
                   <option value="Arial" selected={@element.font_family == "Arial"}>Arial</option>
                   <option value="Helvetica" selected={@element.font_family == "Helvetica"}>Helvetica</option>
                   <option value="Verdana" selected={@element.font_family == "Verdana"}>Verdana</option>
                   <option value="Courier New" selected={@element.font_family == "Courier New"}>Courier New (monospace)</option>
                   <option value="Times New Roman" selected={@element.font_family == "Times New Roman"}>Times New Roman</option>
                   <option value="Georgia" selected={@element.font_family == "Georgia"}>Georgia</option>
-                  <!-- Fuentes genéricas como fallback -->
-                  <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif (genérica)</option>
-                  <option value="serif" selected={@element.font_family == "serif"}>Serif (genérica)</option>
-                  <option value="monospace" selected={@element.font_family == "monospace"}>Monospace (genérica)</option>
+                  <option value="sans-serif" selected={@element.font_family == "sans-serif"}>Sans-serif (generica)</option>
+                  <option value="serif" selected={@element.font_family == "serif"}>Serif (generica)</option>
+                  <option value="monospace" selected={@element.font_family == "monospace"}>Monospace (generica)</option>
                 </select>
               </form>
               <p class="mt-1 text-xs text-gray-400">Compatible con impresoras Zebra</p>
@@ -3153,7 +3003,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </select>
               </form>
             </div>
-            <div class="col-span-2 border-t pt-3 mt-1">
+            <div class="border-t pt-3 mt-1">
               <label class="flex items-center gap-2 text-sm text-gray-700">
                 <form phx-change="update_element" class="flex items-center gap-2">
                   <input type="hidden" name="field" value="text_auto_fit" />
@@ -3165,7 +3015,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     checked={Map.get(@element, :text_auto_fit, false) == true}
                     class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span class="font-medium">Ajustar al área</span>
+                  <span class="font-medium">Ajustar al area</span>
                 </form>
               </label>
               <p class="text-xs text-gray-400 mt-0.5 ml-6">Reduce la fuente para que el texto quepa</p>
@@ -3188,214 +3038,430 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <% end %>
             </div>
           </div>
+        </div>
+      <% end %>
 
-        <% "image" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Imagen</label>
-              <%= if Map.get(@element, :image_data) do %>
-                <div class="mt-2 relative">
-                  <img src={Map.get(@element, :image_data)} class="w-full h-auto rounded border border-gray-200" />
-                  <p class="mt-1 text-xs text-gray-500 truncate"><%= Map.get(@element, :image_filename, "imagen") %></p>
+      <!-- Section: Apariencia (type-specific visual props) -->
+      <%= if @element.type in ["qr", "barcode", "image", "line", "rectangle", "circle"] do %>
+        <div class="border-b border-gray-200">
+          <.section_header id="appearance" title="Apariencia" collapsed={MapSet.member?(@collapsed_sections, "appearance")} />
+          <div class={if MapSet.member?(@collapsed_sections, "appearance"), do: "hidden", else: "pb-3 space-y-3"}>
+            <%= case @element.type do %>
+              <% "qr" -> %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Nivel de corrección de error</label>
+                  <form phx-change="update_element" class="mt-1">
+                    <input type="hidden" name="field" value="qr_error_level" />
+                    <select
+                      name="value"
+                      class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                    >
+                      <option value="L" selected={@element.qr_error_level == "L"}>L (7%)</option>
+                      <option value="M" selected={@element.qr_error_level == "M"}>M (15%)</option>
+                      <option value="Q" selected={@element.qr_error_level == "Q"}>Q (25%)</option>
+                      <option value="H" selected={@element.qr_error_level == "H"}>H (30%)</option>
+                    </select>
+                  </form>
                 </div>
-              <% end %>
-
-              <form
-                id="image-upload-form"
-                phx-submit="upload_element_image"
-                phx-change="validate_upload"
-                phx-hook="AutoUploadSubmit"
-              >
-                <input type="hidden" name="element_id" value={Map.get(@element, :id) || ""} />
-                <div class="mt-2">
-                  <.live_file_input upload={@uploads.element_image} class="hidden" />
-                  <label
-                    for={@uploads.element_image.ref}
-                    class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition"
-                  >
-                    <div class="text-center">
-                      <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <p class="mt-1 text-xs text-gray-500">
-                        <%= if Map.get(@element, :image_data), do: "Cambiar imagen", else: "Clic para seleccionar" %>
-                      </p>
-                      <p class="text-xs text-gray-400">PNG, JPG, GIF, SVG (max 2MB)</p>
+                <div class="border-t pt-3">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Logo en QR</label>
+                  <%= if @element.qr_logo_data do %>
+                    <div class="flex items-center gap-2 mb-2">
+                      <img src={@element.qr_logo_data} class="w-10 h-10 object-contain border rounded" />
+                      <button
+                        type="button"
+                        phx-click="update_element"
+                        phx-value-field="qr_logo_data"
+                        phx-value-value=""
+                        class="text-xs text-red-600 hover:text-red-800"
+                      >
+                        Quitar logo
+                      </button>
                     </div>
-                  </label>
-
-                  <%= for entry <- @uploads.element_image.entries do %>
-                    <div class="mt-2">
-                      <div class="flex items-center justify-between text-sm">
-                        <span class="text-gray-600 truncate"><%= entry.client_name %></span>
-                        <span class="text-green-600 text-xs">
-                          <%= if entry.done?, do: "✓ Aplicando...", else: "#{entry.progress}%" %>
-                        </span>
-                      </div>
-                      <div class="mt-1 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                        <div class="h-full bg-blue-500 transition-all" style={"width: #{entry.progress}%"}></div>
-                      </div>
-                      <%= for err <- upload_errors(@uploads.element_image, entry) do %>
-                        <p class="mt-1 text-xs text-red-500"><%= error_to_string(err) %></p>
-                      <% end %>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">Tamaño del logo (<%= round(@element.qr_logo_size || 25) %>%)</label>
+                      <form phx-change="update_element">
+                        <input type="hidden" name="field" value="qr_logo_size" />
+                        <input
+                          type="range"
+                          name="value"
+                          min="5"
+                          max="30"
+                          step="1"
+                          value={@element.qr_logo_size || 25}
+                          class="w-full"
+                        />
+                      </form>
+                    </div>
+                  <% else %>
+                    <div
+                      id="qr-logo-upload"
+                      phx-hook="QRLogoUpload"
+                      class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                    >
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml"
+                        class="hidden"
+                        id="qr-logo-file-input"
+                      />
+                      <p class="text-xs text-gray-500">Click para subir logo</p>
+                      <p class="text-xs text-gray-400">PNG/JPG, max 500KB</p>
                     </div>
                   <% end %>
-                  <button type="submit" class="hidden">Submit</button>
+                  <p class="text-xs text-gray-400 mt-1">El nivel de error se fija en H con logo</p>
                 </div>
-              </form>
-            </div>
-          </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color del codigo</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :color) || "#000000"}
+                    phx-change="update_element"
+                    phx-value-field="color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :background_color) || "#ffffff"}
+                    phx-change="update_element"
+                    phx-value-field="background_color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
 
-        <% "line" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :color) || "#000000"}
-                phx-change="update_element"
-                phx-value-field="color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Grosor (mm)</label>
-              <input
-                type="number"
-                name="value"
-                value={Map.get(@element, :border_width) || 0.5}
-                step="0.1"
-                min="0.1"
-                phx-blur="update_element"
-                phx-value-field="border_width"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-            </div>
-          </div>
+              <% "barcode" -> %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Formato</label>
+                  <form phx-change="update_element">
+                  <input type="hidden" name="field" value="barcode_format" />
+                  <select
+                    name="value"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  >
+                    <optgroup label="1D General">
+                      <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"CODE93", "CODE93"}, {"CODABAR", "Codabar"}, {"MSI", "MSI"}, {"pharmacode", "Pharmacode"}] do %>
+                        <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                        <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                          <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                        </option>
+                      <% end %>
+                    </optgroup>
+                    <optgroup label="1D Retail">
+                      <%= for {value, label} <- [{"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC-A"}, {"ITF14", "ITF-14"}, {"GS1_DATABAR", "GS1 DataBar"}, {"GS1_DATABAR_STACKED", "GS1 DataBar Stacked"}, {"GS1_DATABAR_EXPANDED", "GS1 DataBar Expanded"}] do %>
+                        <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                        <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                          <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                        </option>
+                      <% end %>
+                    </optgroup>
+                    <optgroup label="1D Supply Chain">
+                      <%= for {value, label} <- [{"GS1_128", "GS1-128"}] do %>
+                        <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                        <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                          <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                        </option>
+                      <% end %>
+                    </optgroup>
+                    <optgroup label="2D">
+                      <%= for {value, label} <- [{"DATAMATRIX", "DataMatrix"}, {"PDF417", "PDF417"}, {"AZTEC", "Aztec"}, {"MAXICODE", "MaxiCode"}] do %>
+                        <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                        <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                          <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                        </option>
+                      <% end %>
+                    </optgroup>
+                    <optgroup label="Postal">
+                      <%= for {value, label} <- [{"POSTNET", "POSTNET"}, {"PLANET", "PLANET"}, {"ROYALMAIL", "Royal Mail"}] do %>
+                        <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                        <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                          <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                        </option>
+                      <% end %>
+                    </optgroup>
+                  </select>
+                  </form>
+                </div>
+                <%= if info = barcode_format_info(@element.barcode_format) do %>
+                  <% color = info.color %>
+                  <div class={[
+                    "rounded-lg border p-2.5 text-xs space-y-1",
+                    color == "blue" && "bg-blue-50 border-blue-200",
+                    color == "emerald" && "bg-emerald-50 border-emerald-200",
+                    color == "cyan" && "bg-cyan-50 border-cyan-200",
+                    color == "amber" && "bg-amber-50 border-amber-200",
+                    color == "pink" && "bg-pink-50 border-pink-200"
+                  ]}>
+                    <div class="flex items-center justify-between">
+                      <span class={[
+                        "font-semibold",
+                        color == "blue" && "text-blue-700",
+                        color == "emerald" && "text-emerald-700",
+                        color == "cyan" && "text-cyan-700",
+                        color == "amber" && "text-amber-700",
+                        color == "pink" && "text-pink-700"
+                      ]}><%= info.name %></span>
+                      <span class={[
+                        "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                        color == "blue" && "bg-blue-100 text-blue-600",
+                        color == "emerald" && "bg-emerald-100 text-emerald-600",
+                        color == "cyan" && "bg-cyan-100 text-cyan-600",
+                        color == "amber" && "bg-amber-100 text-amber-600",
+                        color == "pink" && "bg-pink-100 text-pink-600"
+                      ]}><%= info.category %></span>
+                    </div>
+                    <p class="text-gray-600"><%= info.type %></p>
+                    <div class="text-gray-500 space-y-0.5">
+                      <p><span class="font-medium text-gray-600">Longitud:</span> <%= info.length %></p>
+                      <p><span class="font-medium text-gray-600">Caracteres:</span> <%= info.chars %></p>
+                      <p><span class="font-medium text-gray-600">Uso:</span> <%= info.usage %></p>
+                    </div>
+                  </div>
+                <% end %>
+                <%= unless @element.barcode_format in ~w(DATAMATRIX PDF417 AZTEC MAXICODE) do %>
+                  <div class="flex items-center">
+                    <form phx-change="update_element">
+                      <input type="hidden" name="field" value="barcode_show_text" />
+                      <input type="hidden" name="value" value="false" />
+                      <input
+                        type="checkbox"
+                        id="barcode_show_text"
+                        name="value"
+                        value="true"
+                        checked={@element.barcode_show_text}
+                        class="rounded border-gray-300"
+                      />
+                      <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
+                    </form>
+                  </div>
+                <% end %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color del codigo</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :color) || "#000000"}
+                    phx-change="update_element"
+                    phx-value-field="color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :background_color) || "#ffffff"}
+                    phx-change="update_element"
+                    phx-value-field="background_color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
 
-        <% "rectangle" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :background_color) || "#ffffff"}
-                phx-change="update_element"
-                phx-value-field="background_color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color de borde</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :border_color) || "#000000"}
-                phx-change="update_element"
-                phx-value-field="border_color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Ancho de borde (mm)</label>
-              <input
-                type="number"
-                name="value"
-                value={Map.get(@element, :border_width) || 0.5}
-                step="0.1"
-                min="0"
-                phx-blur="update_element"
-                phx-value-field="border_width"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Radio de borde</label>
-              <div
-                id={"border-radius-slider-rect-#{Map.get(@element, :id) || Map.get(@element, "id")}"}
-                phx-hook="BorderRadiusSlider"
-                phx-update="ignore"
-                data-element-id={Map.get(@element, :id) || Map.get(@element, "id")}
-                data-value={Map.get(@element, :border_radius) || 0}
-                class="flex items-center space-x-2 mt-1"
-              >
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                />
-                <span class="text-sm text-gray-600 w-10 text-right"></span>
-              </div>
-              <p class="text-xs text-gray-400 mt-1">0% = esquinas rectas, 100% = máximo redondeo</p>
-            </div>
-          </div>
+              <% "image" -> %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Imagen</label>
+                  <%= if Map.get(@element, :image_data) do %>
+                    <div class="mt-2 relative">
+                      <img src={Map.get(@element, :image_data)} class="w-full h-auto rounded border border-gray-200" />
+                      <p class="mt-1 text-xs text-gray-500 truncate"><%= Map.get(@element, :image_filename, "imagen") %></p>
+                    </div>
+                  <% end %>
 
-        <% "circle" -> %>
-          <div class="border-t pt-4 space-y-3">
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Redondez</label>
-              <div
-                id={"border-radius-slider-#{Map.get(@element, :id) || Map.get(@element, "id")}"}
-                phx-hook="BorderRadiusSlider"
-                phx-update="ignore"
-                data-element-id={Map.get(@element, :id) || Map.get(@element, "id")}
-                data-value={Map.get(@element, :border_radius) || 100}
-                class="flex items-center space-x-2 mt-1"
-              >
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                />
-                <span class="text-sm text-gray-600 w-10 text-right"></span>
-              </div>
-              <p class="text-xs text-gray-400 mt-1">0% = rectángulo, 100% = elipse</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :background_color) || "#ffffff"}
-                phx-change="update_element"
-                phx-value-field="background_color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Color de borde</label>
-              <input
-                type="color"
-                name="value"
-                value={Map.get(@element, :border_color) || "#000000"}
-                phx-change="update_element"
-                phx-value-field="border_color"
-                class="mt-1 block w-full h-9 rounded-md border-gray-300"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Ancho de borde (mm)</label>
-              <input
-                type="number"
-                name="value"
-                value={Map.get(@element, :border_width) || 0.5}
-                step="0.1"
-                min="0"
-                phx-blur="update_element"
-                phx-value-field="border_width"
-                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-              />
-            </div>
-          </div>
+                  <form
+                    id="image-upload-form"
+                    phx-submit="upload_element_image"
+                    phx-change="validate_upload"
+                    phx-hook="AutoUploadSubmit"
+                  >
+                    <input type="hidden" name="element_id" value={Map.get(@element, :id) || ""} />
+                    <div class="mt-2">
+                      <.live_file_input upload={@uploads.element_image} class="hidden" />
+                      <label
+                        for={@uploads.element_image.ref}
+                        class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition"
+                      >
+                        <div class="text-center">
+                          <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p class="mt-1 text-xs text-gray-500">
+                            <%= if Map.get(@element, :image_data), do: "Cambiar imagen", else: "Clic para seleccionar" %>
+                          </p>
+                          <p class="text-xs text-gray-400">PNG, JPG, GIF, SVG (max 2MB)</p>
+                        </div>
+                      </label>
 
-        <% _ -> %>
-          <div class="border-t pt-4">
-            <p class="text-sm text-gray-500">Este elemento no tiene propiedades adicionales.</p>
+                      <%= for entry <- @uploads.element_image.entries do %>
+                        <div class="mt-2">
+                          <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-600 truncate"><%= entry.client_name %></span>
+                            <span class="text-green-600 text-xs">
+                              <%= if entry.done?, do: "✓ Aplicando...", else: "#{entry.progress}%" %>
+                            </span>
+                          </div>
+                          <div class="mt-1 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 transition-all" style={"width: #{entry.progress}%"}></div>
+                          </div>
+                          <%= for err <- upload_errors(@uploads.element_image, entry) do %>
+                            <p class="mt-1 text-xs text-red-500"><%= error_to_string(err) %></p>
+                          <% end %>
+                        </div>
+                      <% end %>
+                      <button type="submit" class="hidden">Submit</button>
+                    </div>
+                  </form>
+                </div>
+
+              <% "line" -> %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :color) || "#000000"}
+                    phx-change="update_element"
+                    phx-value-field="color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Grosor (mm)</label>
+                  <input
+                    type="number"
+                    name="value"
+                    value={Map.get(@element, :border_width) || 0.5}
+                    step="0.1"
+                    min="0.1"
+                    phx-blur="update_element"
+                    phx-value-field="border_width"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </div>
+
+              <% "rectangle" -> %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :background_color) || "#ffffff"}
+                    phx-change="update_element"
+                    phx-value-field="background_color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color de borde</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :border_color) || "#000000"}
+                    phx-change="update_element"
+                    phx-value-field="border_color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Ancho de borde (mm)</label>
+                  <input
+                    type="number"
+                    name="value"
+                    value={Map.get(@element, :border_width) || 0.5}
+                    step="0.1"
+                    min="0"
+                    phx-blur="update_element"
+                    phx-value-field="border_width"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Radio de borde</label>
+                  <div
+                    id={"border-radius-slider-rect-#{Map.get(@element, :id) || Map.get(@element, "id")}"}
+                    phx-hook="BorderRadiusSlider"
+                    phx-update="ignore"
+                    data-element-id={Map.get(@element, :id) || Map.get(@element, "id")}
+                    data-value={Map.get(@element, :border_radius) || 0}
+                    class="flex items-center space-x-2 mt-1"
+                  >
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span class="text-sm text-gray-600 w-10 text-right"></span>
+                  </div>
+                  <p class="text-xs text-gray-400 mt-1">0% = esquinas rectas, 100% = maximo redondeo</p>
+                </div>
+
+              <% "circle" -> %>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Redondez</label>
+                  <div
+                    id={"border-radius-slider-#{Map.get(@element, :id) || Map.get(@element, "id")}"}
+                    phx-hook="BorderRadiusSlider"
+                    phx-update="ignore"
+                    data-element-id={Map.get(@element, :id) || Map.get(@element, "id")}
+                    data-value={Map.get(@element, :border_radius) || 100}
+                    class="flex items-center space-x-2 mt-1"
+                  >
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span class="text-sm text-gray-600 w-10 text-right"></span>
+                  </div>
+                  <p class="text-xs text-gray-400 mt-1">0% = rectangulo, 100% = elipse</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :background_color) || "#ffffff"}
+                    phx-change="update_element"
+                    phx-value-field="background_color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Color de borde</label>
+                  <input
+                    type="color"
+                    name="value"
+                    value={Map.get(@element, :border_color) || "#000000"}
+                    phx-change="update_element"
+                    phx-value-field="border_color"
+                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Ancho de borde (mm)</label>
+                  <input
+                    type="number"
+                    name="value"
+                    value={Map.get(@element, :border_width) || 0.5}
+                    step="0.1"
+                    min="0"
+                    phx-blur="update_element"
+                    phx-value-field="border_width"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  />
+                </div>
+
+              <% _ -> %>
+                <p class="text-sm text-gray-500">Este elemento no tiene propiedades adicionales.</p>
+            <% end %>
           </div>
+        </div>
       <% end %>
     </div>
     """
