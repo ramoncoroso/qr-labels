@@ -1,6 +1,8 @@
 /**
  * Label Preview Hook
  * Renders a single label preview with QR/barcode generation
+ * Data is received via push_event ("update_preview") instead of HTML attributes
+ * to avoid re-serializing the full design on every LiveView diff.
  */
 
 import { generateQR, generateBarcode } from './barcode_generator'
@@ -11,22 +13,32 @@ const MM_TO_PX = 3.78
 
 const LabelPreview = {
   mounted() {
-    this.renderPreview()
-  },
+    this._design = null
+    this._row = {}
+    this._mapping = {}
+    this._previewIndex = 0
+    this._totalRows = 1
+    this._ready = true
 
-  updated() {
-    this.renderPreview()
+    this.handleEvent("update_preview", (data) => {
+      this._design = data.design
+      this._row = data.row || {}
+      this._mapping = data.mapping || {}
+      this._previewIndex = data.preview_index || 0
+      this._totalRows = data.total_rows || 1
+      this.renderPreview()
+    })
   },
 
   async renderPreview() {
-    const design = JSON.parse(this.el.dataset.design || '{}')
-    const row = JSON.parse(this.el.dataset.row || '{}')
-    const mapping = JSON.parse(this.el.dataset.mapping || '{}')
+    const design = this._design
+    const row = this._row
+    const mapping = this._mapping
 
     // Clear container
     this.el.innerHTML = ''
 
-    if (!design.id) {
+    if (!design || !design.id) {
       this.el.innerHTML = '<div class="text-gray-500">Cargando...</div>'
       return
     }
@@ -43,9 +55,7 @@ const LabelPreview = {
     const scale = Math.min(scaleX, scaleY, 2) // Cap at 2x for small labels
 
     // Build context for expression evaluation
-    const previewIndex = parseInt(this.el.dataset.previewIndex || '0')
-    const totalRows = parseInt(this.el.dataset.totalRows || '1')
-    const context = { rowIndex: previewIndex, batchSize: totalRows, now: new Date() }
+    const context = { rowIndex: this._previewIndex, batchSize: this._totalRows, now: new Date() }
 
     // Generate codes for this row (pass label_type to differentiate single vs multiple)
     const labelType = design.label_type || 'single'

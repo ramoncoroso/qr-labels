@@ -1139,10 +1139,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # Called by JS hook when a preview row is loaded from IndexedDB
   @impl true
   def handle_event("preview_row_loaded", %{"row" => row, "index" => index}, socket) do
-    {:noreply,
+    socket =
      socket
      |> assign(:preview_row_index, index)
-     |> assign(:preview_data, row)}
+     |> assign(:preview_data, row)
+     |> push_preview_update()
+
+    {:noreply, socket}
   end
 
   # Called by JS hook when IDB data is found after server restart (ETS was empty)
@@ -1159,12 +1162,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       _ -> socket.assigns.preview_data
     end
 
-    {:noreply,
+    socket =
      socket
      |> assign(:available_columns, cols)
      |> assign(:upload_total_rows, total)
      |> assign(:upload_sample_rows, sample)
-     |> assign(:preview_data, preview_data)}
+     |> assign(:preview_data, preview_data)
+     |> push_preview_update()
+
+    {:noreply, socket}
   end
 
   defp navigate_to_preview_row(socket, new_index) do
@@ -1173,12 +1179,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if new_index < length(sample_rows) do
       # Row is in sample_rows — respond directly
       new_preview_data = Enum.at(sample_rows, new_index)
-      {:noreply,
+      socket =
        socket
        |> assign(:preview_row_index, new_index)
-       |> assign(:preview_data, new_preview_data)}
+       |> assign(:preview_data, new_preview_data)
+       |> push_preview_update()
+
+      {:noreply, socket}
     else
       # Row beyond sample_rows — request from IndexedDB via JS
+      # preview_row_loaded will push_preview_update when data arrives
       user_id = socket.assigns.current_user.id
       design_id = socket.assigns.design.id
       {:noreply,
@@ -1359,6 +1369,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         else
           socket
         end
+
+        # Update preview panel with new design state
+        socket = push_preview_update(socket)
 
         {:noreply, socket}
 
@@ -1721,12 +1734,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       design = socket.assigns.design
       updated_design = %{design | elements: restored}
 
-      {:ok,
+      socket =
        socket
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
-       |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})}
+       |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})
+       |> push_preview_update()
+
+      {:ok, socket}
     else
       :no_history
     end
@@ -1746,12 +1762,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       design = socket.assigns.design
       updated_design = %{design | elements: restored}
 
-      {:ok,
+      socket =
        socket
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
-       |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})}
+       |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})
+       |> push_preview_update()
+
+      {:ok, socket}
     else
       :no_future
     end
@@ -1992,25 +2011,53 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           <div class="w-px h-6 bg-gray-300"></div>
 
-          <button
-            phx-click="save_design"
-            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 font-medium"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-            </svg>
-            <span>Guardar</span>
-          </button>
-          <button
-            phx-click="toggle_versions"
-            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_versions, do: "bg-amber-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
-            title="Historial de versiones"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Versiones</span>
-          </button>
+          <!-- Save split button (hover dropdown, pure CSS) -->
+          <div class="relative group/save flex">
+            <button
+              phx-click="save_design"
+              class="flex items-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-l-lg transition text-sm font-medium"
+              title="Guardar diseño"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              <span>Guardar</span>
+            </button>
+            <div class="flex items-center px-1.5 py-2 bg-blue-600 group-hover/save:bg-blue-700 border-l border-blue-500 rounded-r-lg transition text-white cursor-default">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            <!-- Dropdown: hidden by default, shown on hover -->
+            <div class="invisible opacity-0 group-hover/save:visible group-hover/save:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
+              <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                <button
+                  phx-click="save_design"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left"
+                >
+                  <svg class="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">Guardar</p>
+                    <p class="text-xs text-gray-500">Guardar cambios del diseño</p>
+                  </div>
+                </button>
+                <button
+                  phx-click="toggle_versions"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
+                >
+                  <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">Versiones</p>
+                    <p class="text-xs text-gray-500">Ver historial de cambios</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
 
           <div class="w-px h-6 bg-gray-300"></div>
 
