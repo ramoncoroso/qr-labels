@@ -645,8 +645,10 @@ const CanvasDesigner = {
     })
 
     // Force reload design (used for undo/redo)
+    // Preserves existing images when receiving a light design (image_data: null)
     this.handleEvent("reload_design", ({ design }) => {
       if (design && !this._isDestroyed) {
+        this._restoreImageDataFromCanvas(design)
         this.loadDesign(design)
       }
     })
@@ -870,6 +872,30 @@ const CanvasDesigner = {
     // Now calculate overlays once for all elements
     this.updateDepthOverlays()
     this.canvas.renderAll()
+  },
+
+  // Restore image_data/qr_logo_data from existing canvas elements into design
+  // when receiving a "light" design (with null image data) for undo/redo/batch
+  _restoreImageDataFromCanvas(design) {
+    if (!design || !design.elements) return
+    const cache = {}
+    this.elements.forEach((obj) => {
+      if (obj.elementData) {
+        if (obj.elementData.image_data) cache[obj.elementId] = cache[obj.elementId] || {}
+        if (obj.elementData.image_data) cache[obj.elementId].image_data = obj.elementData.image_data
+        if (obj.elementData.qr_logo_data) {
+          cache[obj.elementId] = cache[obj.elementId] || {}
+          cache[obj.elementId].qr_logo_data = obj.elementData.qr_logo_data
+        }
+      }
+    })
+    design.elements.forEach(el => {
+      const cached = cache[el.id]
+      if (cached) {
+        if (!el.image_data && cached.image_data) el.image_data = cached.image_data
+        if (!el.qr_logo_data && cached.qr_logo_data) el.qr_logo_data = cached.qr_logo_data
+      }
+    })
   },
 
   addElement(element, save = true) {

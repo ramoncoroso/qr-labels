@@ -100,7 +100,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:sidebar_tab, "properties")
        |> assign(:preview_data, preview_data)
        |> assign(:preview_row_index, 0)
-       |> assign(:history, [design.elements || []])
+       |> assign(:image_cache, extract_image_cache(design.elements || [], %{}))
+       |> assign(:history, [strip_binary_data(design.elements || [])])
        |> assign(:history_index, 0)
        |> assign(:has_unsaved_changes, false)
        |> assign(:pending_save_flash, false)
@@ -799,7 +800,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     socket =
       if show do
-        versions = Versioning.list_versions(socket.assigns.design.id)
+        versions = Versioning.list_versions_light(socket.assigns.design.id)
         socket |> assign(:versions, versions) |> assign(:show_versions, true)
       else
         socket
@@ -852,8 +853,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     case Versioning.restore_version(design, version_number, user_id) do
       {:ok, updated_design} ->
-        # Reload versions list
-        versions = Versioning.list_versions(design.id)
+        # Reload versions list (light — elements not needed for panel display)
+        versions = Versioning.list_versions_light(design.id)
 
         {:noreply,
          socket
@@ -1297,7 +1298,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     # JS hook reads data from IndexedDB instead of receiving it from server
     push_event(socket, "generate_batch_from_idb", %{
-      design: Design.to_json(design),
+      design: Design.to_json_light(design),
       column_mapping: column_mapping,
       print_config: print_config,
       user_id: user_id,
@@ -1678,14 +1679,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @max_history_size 10
 
   defp push_to_history(socket, design) do
+    # Cache images before stripping them from history
+    image_cache = extract_image_cache(design.elements, socket.assigns.image_cache)
+    light_elements = strip_binary_data(design.elements)
+
     history = socket.assigns.history
     index = socket.assigns.history_index
 
     # Truncate future history if we're not at the end
     history = Enum.take(history, index + 1)
 
-    # Add current state to history
-    new_history = history ++ [design.elements]
+    # Add current state to history (without heavy binary data)
+    new_history = history ++ [light_elements]
 
     # Limit history size
     new_history = if length(new_history) > @max_history_size do
@@ -1695,6 +1700,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
 
     socket
+    |> assign(:image_cache, image_cache)
     |> assign(:history, new_history)
     |> assign(:history_index, length(new_history) - 1)
   end
@@ -1705,17 +1711,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if index > 0 do
       new_index = index - 1
       previous_elements = Enum.at(socket.assigns.history, new_index)
+      # Re-inject images from cache into elements for the design struct
+      restored = restore_images(previous_elements, socket.assigns.image_cache)
 
       # Update design in memory without saving to DB (save happens on explicit save)
       design = socket.assigns.design
-      updated_design = %{design | elements: previous_elements}
+      updated_design = %{design | elements: restored}
 
       {:ok,
        socket
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
-       |> push_event("reload_design", %{design: Design.to_json(updated_design)})}
+       |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})}
     else
       :no_history
     end
@@ -1728,17 +1736,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if index < length(history) - 1 do
       new_index = index + 1
       next_elements = Enum.at(history, new_index)
+      # Re-inject images from cache into elements for the design struct
+      restored = restore_images(next_elements, socket.assigns.image_cache)
 
       # Update design in memory without saving to DB
       design = socket.assigns.design
-      updated_design = %{design | elements: next_elements}
+      updated_design = %{design | elements: restored}
 
       {:ok,
        socket
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
-       |> push_event("reload_design", %{design: Design.to_json(updated_design)})}
+       |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})}
     else
       :no_future
     end
@@ -1746,6 +1756,61 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp can_undo?(assigns), do: assigns.history_index > 0
   defp can_redo?(assigns), do: assigns.history_index < length(assigns.history) - 1
+
+  # Extract image_data and qr_logo_data from elements into a cache keyed by element id
+  defp extract_image_cache(elements, existing_cache) do
+    Enum.reduce(elements || [], existing_cache, fn el, cache ->
+      id = Map.get(el, :id) || Map.get(el, "id")
+      if is_nil(id), do: cache, else: do_cache_element(el, id, cache)
+    end)
+  end
+
+  defp do_cache_element(el, id, cache) do
+    img = Map.get(el, :image_data) || Map.get(el, "image_data")
+    logo = Map.get(el, :qr_logo_data) || Map.get(el, "qr_logo_data")
+
+    if img || logo do
+      entry = Map.get(cache, id, %{})
+      entry = if img, do: Map.put(entry, :image_data, img), else: entry
+      entry = if logo, do: Map.put(entry, :qr_logo_data, logo), else: entry
+      Map.put(cache, id, entry)
+    else
+      cache
+    end
+  end
+
+  # Strip image_data and qr_logo_data from elements for lightweight history storage
+  defp strip_binary_data(elements) do
+    Enum.map(elements || [], fn el ->
+      el
+      |> put_field(:image_data, nil)
+      |> put_field(:qr_logo_data, nil)
+    end)
+  end
+
+  # Re-inject images from cache into stripped elements
+  defp restore_images(elements, image_cache) do
+    Enum.map(elements || [], fn el ->
+      id = Map.get(el, :id) || Map.get(el, "id")
+      case Map.get(image_cache, id) do
+        nil -> el
+        cached ->
+          el
+          |> then(fn e -> if cached[:image_data], do: put_field(e, :image_data, cached[:image_data]), else: e end)
+          |> then(fn e -> if cached[:qr_logo_data], do: put_field(e, :qr_logo_data, cached[:qr_logo_data]), else: e end)
+      end
+    end)
+  end
+
+  # Put a field on either a struct or map, handling both atom and string keys
+  defp put_field(%{__struct__: _} = struct, key, value), do: Map.put(struct, key, value)
+  defp put_field(map, key, value) when is_atom(key) do
+    cond do
+      Map.has_key?(map, key) -> Map.put(map, key, value)
+      Map.has_key?(map, Atom.to_string(key)) -> Map.put(map, Atom.to_string(key), value)
+      true -> Map.put(map, key, value)
+    end
+  end
 
   defp build_auto_mapping(elements, preview_data) do
     columns = Map.keys(preview_data)
@@ -1934,17 +1999,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           <div class="w-px h-6 bg-gray-300"></div>
 
-          <button
-            phx-click="toggle_preview"
-            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_preview, do: "bg-indigo-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <span>Vista previa</span>
-          </button>
-
           <!-- Print split button (hover dropdown, pure CSS) -->
           <div class="relative group/print flex">
             <button
@@ -1966,8 +2020,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div class="invisible opacity-0 group-hover/print:visible group-hover/print:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
               <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                 <button
-                  phx-click="generate_and_print"
+                  phx-click="toggle_preview"
                   class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left"
+                >
+                  <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">Vista previa</p>
+                    <p class="text-xs text-gray-500">Ver etiquetas antes de imprimir</p>
+                  </div>
+                </button>
+                <button
+                  phx-click="generate_and_print"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
                 >
                   <svg class="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
@@ -2587,9 +2654,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <div
               id="live-preview"
               phx-hook="LabelPreview"
-              data-design={Jason.encode!(Design.to_json(@design))}
-              data-row={Jason.encode!(@preview_data)}
-              data-mapping={Jason.encode!(build_auto_mapping(@design.elements || [], @preview_data))}
+              phx-update="ignore"
               data-preview-index={@preview_row_index}
               data-total-rows={max(@upload_total_rows, 1)}
               class="inline-block"

@@ -11,7 +11,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     user_id = socket.assigns.current_user.id
-    designs = Designs.list_user_designs(user_id) |> Designs.preload_tags()
+    designs = Designs.list_user_designs_light(user_id) |> Designs.preload_tags()
     tags = Designs.list_user_tags(user_id)
 
     {:ok,
@@ -86,13 +86,14 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       design ->
         case Designs.duplicate_design(design, socket.assigns.current_user.id) do
           {:ok, new_design} ->
-            updated_all = [new_design | socket.assigns.all_designs]
+            new_design_light = Designs.strip_heavy_element_data(new_design)
+            updated_all = [new_design_light | socket.assigns.all_designs]
             socket = socket
               |> assign(:all_designs, updated_all)
               |> put_flash(:info, "Diseño duplicado exitosamente")
 
-            if should_show_design?(new_design, socket.assigns.filter) do
-              {:noreply, stream_insert(socket, :designs, new_design, at: 0)}
+            if should_show_design?(new_design_light, socket.assigns.filter) do
+              {:noreply, stream_insert(socket, :designs, new_design_light, at: 0)}
             else
               {:noreply, socket}
             end

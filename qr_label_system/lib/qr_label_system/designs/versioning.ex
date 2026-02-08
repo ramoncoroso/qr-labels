@@ -92,6 +92,24 @@ defmodule QrLabelSystem.Designs.Versioning do
   end
 
   @doc """
+  Lists versions without loading elements (lighter for panel display).
+  Elements are stripped in memory after loading since Ecto can't exclude
+  embedded JSONB sub-fields in a SELECT.
+  """
+  def list_versions_light(design_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, @max_versions)
+
+    from(v in DesignVersion,
+      where: v.design_id == ^design_id,
+      order_by: [desc: v.version_number],
+      preload: [:user],
+      limit: ^limit
+    )
+    |> Repo.all()
+    |> Enum.map(fn v -> %{v | elements: []} end)
+  end
+
+  @doc """
   Gets a specific version by design_id and version_number.
   """
   def get_version(design_id, version_number) do

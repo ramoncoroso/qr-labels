@@ -126,6 +126,35 @@ defmodule QrLabelSystem.Designs.Design do
     }
   end
 
+  @doc """
+  Returns the design as JSON without heavy binary data (image_data, qr_logo_data).
+  Used for undo/redo, batch generation, and preview where the canvas already has images loaded.
+  """
+  def to_json_light(%__MODULE__{} = design) do
+    %{
+      id: design.id,
+      name: design.name,
+      description: design.description,
+      width_mm: design.width_mm,
+      height_mm: design.height_mm,
+      background_color: design.background_color,
+      border_width: design.border_width,
+      border_color: design.border_color,
+      border_radius: design.border_radius,
+      label_type: design.label_type,
+      template_source: design.template_source,
+      template_category: design.template_category,
+      elements: Enum.map(design.elements || [], &element_to_json_light/1)
+    }
+  end
+
+  defp element_to_json_light(element) do
+    element
+    |> element_to_json()
+    |> Map.put(:image_data, nil)
+    |> Map.put(:qr_logo_data, nil)
+  end
+
   defp element_to_json(element) do
     %{
       id: element.id,

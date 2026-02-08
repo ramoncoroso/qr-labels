@@ -33,6 +33,25 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Returns designs for a user with heavy binary data stripped from elements.
+  Used for listing pages where image_data/qr_logo_data aren't needed.
+  """
+  def list_user_designs_light(user_id) do
+    list_user_designs(user_id)
+    |> Enum.map(&strip_heavy_element_data/1)
+  end
+
+  @doc """
+  Strips image_data and qr_logo_data from a design's elements.
+  """
+  def strip_heavy_element_data(%Design{} = design) do
+    light_elements = Enum.map(design.elements || [], fn el ->
+      %{el | image_data: nil, qr_logo_data: nil}
+    end)
+    %{design | elements: light_elements}
+  end
+
+  @doc """
   Returns the list of designs for a specific user filtered by label type.
   Label type can be "single" or "multiple".
   """
