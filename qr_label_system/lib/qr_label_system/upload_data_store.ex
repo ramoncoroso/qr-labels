@@ -1,7 +1,8 @@
 defmodule QrLabelSystem.UploadDataStore do
   @moduledoc """
-  Temporary storage for upload data during the design workflow.
-  Data is stored per user and design, and expires after 30 minutes.
+  Metadata-only storage for upload data during the design workflow.
+  Full row data lives in the browser's IndexedDB; only lightweight
+  metadata (columns, total_rows, sample_rows) is kept here.
 
   Key format: {user_id, design_id} where design_id can be nil for unassigned data.
   """
@@ -26,27 +27,27 @@ defmodule QrLabelSystem.UploadDataStore do
   end
 
   @doc """
-  Store upload data for a user and design.
-  Use design_id = nil for data not yet associated with a design.
+  Store metadata for a user and design.
+  sample_rows: first N rows for preview (typically 5).
   """
-  def put(user_id, design_id, data, columns) do
+  def put_metadata(user_id, design_id, columns, total_rows, sample_rows) do
     user_id = ensure_integer(user_id)
     design_id = normalize_design_id(design_id)
-    GenServer.call(__MODULE__, {:put, {user_id, design_id}, data, columns})
+    GenServer.call(__MODULE__, {:put_metadata, {user_id, design_id}, columns, total_rows, sample_rows})
   end
 
   @doc """
-  Get upload data for a user and design.
-  Returns {data, columns} or {nil, []} if not found or expired.
+  Get metadata for a user and design.
+  Returns {columns, total_rows, sample_rows} or {[], 0, []} if not found or expired.
   """
-  def get(user_id, design_id) do
+  def get_metadata(user_id, design_id) do
     user_id = ensure_integer(user_id)
     design_id = normalize_design_id(design_id)
-    GenServer.call(__MODULE__, {:get, {user_id, design_id}})
+    GenServer.call(__MODULE__, {:get_metadata, {user_id, design_id}})
   end
 
   @doc """
-  Check if data exists for a user and design.
+  Check if metadata exists for a user and design.
   """
   def has_data?(user_id, design_id) do
     user_id = ensure_integer(user_id)
@@ -55,7 +56,7 @@ defmodule QrLabelSystem.UploadDataStore do
   end
 
   @doc """
-  Move data from {user_id, nil} to {user_id, design_id}.
+  Move metadata from {user_id, nil} to {user_id, design_id}.
   Used when selecting a design in the data-first flow.
   """
   def associate_with_design(user_id, design_id) do
@@ -65,7 +66,7 @@ defmodule QrLabelSystem.UploadDataStore do
   end
 
   @doc """
-  Clear upload data for a user and design.
+  Clear metadata for a user and design.
   """
   def clear(user_id, design_id) do
     user_id = ensure_integer(user_id)
@@ -73,20 +74,7 @@ defmodule QrLabelSystem.UploadDataStore do
     GenServer.cast(__MODULE__, {:clear, {user_id, design_id}})
   end
 
-  # Deprecated: Use put/4 instead
-  @doc false
-  def put(user_id, data, columns) do
-    put(user_id, nil, data, columns)
-  end
-
-  # Deprecated: Use get/2 instead
-  @doc false
-  def get(user_id) do
-    get(user_id, nil)
-  end
-
-  # Deprecated: Use clear/2 instead
-  @doc false
+  # Convenience: clear for nil design_id
   def clear(user_id) do
     clear(user_id, nil)
   end
@@ -104,41 +92,40 @@ defmodule QrLabelSystem.UploadDataStore do
   @impl true
   def init(_) do
     :ets.new(@table_name, [:named_table, :set, :public, read_concurrency: true])
-    # Schedule periodic cleanup
     schedule_cleanup()
     {:ok, %{}}
   end
 
   @impl true
-  def handle_call({:put, key, data, columns}, _from, state) do
+  def handle_call({:put_metadata, key, columns, total_rows, sample_rows}, _from, state) do
     expiry = System.monotonic_time(:millisecond) + @expiry_ms
-    :ets.insert(@table_name, {key, data, columns, expiry})
+    :ets.insert(@table_name, {key, columns, total_rows, sample_rows, expiry})
     {:reply, :ok, state}
   end
 
   @impl true
-  def handle_call({:get, key}, _from, state) do
+  def handle_call({:get_metadata, key}, _from, state) do
     case :ets.lookup(@table_name, key) do
-      [{^key, data, columns, expiry}] ->
+      [{^key, columns, total_rows, sample_rows, expiry}] ->
         now = System.monotonic_time(:millisecond)
         if now < expiry do
-          {:reply, {data, columns}, state}
+          {:reply, {columns, total_rows, sample_rows}, state}
         else
           :ets.delete(@table_name, key)
-          {:reply, {nil, []}, state}
+          {:reply, {[], 0, []}, state}
         end
 
       [] ->
-        {:reply, {nil, []}, state}
+        {:reply, {[], 0, []}, state}
     end
   end
 
   @impl true
   def handle_call({:has_data, key}, _from, state) do
     case :ets.lookup(@table_name, key) do
-      [{^key, data, _columns, expiry}] ->
+      [{^key, _columns, total_rows, _sample_rows, expiry}] ->
         now = System.monotonic_time(:millisecond)
-        if now < expiry and data != nil and data != [] do
+        if now < expiry and total_rows > 0 do
           {:reply, true, state}
         else
           if now >= expiry, do: :ets.delete(@table_name, key)
@@ -156,11 +143,9 @@ defmodule QrLabelSystem.UploadDataStore do
     target_key = {user_id, design_id}
 
     case :ets.lookup(@table_name, source_key) do
-      [{^source_key, data, columns, _expiry}] ->
-        # Create new entry with fresh expiry
+      [{^source_key, columns, total_rows, sample_rows, _expiry}] ->
         new_expiry = System.monotonic_time(:millisecond) + @expiry_ms
-        :ets.insert(@table_name, {target_key, data, columns, new_expiry})
-        # Delete the source entry
+        :ets.insert(@table_name, {target_key, columns, total_rows, sample_rows, new_expiry})
         :ets.delete(@table_name, source_key)
         {:reply, :ok, state}
 
@@ -178,14 +163,13 @@ defmodule QrLabelSystem.UploadDataStore do
   @impl true
   def handle_info(:cleanup, state) do
     now = System.monotonic_time(:millisecond)
-    # Delete all expired entries
-    :ets.select_delete(@table_name, [{{:_, :_, :_, :"$1"}, [{:<, :"$1", now}], [true]}])
+    # Delete all expired entries (5-tuple format: {key, columns, total_rows, sample_rows, expiry})
+    :ets.select_delete(@table_name, [{{:_, :_, :_, :_, :"$1"}, [{:<, :"$1", now}], [true]}])
     schedule_cleanup()
     {:noreply, state}
   end
 
   defp schedule_cleanup do
-    # Run cleanup every 5 minutes
     Process.send_after(self(), :cleanup, 5 * 60 * 1000)
   end
 end

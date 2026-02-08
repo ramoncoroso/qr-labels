@@ -7,6 +7,7 @@ import { generateQR, generateBarcode } from './barcode_generator'
 import { resolveText, resolveCodeValue } from './expression_engine'
 import { calcAutoFitFontSize } from './text_utils'
 import { jsPDF } from 'jspdf'
+import { getDataset, getRow, associateDataset } from './data_store'
 
 const MM_TO_PX = 3.78
 // Canvas uses PX_PER_MM=6 for font sizes — convert to mm: font_size / PX_PER_MM
@@ -64,6 +65,59 @@ const PrintEngine = {
 
     this.handleEvent("export_pdf", ({filename}) => {
       this.exportPDF(filename)
+    })
+
+    // Generate batch reading data from IndexedDB instead of receiving from server
+    this.handleEvent("generate_batch_from_idb", async ({design, column_mapping, print_config, user_id, design_id}) => {
+      this.design = design
+      this.printConfig = print_config
+      this.columnMapping = column_mapping || {}
+
+      try {
+        const dataset = await getDataset(user_id, design_id)
+        const data = dataset && dataset.rows.length > 0 ? dataset.rows : [{}]
+        this.labels = await this.generateAllLabels(design, data, column_mapping)
+        this.renderPreview()
+        this.pushEvent("generation_complete", {})
+      } catch (err) {
+        console.error('Error generating labels from IDB:', err)
+      }
+    })
+
+    // ZPL: read data from IndexedDB and send to server for ZPL generation
+    this.handleEvent("request_data_for_zpl", async ({user_id, design_id, dpi}) => {
+      const dataset = await getDataset(user_id, design_id)
+      this.pushEvent("zpl_data_ready", {data: dataset?.rows || [{}], dpi})
+    })
+
+    // Preview row fetch from IndexedDB
+    this.handleEvent("fetch_preview_row", async ({index, user_id, design_id}) => {
+      const row = await getRow(user_id, design_id, index)
+      this.pushEvent("preview_row_loaded", {row: row || {}, index})
+    })
+
+    // Check IndexedDB for data (server restart recovery or post-association)
+    this.handleEvent("check_idb_data", async ({design_id}) => {
+      const userId = parseInt(this.el.dataset.userId)
+      let dataset = await getDataset(userId, design_id)
+
+      // If no data for designId, check unassigned and auto-associate
+      if (!dataset || dataset.totalRows === 0) {
+        const unassigned = await getDataset(userId, null)
+        if (unassigned && unassigned.totalRows > 0) {
+          await associateDataset(userId, design_id)
+          dataset = await getDataset(userId, design_id)
+        }
+      }
+
+      if (dataset && dataset.totalRows > 0) {
+        const sampleRows = dataset.rows.slice(0, 5)
+        this.pushEvent("idb_data_available", {
+          columns: dataset.columns,
+          total_rows: dataset.totalRows,
+          sample_rows: sampleRows
+        })
+      }
     })
 
     // Generic file download handler (used by ZPL export and others)

@@ -17,9 +17,9 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
     changeset = Designs.change_design(%Design{label_type: label_type})
 
-    # Get upload data from persistent store (for data-first flow - data not yet associated)
+    # Get upload metadata from persistent store (for data-first flow - data not yet associated)
     user_id = socket.assigns.current_user.id
-    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id, nil)
+    {upload_columns, upload_total_rows, _upload_sample_rows} = QrLabelSystem.UploadDataStore.get_metadata(user_id, nil)
     return_to = Phoenix.Flash.get(socket.assigns.flash, :return_to)
 
     {:ok,
@@ -27,7 +27,7 @@ defmodule QrLabelSystemWeb.DesignLive.New do
      |> assign(:page_title, "Nuevo Diseño")
      |> assign(:design, %Design{label_type: label_type})
      |> assign(:label_type, label_type)
-     |> assign(:upload_data, upload_data)
+     |> assign(:upload_total_rows, upload_total_rows)
      |> assign(:upload_columns, upload_columns)
      |> assign(:return_to, return_to)
      |> assign(:no_data_mode, no_data_mode)
@@ -153,7 +153,7 @@ defmodule QrLabelSystemWeb.DesignLive.New do
               <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
-              Múltiples Etiquetas - <%= length(@upload_data || []) %> registros
+              Múltiples Etiquetas - <%= @upload_total_rows %> registros
             </span>
           <% end %>
         </div>

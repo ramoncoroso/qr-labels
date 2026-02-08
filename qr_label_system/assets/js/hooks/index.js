@@ -1,6 +1,6 @@
 import CanvasDesigner from "./canvas_designer"
 import CodeGenerator from "./code_generator"
-import ExcelReader from "./excel_reader"
+import DataFileReader from "./data_file_reader"
 import PrintEngine from "./print_engine"
 import LabelPreview from "./label_preview"
 import KeyboardShortcuts from "./keyboard_shortcuts"
@@ -17,7 +17,7 @@ import QRLogoUpload from "./qr_logo_upload"
 const Hooks = {
   CanvasDesigner,
   CodeGenerator,
-  ExcelReader,
+  DataFileReader,
   PrintEngine,
   LabelPreview,
   KeyboardShortcuts,

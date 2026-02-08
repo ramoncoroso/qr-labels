@@ -10,8 +10,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
     user_id = socket.assigns.current_user.id
     no_data_mode = Map.get(params, "no_data") == "true"
 
-    # Get data from persistent store (data not yet associated with a design)
-    {upload_data, upload_columns} = QrLabelSystem.UploadDataStore.get(user_id, nil)
+    # Get metadata from persistent store (data not yet associated with a design)
+    {upload_columns, upload_total_rows, _upload_sample_rows} = QrLabelSystem.UploadDataStore.get_metadata(user_id, nil)
 
     cond do
       # Mode: designing without external data
@@ -26,14 +26,14 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
          |> assign(:designs, all_designs)
          |> assign(:tags, tags)
          |> assign(:active_tag_ids, [])
-         |> assign(:upload_data, [])
+         |> assign(:upload_total_rows, 0)
          |> assign(:upload_columns, [])
          |> assign(:no_data_mode, true)
          |> assign(:selected_design_id, nil)
          |> assign(:preview_design, nil)}
 
       # Mode: with uploaded data
-      not is_nil(upload_data) and length(upload_data) > 0 ->
+      upload_total_rows > 0 ->
         all_designs = Designs.list_user_designs_by_type(user_id, "multiple")
         tags = Designs.list_user_tags(user_id)
 
@@ -44,7 +44,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
          |> assign(:designs, all_designs)
          |> assign(:tags, tags)
          |> assign(:active_tag_ids, [])
-         |> assign(:upload_data, upload_data)
+         |> assign(:upload_total_rows, upload_total_rows)
          |> assign(:upload_columns, upload_columns)
          |> assign(:no_data_mode, false)
          |> assign(:selected_design_id, nil)
@@ -172,7 +172,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
           <%= if @no_data_mode do %>
             Selecciona un diseño existente o crea uno nuevo (solo texto fijo)
           <% else %>
-            Selecciona un diseño existente o crea uno nuevo para tus <%= length(@upload_data) %> registros
+            Selecciona un diseño existente o crea uno nuevo para tus <%= @upload_total_rows %> registros
           <% end %>
         </:subtitle>
       </.header>
@@ -224,7 +224,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
               </div>
               <div>
                 <p class="text-sm text-indigo-600">Datos cargados:</p>
-                <p class="font-semibold text-indigo-900"><%= length(@upload_data) %> registros</p>
+                <p class="font-semibold text-indigo-900"><%= @upload_total_rows %> registros</p>
               </div>
             </div>
             <div class="flex flex-wrap gap-2">

@@ -22,22 +22,24 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
   end
 
   defp mount_authorized(socket, design, source_id, user_id) do
-    {data_source, data, columns} =
+    {data_source, columns, total_rows, sample_rows} =
       if source_id == "upload" do
-        # Get data from UploadDataStore (uploaded file) - associated with this design
-        {upload_data, upload_columns} = UploadDataStore.get(user_id, design.id)
-        {nil, upload_data || [], upload_columns || []}
+        # Get metadata from UploadDataStore (uploaded file) - associated with this design
+        {upload_columns, upload_total_rows, upload_sample_rows} = UploadDataStore.get_metadata(user_id, design.id)
+        {nil, upload_columns, upload_total_rows, upload_sample_rows}
       else
         # Load from saved data source with ownership verification
         source = DataSources.get_data_source!(source_id)
 
         # Security: Verify user owns this data source
         if source.user_id != user_id do
-          {nil, [], []}
+          {nil, [], 0, []}
         else
           case DataSources.get_data(source, nil) do
-            {:ok, %{headers: cols, rows: rows}} -> {source, rows, cols}
-            {:error, _} -> {source, [], []}
+            {:ok, %{headers: cols, rows: rows}} ->
+              {source, cols, length(rows), Enum.take(rows, 5)}
+            {:error, _} ->
+              {source, [], 0, []}
           end
         end
       end
@@ -58,8 +60,9 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
      |> assign(:page_title, "Conectar campos")
      |> assign(:design, design)
      |> assign(:data_source, data_source)
-     |> assign(:data, data)
      |> assign(:columns, columns)
+     |> assign(:total_rows, total_rows)
+     |> assign(:sample_rows, sample_rows)
      |> assign(:bindable_elements, bindable_elements)
      |> assign(:mapping, initial_mapping)
      |> assign(:saving, false)}
@@ -158,7 +161,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
             </div>
             <div>
               <p class="text-sm text-indigo-600">Registros</p>
-              <p class="font-semibold text-indigo-900"><%= length(@data) %></p>
+              <p class="font-semibold text-indigo-900"><%= @total_rows %></p>
             </div>
             <div>
               <p class="text-sm text-indigo-600">Columnas</p>
@@ -211,10 +214,10 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
             <div class="mt-6 pt-4 border-t">
               <button
                 phx-click="go_to_editor"
-                disabled={@saving || length(@data) == 0}
+                disabled={@saving || @total_rows == 0}
                 class="w-full bg-indigo-600 text-white px-4 py-3 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
               >
-                <%= if @saving, do: "Guardando...", else: "Ir al Editor (#{length(@data)} registros)" %>
+                <%= if @saving, do: "Guardando...", else: "Ir al Editor (#{@total_rows} registros)" %>
               </button>
               <p class="text-xs text-gray-500 text-center mt-2">
                 Los datos se procesan en memoria y no se guardan en el servidor
@@ -226,7 +229,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
           <div class="bg-white rounded-lg shadow p-6">
             <h3 class="text-lg font-medium text-gray-900 mb-4">Vista previa de datos</h3>
 
-            <%= if length(@data) > 0 do %>
+            <%= if @total_rows > 0 do %>
               <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200 text-sm">
                   <thead class="bg-gray-50">
@@ -238,7 +241,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-200">
-                    <tr :for={{row, idx} <- Enum.take(@data, 5) |> Enum.with_index(1)}>
+                    <tr :for={{row, idx} <- @sample_rows |> Enum.with_index(1)}>
                       <td class="px-3 py-2 text-gray-500"><%= idx %></td>
                       <td :for={col <- Enum.take(@columns, 5)} class="px-3 py-2 text-gray-900 truncate max-w-[100px]">
                         <%= Map.get(row, col, "") %>
@@ -248,7 +251,7 @@ defmodule QrLabelSystemWeb.GenerateLive.Mapping do
                 </table>
               </div>
               <p class="mt-4 text-sm text-gray-500">
-                Mostrando 5 de <%= length(@data) %> registros
+                Mostrando <%= length(@sample_rows) %> de <%= @total_rows %> registros
               </p>
             <% else %>
               <p class="text-gray-500 text-center py-8">No hay datos disponibles</p>
