@@ -10,22 +10,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   # Expression pattern definitions for visual builder
   @expression_patterns [
-    %{id: :uppercase, label: "MAYUSCULAS", icon: "Aa", color: "blue", needs_column: true,
-      description: "Texto a mayusculas"},
-    %{id: :lowercase, label: "minusculas", icon: "aa", color: "blue", needs_column: true,
-      description: "Texto a minusculas"},
-    %{id: :today, label: "Hoy", icon: "📅", color: "emerald", needs_column: false,
+    %{id: :uppercase, icon: "Aa", color: "blue", needs_column: true,
+      description: "A mayusculas"},
+    %{id: :lowercase, icon: "aa", color: "blue", needs_column: true,
+      description: "A minusculas"},
+    %{id: :today, icon: "📅", color: "emerald", needs_column: false,
       description: "Fecha de hoy"},
-    %{id: :counter, label: "Numeracion", icon: "#", color: "amber", needs_column: false,
-      description: "Secuencia automatica"},
-    %{id: :batch, label: "Lote", icon: "⚙", color: "amber", needs_column: false,
+    %{id: :counter, icon: "#", color: "amber", needs_column: false,
+      description: "Numeracion 1, 2, 3..."},
+    %{id: :batch, icon: "⚙", color: "amber", needs_column: false,
       description: "Codigo de lote"},
-    %{id: :expiry, label: "Vencimiento", icon: "+", color: "emerald", needs_column: false,
-      description: "Fecha futura desde hoy"},
-    %{id: :conditional, label: "Condicional", icon: "?", color: "violet", needs_column: true,
-      description: "Valor segun condicion"},
-    %{id: :format_number, label: "Formato #", icon: "0.0", color: "amber", needs_column: true,
-      description: "Numero con decimales"}
+    %{id: :expiry, icon: "+", color: "emerald", needs_column: false,
+      description: "Fecha + N dias"},
+    %{id: :conditional, icon: "?", color: "violet", needs_column: true,
+      description: "Si vacio, mostrar..."},
+    %{id: :format_number, icon: "0.0", color: "amber", needs_column: true,
+      description: "Formato numerico"}
   ]
 
   # Whitelist of allowed fields for element updates (security)
@@ -2601,13 +2601,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                         phx-click="select_expression_pattern"
                         phx-value-pattern={pattern.id}
                         disabled={disabled}
-                        class={"flex flex-col items-start p-2.5 rounded-lg border text-left transition-colors #{card_cls} #{if disabled, do: "opacity-40 cursor-not-allowed", else: "cursor-pointer"}"}
+                        class={"flex items-center gap-1.5 p-2 rounded-lg border text-left transition-colors min-w-0 #{card_cls} #{if disabled, do: "opacity-40 cursor-not-allowed", else: "cursor-pointer"}"}
                       >
-                        <div class="flex items-center gap-1.5 mb-0.5 min-w-0">
-                          <span class={"text-xs font-bold px-1.5 py-0.5 rounded shrink-0 #{icon_cls}"}><%= pattern.icon %></span>
-                          <span class={"text-xs font-semibold truncate #{text_cls}"}><%= pattern.label %></span>
-                        </div>
-                        <span class="text-[10px] text-gray-500 leading-tight truncate w-full"><%= pattern.description %></span>
+                        <span class={"text-xs font-bold px-1.5 py-0.5 rounded shrink-0 #{icon_cls}"}><%= pattern.icon %></span>
+                        <span class={"text-xs font-medium line-clamp-2 #{text_cls}"}><%= pattern.description %></span>
                       </button>
                     <% end %>
                   </div>
@@ -2629,7 +2626,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                       </button>
                       <span class={"text-xs font-bold px-1.5 py-0.5 rounded #{icon_cls}"}><%= pattern.icon %></span>
-                      <span class={"text-sm font-semibold #{text_cls}"}><%= pattern.label %></span>
+                      <span class={"text-sm font-semibold #{text_cls}"}><%= pattern.description %></span>
                     </div>
 
                     <!-- Formulario contextual -->
