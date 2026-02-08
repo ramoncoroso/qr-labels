@@ -221,6 +221,7 @@ defmodule QrLabelSystem.DataSources.DataSourceTest do
     test "returns all valid source types" do
       types = DataSource.source_types()
       assert "excel" in types
+      assert "csv" in types
       assert "postgresql" in types
       assert "mysql" in types
       assert "sqlserver" in types

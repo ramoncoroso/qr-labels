@@ -93,7 +93,7 @@ defmodule QrLabelSystemWeb.DataSourceController do
 
   defp detect_type(".xlsx"), do: "excel"
   defp detect_type(".xls"), do: "excel"
-  defp detect_type(".csv"), do: "excel"
+  defp detect_type(".csv"), do: "csv"
   defp detect_type(_), do: "excel"
 
   @doc """
@@ -123,8 +123,8 @@ defmodule QrLabelSystemWeb.DataSourceController do
 
     case DataSources.create_data_source(data_source_params) do
       {:ok, _data_source} ->
-        cleanup_uploaded_file(conn)
-
+        # Don't delete the file — it's needed for get_data_from_source later.
+        # File cleanup happens when the data source is deleted.
         conn
         |> delete_session(:uploaded_file_path)
         |> delete_session(:uploaded_file_name)

@@ -131,7 +131,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.New do
 
   defp detect_type(".xlsx"), do: "excel"
   defp detect_type(".xls"), do: "excel"
-  defp detect_type(".csv"), do: "excel"
+  defp detect_type(".csv"), do: "csv"
   defp detect_type(_), do: "excel"
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

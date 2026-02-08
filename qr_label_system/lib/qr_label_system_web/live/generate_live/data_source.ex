@@ -76,7 +76,6 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
              |> assign(:upload_error, nil)}
 
           {:error, reason} ->
-            File.rm(file_path)
             {:noreply, assign(socket, :upload_error, reason)}
         end
 

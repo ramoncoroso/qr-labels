@@ -59,7 +59,20 @@ defmodule QrLabelSystem.DataSources do
   Deletes a data source.
   """
   def delete_data_source(%DataSource{} = data_source) do
-    Repo.delete(data_source)
+    result = Repo.delete(data_source)
+
+    case result do
+      {:ok, deleted} ->
+        # Clean up associated file if it exists
+        if deleted.file_path && File.exists?(deleted.file_path) do
+          File.rm(deleted.file_path)
+        end
+
+        {:ok, deleted}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -104,7 +117,8 @@ defmodule QrLabelSystem.DataSources do
   """
   def get_data(source, file_path, opts \\ [])
 
-  def get_data(%DataSource{type: "excel"} = _source, file_path, opts) do
+  def get_data(%DataSource{type: type} = _source, file_path, opts)
+      when type in ~w(excel csv) do
     ExcelParser.parse_file(file_path, opts)
   end
 
@@ -128,7 +142,8 @@ defmodule QrLabelSystem.DataSources do
   """
   def preview_data(source, file_path, opts \\ [])
 
-  def preview_data(%DataSource{type: "excel"} = _source, file_path, opts) do
+  def preview_data(%DataSource{type: type} = _source, file_path, opts)
+      when type in ~w(excel csv) do
     preview_rows = Keyword.get(opts, :preview_rows, 5)
     ExcelParser.preview_file(file_path, preview_rows: preview_rows)
   end
@@ -180,7 +195,7 @@ defmodule QrLabelSystem.DataSources do
     result
   end
 
-  def test_connection(%DataSource{type: "excel"}) do
+  def test_connection(%DataSource{type: type}) when type in ~w(excel csv) do
     {:ok, :not_applicable}
   end
 

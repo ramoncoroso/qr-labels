@@ -35,8 +35,7 @@ defmodule QrLabelSystemWeb.DataSourceControllerTest do
       File.rm!(path)
     end
 
-    test "detects csv file type as excel", %{conn: conn} do
-      # CSV files map to "excel" type (the schema doesn't have a separate "csv" type)
+    test "detects csv file type", %{conn: conn} do
       path = Path.join(System.tmp_dir!(), "test_upload.csv")
       File.write!(path, "a,b,c\n1,2,3")
 
@@ -49,7 +48,7 @@ defmodule QrLabelSystemWeb.DataSourceControllerTest do
       conn = post(conn, ~p"/data-sources/upload", %{"file" => upload})
 
       assert redirected_to(conn) == ~p"/data-sources/new/details"
-      assert get_session(conn, :detected_type) == "excel"
+      assert get_session(conn, :detected_type) == "csv"
 
       File.rm!(path)
     end

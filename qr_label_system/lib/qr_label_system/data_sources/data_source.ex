@@ -13,7 +13,7 @@ defmodule QrLabelSystem.DataSources.DataSource do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @source_types ~w(excel postgresql mysql sqlserver)
+  @source_types ~w(excel csv postgresql mysql sqlserver)
 
   schema "data_sources" do
     field :name, :string
@@ -69,8 +69,8 @@ defmodule QrLabelSystem.DataSources.DataSource do
     config = get_field(changeset, :connection_config)
 
     cond do
-      type == "excel" ->
-        # Excel doesn't need connection config
+      type in ~w(excel csv) ->
+        # Excel/CSV don't need connection config
         changeset
 
       type in ~w(postgresql mysql sqlserver) and is_nil(config) ->
