@@ -1089,6 +1089,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           width: 20.0,
           height: 20.0,
           qr_error_level: "M",
+          qr_logo_data: nil,
+          qr_logo_size: 25.0,
           text_content: "",
           binding: nil,
           name: "Código QR #{number}"
