@@ -170,8 +170,11 @@ defmodule QrLabelSystem.Designs do
   @doc """
   Updates a design.
   Invalidates cache on update.
+
+  Opts:
+  - `:user_id` — if provided, creates a version snapshot asynchronously
   """
-  def update_design(%Design{} = design, attrs) do
+  def update_design(%Design{} = design, attrs, opts \\ []) do
     result = design
     |> Design.changeset(attrs)
     |> Repo.update()
@@ -180,6 +183,15 @@ defmodule QrLabelSystem.Designs do
       {:ok, updated_design} ->
         Cache.delete(:designs, {:design, design.id})
         Cache.put(:designs, {:design, updated_design.id}, updated_design, ttl: @cache_ttl)
+
+        # Create version snapshot in background if user_id provided
+        user_id = Keyword.get(opts, :user_id)
+        if user_id do
+          Task.start(fn ->
+            QrLabelSystem.Designs.Versioning.create_snapshot(updated_design, user_id)
+          end)
+        end
+
         {:ok, updated_design}
 
       error ->

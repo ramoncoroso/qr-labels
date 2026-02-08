@@ -45,6 +45,7 @@ defmodule QrLabelSystem.Designs.Design do
     embeds_many :elements, Element, on_replace: :delete
 
     belongs_to :user, QrLabelSystem.Accounts.User
+    has_many :versions, QrLabelSystem.Designs.DesignVersion
     many_to_many :tags, Tag, join_through: "design_tag_assignments"
 
     timestamps(type: :utc_datetime)

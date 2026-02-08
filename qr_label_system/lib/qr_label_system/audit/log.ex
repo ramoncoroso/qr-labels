@@ -9,6 +9,7 @@ defmodule QrLabelSystem.Audit.Log do
   @actions ~w(
     login logout
     create_design update_design delete_design export_design import_design
+    create_version restore_version
     create_data_source update_data_source delete_data_source test_connection
     create_batch update_batch delete_batch print_batch export_pdf
     create_user update_user delete_user update_role

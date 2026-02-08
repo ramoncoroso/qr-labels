@@ -5,6 +5,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.Designs.Design
+  alias QrLabelSystem.Designs.Versioning
   alias QrLabelSystem.Export.ExpressionEvaluator
   alias QrLabelSystem.Security.FileSanitizer
 
@@ -118,6 +119,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
        |> assign(:zpl_dpi, 203)
+       |> assign(:show_versions, false)
+       |> assign(:versions, [])
+       |> assign(:selected_version, nil)
+       |> assign(:version_diff, nil)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -785,6 +790,89 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   # ============================================================================
+  # Version History Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("toggle_versions", _params, socket) do
+    show = !socket.assigns.show_versions
+
+    socket =
+      if show do
+        versions = Versioning.list_versions(socket.assigns.design.id)
+        socket |> assign(:versions, versions) |> assign(:show_versions, true)
+      else
+        socket
+        |> assign(:show_versions, false)
+        |> assign(:selected_version, nil)
+        |> assign(:version_diff, nil)
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("select_version", %{"version" => version_str}, socket) do
+    version_number = String.to_integer(version_str)
+    version = Versioning.get_version(socket.assigns.design.id, version_number)
+
+    # Compute diff against current (most recent) version
+    versions = socket.assigns.versions
+    latest = List.first(versions)
+
+    diff =
+      if latest && latest.version_number != version_number do
+        case Versioning.diff_versions(socket.assigns.design.id, version_number, latest.version_number) do
+          {:ok, d} -> d
+          _ -> nil
+        end
+      else
+        nil
+      end
+
+    {:noreply,
+     socket
+     |> assign(:selected_version, version)
+     |> assign(:version_diff, diff)}
+  end
+
+  @impl true
+  def handle_event("close_version_detail", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:selected_version, nil)
+     |> assign(:version_diff, nil)}
+  end
+
+  @impl true
+  def handle_event("restore_version", %{"version" => version_str}, socket) do
+    version_number = String.to_integer(version_str)
+    design = socket.assigns.design
+    user_id = socket.assigns.current_user.id
+
+    case Versioning.restore_version(design, version_number, user_id) do
+      {:ok, updated_design} ->
+        # Reload versions list
+        versions = Versioning.list_versions(design.id)
+
+        {:noreply,
+         socket
+         |> assign(:design, updated_design)
+         |> assign(:versions, versions)
+         |> assign(:selected_version, nil)
+         |> assign(:version_diff, nil)
+         |> push_event("load_design", %{design: Design.to_json(updated_design)})
+         |> put_flash(:info, "Restaurado desde v#{version_number}")}
+
+      {:error, :version_not_found} ->
+        {:noreply, put_flash(socket, :error, "Versión no encontrada")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Error al restaurar versión")}
+    end
+  end
+
+  # ============================================================================
   # Image Upload Handlers
   # ============================================================================
 
@@ -1228,7 +1316,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     new_ids = Enum.map(elements_json || [], fn el -> Map.get(el, "id") end)
     Logger.info("do_save_elements - Design #{design.id}: #{current_count} -> #{new_count} elements. New IDs: #{inspect(new_ids)}")
 
-    case Designs.update_design(design, %{elements: elements_json}) do
+    case Designs.update_design(design, %{elements: elements_json},
+           user_id: socket.assigns.current_user.id) do
       {:ok, updated_design} ->
         # Get the ID of the element that should remain selected
         # Priority: pending_selection_id > current selected_element
@@ -1829,6 +1918,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </svg>
             <span>Guardar</span>
           </button>
+          <button
+            phx-click="toggle_versions"
+            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_versions, do: "bg-amber-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
+            title="Historial de versiones"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Versiones</span>
+          </button>
 
           <div class="w-px h-6 bg-gray-300"></div>
 
@@ -2268,6 +2367,157 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <p class="text-sm text-gray-400 text-center">No hay elementos.<br/>Agrega uno desde la barra de herramientas.</p>
             </div>
           </div>
+        </div>
+
+        <!-- Versions Panel (overlay) -->
+        <div :if={@show_versions} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+            <h3 class="font-semibold text-gray-900">Historial de versiones</h3>
+            <button phx-click="toggle_versions" class="text-gray-400 hover:text-gray-600">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <%= if @selected_version do %>
+            <!-- Version detail view -->
+            <div class="flex-1 overflow-y-auto p-4">
+              <button phx-click="close_version_detail" class="flex items-center text-sm text-blue-600 hover:text-blue-800 mb-3">
+                <svg class="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                Volver a la lista
+              </button>
+
+              <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-lg font-bold text-gray-900">v<%= @selected_version.version_number %></span>
+                  <span class="text-xs text-gray-500">
+                    <%= Calendar.strftime(@selected_version.inserted_at, "%d/%m/%Y %H:%M") %>
+                  </span>
+                </div>
+                <p class="text-sm text-gray-600"><%= @selected_version.name %></p>
+                <div class="flex items-center mt-2 text-xs text-gray-500">
+                  <svg class="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <%= if @selected_version.user, do: @selected_version.user.email, else: "Sistema" %>
+                </div>
+                <div class="flex items-center mt-1 text-xs text-gray-500">
+                  <svg class="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <%= @selected_version.element_count %> elementos
+                </div>
+                <%= if @selected_version.change_message do %>
+                  <div class="mt-2 p-2 bg-amber-50 rounded text-xs text-amber-700">
+                    <%= @selected_version.change_message %>
+                  </div>
+                <% end %>
+              </div>
+
+              <%= if @version_diff do %>
+                <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                  <h4 class="text-xs font-medium text-gray-500 mb-3">CAMBIOS VS ACTUAL</h4>
+
+                  <%= if map_size(@version_diff.fields) > 0 do %>
+                    <div class="mb-3">
+                      <p class="text-xs font-medium text-gray-700 mb-1">Campos modificados:</p>
+                      <%= for {field, %{from: from, to: to}} <- @version_diff.fields do %>
+                        <div class="text-xs py-1 border-b border-gray-100 last:border-0">
+                          <span class="font-medium text-gray-600"><%= field %></span>
+                          <div class="flex gap-2 mt-0.5">
+                            <span class="text-red-500 line-through"><%= from || "—" %></span>
+                            <span class="text-green-600"><%= to || "—" %></span>
+                          </div>
+                        </div>
+                      <% end %>
+                    </div>
+                  <% end %>
+
+                  <div class="flex items-center gap-3 text-xs">
+                    <%= if length(@version_diff.elements.added) > 0 do %>
+                      <span class="text-green-600">+<%= length(@version_diff.elements.added) %> nuevos</span>
+                    <% end %>
+                    <%= if length(@version_diff.elements.removed) > 0 do %>
+                      <span class="text-red-500">-<%= length(@version_diff.elements.removed) %> eliminados</span>
+                    <% end %>
+                    <%= if length(@version_diff.elements.modified) > 0 do %>
+                      <span class="text-amber-600">~<%= length(@version_diff.elements.modified) %> modificados</span>
+                    <% end %>
+                    <%= if length(@version_diff.elements.added) == 0 and length(@version_diff.elements.removed) == 0 and length(@version_diff.elements.modified) == 0 and map_size(@version_diff.fields) == 0 do %>
+                      <span class="text-gray-500">Sin cambios</span>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+
+              <button
+                phx-click="restore_version"
+                phx-value-version={@selected_version.version_number}
+                data-confirm={"Restaurar el diseño a la versión v#{@selected_version.version_number}? Se creará una nueva versión con el estado actual antes de restaurar."}
+                class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white text-sm"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Restaurar esta versión</span>
+              </button>
+            </div>
+          <% else %>
+            <!-- Version list -->
+            <div class="flex-1 overflow-y-auto">
+              <%= if @versions == [] do %>
+                <div class="p-4 text-center text-sm text-gray-500">
+                  <svg class="w-10 h-10 mx-auto mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p>No hay versiones guardadas aún.</p>
+                  <p class="text-xs text-gray-400 mt-1">Se creará una versión automáticamente al guardar.</p>
+                </div>
+              <% else %>
+                <div class="divide-y divide-gray-200">
+                  <%= for version <- @versions do %>
+                    <div class="px-4 py-3 hover:bg-gray-100 transition">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-bold text-gray-900">v<%= version.version_number %></span>
+                        <span class="text-xs text-gray-500">
+                          <%= Calendar.strftime(version.inserted_at, "%d/%m %H:%M") %>
+                        </span>
+                      </div>
+                      <div class="text-xs text-gray-500 mb-1">
+                        <%= if version.user, do: version.user.email, else: "Sistema" %>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs text-gray-400"><%= version.element_count %> elementos</span>
+                        <div class="flex gap-2">
+                          <button
+                            phx-click="select_version"
+                            phx-value-version={version.version_number}
+                            class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            Ver
+                          </button>
+                          <button
+                            phx-click="restore_version"
+                            phx-value-version={version.version_number}
+                            data-confirm={"Restaurar a v#{version.version_number}?"}
+                            class="text-xs text-amber-600 hover:text-amber-800 font-medium"
+                          >
+                            Restaurar
+                          </button>
+                        </div>
+                      </div>
+                      <%= if version.change_message do %>
+                        <div class="mt-1 text-xs text-amber-600 italic"><%= version.change_message %></div>
+                      <% end %>
+                    </div>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
         </div>
 
         <!-- Preview Panel (overlay) -->
