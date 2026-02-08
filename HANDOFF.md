@@ -2077,7 +2077,7 @@ Los cambios de esta sesión son **mejoras de UX del editor** (estabilización pr
 | 2026-02-07 | **FIX COMPILATION WARNING + PERSISTENCIA RESIZE + QR/BARCODE RESIZE** |
 | 2026-02-07 | **PLACEHOLDERS "COMPLETAR" + MEJORAS UX CANVAS + FIX PREVIEW** |
 | 2026-02-08 | **FASE 1.2: CÓDIGOS DE BARRAS INDUSTRIALES** (bwip-js, 21 formatos, QR con logo) |
-| 2026-02-08 | **FIX: IMPRESIÓN PDF CON TAMAÑO DE ETIQUETA** (label-sized pages, print dialog) |
+| 2026-02-08 | **FIX: IMPRESIÓN PDF** — 3 iteraciones: autoPrint→iframe→window.open+print. Label-sized pages |
 | 2026-02-08 | **UX: TAGS INLINE, DESCRIPCIÓN EDITABLE, LÁPICES AMPLIADOS** |
 
 ---
@@ -2144,16 +2144,23 @@ Elimina la duplicación de código de generación de QR/barcode que existía en 
 
 ## Sesión 2026-02-08 — Fix impresión PDF y mejoras UX /designs
 
-### 1. Impresión PDF con tamaño de etiqueta
+### 1. Impresión y exportación PDF con tamaño de etiqueta
 
 **Archivos:** `print_engine.js`, `single_label_print.js`
 
-**Problema:** `window.print()` con CSS `@page size` no era respetado por macOS.
+**Problema original:** `window.print()` con CSS `@page size` no era respetado por macOS.
 
-**Solución:** Ambos hooks ahora generan PDF via jsPDF con:
-- Tamaño de página = tamaño exacto de la etiqueta (1 página = 1 etiqueta)
-- `pdf.autoPrint()` + `window.open(pdf.output('bloburl'), '_blank')` para print dialog
-- Eliminado código HTML obsoleto (`generatePrintHTML`, `labelToHTML`, etc.)
+**Evolución de la solución (3 iteraciones en esta sesión):**
+
+1. **`pdf.autoPrint()` + `window.open(bloburl)`** — autoPrint inyecta JS en el PDF, pero los visores PDF de los navegadores no ejecutan JS embebido → el diálogo de impresión no se abría
+2. **iframe oculto + `iframe.contentWindow.print()`** — el iframe carga el PDF vía plugin, pero `print()` imprime el documento HTML del iframe (vacío), no el PDF → preview en blanco
+3. **`window.open(bloburl)` + `setTimeout` + `win.print()`** (solución final) — abre el PDF en nueva pestaña, espera 300ms a que el visor se inicialice, llama `print()` → funciona cross-platform
+
+**Estado final:**
+- Función helper `printPdfBlob(blob)` compartida en ambos hooks
+- Tanto `printLabels()` como `exportPDF()` usan páginas tamaño-etiqueta (`format: [w, h]`)
+- Imprimir: abre pestaña con PDF + dispara diálogo de impresión
+- Exportar PDF: descarga archivo directamente
 
 ### 2. Tags inline y descripción editable en /designs
 
@@ -2177,6 +2184,9 @@ Botones de imprimir (🖨️) y PDF (📄) siempre visibles en el header del edi
 | `36fac3f` | feat: Add print/PDF buttons to editor header and use label-sized PDF pages |
 | `9bcc31e` | feat: Add inline description editing and enlarge pencil icons in design list |
 | `2fc41cd` | ui: Move tags inline with info row and show description in design list |
+| `99e1f45` | fix: Repair syntax error in print_engine.js and update HANDOFF with Fase 1.2 |
+| `9c8419b` | fix: Generate QR/barcode in print using static content fallback and improve print flow |
+| `b479f43` | fix: Use label-sized pages for both print and PDF export |
 
 ---
 
@@ -2200,6 +2210,60 @@ Botones de imprimir (🖨️) y PDF (📄) siempre visibles en el header del edi
 
 ---
 
-## Nota: Bug corregido en print_engine.js
+## Bugs corregidos en esta sesión (2026-02-08)
 
-**`print_engine.js` línea 326-327** tenía una llave de cierre extra (`}`) que cerraba `printLabels()` prematuramente. Corregido en esta sesión.
+1. **Syntax error en print_engine.js** — Llave extra `}` cerraba `printLabels()` prematuramente, rompiendo el objeto `PrintEngine` y causando que QR/barcode no se pudieran añadir al canvas ("Something went wrong")
+2. **Print dialog no se abría** — `pdf.autoPrint()` no funciona en navegadores modernos (el visor PDF no ejecuta JS embebido). Resuelto con `window.open()` + `win.print()`
+3. **Print preview en blanco con iframe** — `iframe.contentWindow.print()` imprime el documento HTML del iframe, no el PDF renderizado por el plugin. Revertido a `window.open()`
+4. **Print preview cortaba la etiqueta** — Se probó A4 centrado pero el usuario prefiere páginas tamaño-etiqueta. Estado final: ambos hooks usan `format: [w, h]`
+
+---
+
+## Próximos pasos — Referencia al Plan de Producto (`PLAN_PRODUCTO.md`)
+
+### Estado de las fases
+
+| Fase | Descripción | Estado | Referencia |
+|------|-------------|--------|------------|
+| **1.1** | Biblioteca de plantillas por industria | ✅ Completado | 30 plantillas, 5 categorías, seeds, `/templates` |
+| **1.2** | Formatos de código de barras industriales | ✅ Completado | bwip-js, 21 formatos, QR con logo, módulo compartido |
+| **1.3** | Campos calculados y variables dinámicas | **Pendiente** | Motor `{{expresiones}}` en JS |
+| **1.4** | Exportación ZPL (Zebra) | Pendiente | Generador server-side Elixir |
+
+### Siguiente: Fase 1.3 — Campos calculados y variables dinámicas
+
+**Objetivo**: Motor de expresiones `{{}}` que genera valores automáticos (fechas, contadores, condicionales), no solo datos del Excel.
+
+**Valor**: "Etiquetas inteligentes que calculan datos por ti"
+
+**Componentes principales** (ver detalle en `PLAN_PRODUCTO.md` sección 1.3):
+- Nuevo módulo JS `expression_engine.js` — parsea `{{HOY()}}`, `{{CONTADOR(1,1,4)}}`, `{{SI(peso>1000, "PESADO", "LIGERO")}}`, etc.
+- Nuevo campo `expression` en `element.ex` — prioridad: expression > binding > text_content
+- 4 grupos de funciones: Texto (MAYUS, MINUS, RECORTAR), Fechas (HOY, SUMAR_DIAS), Números (CONTADOR, LOTE), Condicionales (SI, VACIO)
+- UI: pestaña "Expresión" en propiedades del elemento con syntax highlighting, panel de funciones, preview en tiempo real
+- Integración en los 3 puntos de renderizado: canvas, preview, print
+
+### Bugs/mejoras pendientes
+
+1. **Subir font_size +3pt en plantillas** — `priv/repo/seeds/templates.exs`, re-ejecutar seeds
+2. **Placeholders grises en plantillas duplicadas** — campos con binding muestran gris hasta que CSV se carga
+3. **Bug foco salta al campo nombre** — al editar text_content, el foco salta tras pausa (probable re-render LiveView)
+
+## Arquitectura de impresión (estado final)
+
+```
+printLabels()                          exportPDF()
+     │                                      │
+     ▼                                      ▼
+jsPDF format: [w, h]                 jsPDF format: [w, h]
+(páginas tamaño etiqueta)            (páginas tamaño etiqueta)
+     │                                      │
+     ▼                                      ▼
+printPdfBlob(blob)                   pdf.save(filename)
+  → window.open(blobUrl)               → descarga archivo
+  → win.load → 300ms delay
+  → win.print()
+  → diálogo impresión nativo
+```
+
+**Nota**: El usuario configura el tamaño de papel en el diálogo de impresión para que coincida con su impresora (térmica, etiquetas, A4, etc.).
