@@ -673,7 +673,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("toggle_preview", _params, socket) do
-    {:noreply, assign(socket, :show_preview, !socket.assigns.show_preview)}
+    new_show = !socket.assigns.show_preview
+
+    socket =
+      socket
+      |> assign(:show_preview, new_show)
+
+    # When opening the preview panel, push current data so the hook renders immediately
+    socket = if new_show, do: push_preview_update(socket), else: socket
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("request_preview_data", _params, socket) do
+    {:noreply, push_preview_update(socket)}
   end
 
   @impl true

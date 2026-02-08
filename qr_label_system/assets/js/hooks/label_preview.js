@@ -28,6 +28,10 @@ const LabelPreview = {
       this._totalRows = data.total_rows || 1
       this.renderPreview()
     })
+
+    // Request initial data in case the push_event from toggle_preview
+    // arrives before mounted() completes
+    this.pushEvent("request_preview_data", {})
   },
 
   async renderPreview() {
