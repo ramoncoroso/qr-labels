@@ -3,8 +3,7 @@
  * Handles label generation, printing and PDF export
  */
 
-import QRCode from 'qrcode'
-import JsBarcode from 'jsbarcode'
+import { generateQR, generateBarcode } from './barcode_generator'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
@@ -77,37 +76,11 @@ const PrintEngine = {
   },
 
   async generateQR(content, config) {
-    try {
-      return await QRCode.toDataURL(content, {
-        width: Math.round((config.width || 20) * MM_TO_PX),
-        margin: 0,
-        errorCorrectionLevel: config.qr_error_level || 'M',
-        color: {
-          dark: config.color || '#000000',
-          light: config.background_color || '#ffffff'
-        }
-      })
-    } catch (err) {
-      console.error('Error generating QR:', err)
-      return null
-    }
+    return generateQR(content, config)
   },
 
   generateBarcode(content, config) {
-    try {
-      const canvas = document.createElement('canvas')
-      JsBarcode(canvas, content, {
-        format: config.barcode_format || 'CODE128',
-        width: 2,
-        height: Math.round((config.height || 15) * MM_TO_PX),
-        displayValue: config.barcode_show_text !== false,
-        margin: 0
-      })
-      return canvas.toDataURL('image/png')
-    } catch (err) {
-      console.error('Error generating barcode:', err)
-      return null
-    }
+    return generateBarcode(content, config)
   },
 
   renderPreview() {
@@ -525,57 +498,21 @@ const PrintEngine = {
   },
 
   async exportPDF(filename) {
-    const config = this.printConfig
     const design = this.design
-
-    const pageSizes = {
-      a4: [210, 297],
-      letter: [216, 279],
-      legal: [216, 356]
-    }
-
-    let pageSize = pageSizes[config.page_size] || pageSizes.a4
-    const orientation = config.orientation === 'landscape' ? 'l' : 'p'
+    const labelWidth = design.width_mm
+    const labelHeight = design.height_mm
 
     const pdf = new jsPDF({
-      orientation: orientation,
+      orientation: labelWidth > labelHeight ? 'l' : 'p',
       unit: 'mm',
-      format: pageSize
+      format: [labelWidth, labelHeight]
     })
 
-    if (orientation === 'l') {
-      pageSize = [pageSize[1], pageSize[0]]
-    }
-
-    const labelsPerPage = config.columns * config.rows
-    let currentLabel = 0
-    let pageNum = 0
-
-    const usableWidth = pageSize[0] - config.margin_left - config.margin_right
-    const usableHeight = pageSize[1] - config.margin_top - config.margin_bottom
-
-    const cellWidth = (usableWidth - (config.columns - 1) * config.gap_horizontal) / config.columns
-    const cellHeight = (usableHeight - (config.rows - 1) * config.gap_vertical) / config.rows
-
-    while (currentLabel < this.labels.length) {
-      if (pageNum > 0) {
-        pdf.addPage()
+    for (let i = 0; i < this.labels.length; i++) {
+      if (i > 0) {
+        pdf.addPage([labelWidth, labelHeight], labelWidth > labelHeight ? 'l' : 'p')
       }
-
-      for (let row = 0; row < config.rows && currentLabel < this.labels.length; row++) {
-        for (let col = 0; col < config.columns && currentLabel < this.labels.length; col++) {
-          const label = this.labels[currentLabel]
-
-          const x = config.margin_left + col * (cellWidth + config.gap_horizontal)
-          const y = config.margin_top + row * (cellHeight + config.gap_vertical)
-
-          await this.renderLabelToPDF(pdf, label, x, y)
-
-          currentLabel++
-        }
-      }
-
-      pageNum++
+      await this.renderLabelToPDF(pdf, this.labels[i], 0, 0)
     }
 
     pdf.save(filename)

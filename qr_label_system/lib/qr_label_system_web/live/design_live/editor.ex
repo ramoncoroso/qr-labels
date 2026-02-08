@@ -9,6 +9,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   # Whitelist of allowed fields for element updates (security)
   @allowed_element_fields ~w(x y width height rotation binding qr_error_level
+    qr_logo_data qr_logo_size
     barcode_format barcode_show_text font_size font_family font_weight
     text_align text_content color background_color border_width border_color border_radius
     z_index visible locked name image_data image_filename)
@@ -292,6 +293,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   def handle_event("update_element", %{"field" => field, "value" => value}, socket)
       when field in @allowed_element_fields do
     if socket.assigns.selected_element do
+      # Normalize empty qr_logo_data to nil (used by "Quitar logo" button)
+      value = if field == "qr_logo_data" and value == "", do: nil, else: value
+
       # Update selected_element locally to keep UI in sync
       # Handle both atom and string keys
       key = String.to_atom(field)
@@ -320,7 +324,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       # Fields that cause element recreation in canvas (QR/barcode regeneration)
       # For these, we need to preserve selection through the save cycle
       recreating_fields = ["binding", "color", "background_color", "text_content",
-                          "qr_error_level", "barcode_show_text", "barcode_format"]
+                          "qr_error_level", "qr_logo_data", "qr_logo_size",
+                          "barcode_show_text", "barcode_format"]
 
       # For QR, push both width and height updates
       socket = cond do
@@ -954,7 +959,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp push_generate_batch(socket) do
     design = socket.assigns.design
-    upload_data = socket.assigns.upload_data
+    upload_data = case socket.assigns.upload_data do
+      [] -> [%{}]
+      data -> data
+    end
     preview_data = socket.assigns.preview_data
 
     # Build mapping from element IDs to column names
@@ -1170,12 +1178,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     len = String.length(content)
 
     case format do
-      "CODE128" -> true  # Accepts any text
+      "CODE128" -> true
       "CODE39" -> Regex.match?(~r/^[A-Z0-9\-. \$\/\+%]*$/i, content)
+      "CODE93" -> Regex.match?(~r/^[A-Z0-9\-. \$\/\+%]*$/i, content)
+      "CODABAR" -> Regex.match?(~r/^[A-Da-d][0-9\-\$:\/\.+]+[A-Da-d]$/i, content)
+      "MSI" -> digits_only
       "EAN13" -> digits_only and len in 12..13
       "EAN8" -> digits_only and len in 7..8
       "UPC" -> digits_only and len in 11..12
       "ITF14" -> digits_only and len in 13..14
+      "GS1_DATABAR" -> digits_only and len in 13..14
+      "GS1_DATABAR_STACKED" -> digits_only and len in 13..14
+      "GS1_DATABAR_EXPANDED" -> len >= 2
+      "GS1_128" -> len >= 2
+      "POSTNET" -> digits_only and len in [5, 9, 11]
+      "PLANET" -> digits_only and len in [11, 13]
+      "ROYALMAIL" -> Regex.match?(~r/^[A-Z0-9]+$/i, content)
       "pharmacode" ->
         if digits_only do
           case Integer.parse(content) do
@@ -1185,6 +1203,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         else
           false
         end
+      # 2D formats accept any text
+      f when f in ~w(DATAMATRIX PDF417 AZTEC MAXICODE) -> true
       _ -> true
     end
   end
@@ -1439,6 +1459,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
             </svg>
             <span>Guardar</span>
+          </button>
+
+          <div class="w-px h-6 bg-gray-300"></div>
+
+          <!-- Print / PDF buttons -->
+          <button
+            phx-click="generate_and_print"
+            class="p-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 transition"
+            title="Imprimir etiquetas"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+          </button>
+          <button
+            phx-click="generate_and_download_pdf"
+            class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 transition"
+            title="Descargar PDF"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </button>
         </div>
       </div>
@@ -1863,7 +1905,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
-          <!-- Summary and Print Actions when data is loaded -->
+          <!-- Summary when data is loaded -->
           <%= if length(@upload_data) > 0 do %>
             <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
               <div class="flex items-center space-x-2 text-green-700">
@@ -1873,32 +1915,34 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <span class="font-medium"><%= length(@upload_data) %> registros cargados</span>
               </div>
             </div>
-
-            <!-- Print / PDF Actions -->
-            <div class="mt-3 space-y-2" id="print-engine-container" phx-hook="PrintEngine">
-              <button
-                phx-click="generate_and_print"
-                class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                </svg>
-                <span>Imprimir <%= length(@upload_data) %> etiquetas</span>
-              </button>
-              <button
-                phx-click="generate_and_download_pdf"
-                class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Descargar PDF</span>
-              </button>
-            </div>
           <% end %>
+
+          <!-- Print / PDF Actions -->
+          <div class="mt-3 space-y-2">
+            <button
+              phx-click="generate_and_print"
+              class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>Imprimir <%= if length(@upload_data) > 0, do: "#{length(@upload_data)} etiquetas", else: "etiqueta" %></span>
+            </button>
+            <button
+              phx-click="generate_and_download_pdf"
+              class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Descargar PDF</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
+    <!-- PrintEngine hook (always mounted) -->
+    <div id="print-engine-container" phx-hook="PrintEngine" class="hidden"></div>
     """
   end
 
@@ -2110,6 +2154,55 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </select>
               </form>
             </div>
+            <%!-- QR Logo section --%>
+            <div class="border-t pt-3">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Logo en QR</label>
+              <%= if @element.qr_logo_data do %>
+                <div class="flex items-center gap-2 mb-2">
+                  <img src={@element.qr_logo_data} class="w-10 h-10 object-contain border rounded" />
+                  <button
+                    type="button"
+                    phx-click="update_element"
+                    phx-value-field="qr_logo_data"
+                    phx-value-value=""
+                    class="text-xs text-red-600 hover:text-red-800"
+                  >
+                    Quitar logo
+                  </button>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Tamaño del logo (<%= round(@element.qr_logo_size || 25) %>%)</label>
+                  <form phx-change="update_element">
+                    <input type="hidden" name="field" value="qr_logo_size" />
+                    <input
+                      type="range"
+                      name="value"
+                      min="5"
+                      max="30"
+                      step="1"
+                      value={@element.qr_logo_size || 25}
+                      class="w-full"
+                    />
+                  </form>
+                </div>
+              <% else %>
+                <div
+                  id="qr-logo-upload"
+                  phx-hook="QRLogoUpload"
+                  class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                >
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml"
+                    class="hidden"
+                    id="qr-logo-file-input"
+                  />
+                  <p class="text-xs text-gray-500">Click para subir logo</p>
+                  <p class="text-xs text-gray-400">PNG/JPG, máx 500KB</p>
+                </div>
+              <% end %>
+              <p class="text-xs text-gray-400 mt-1">El nivel de error se fija en H con logo</p>
+            </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Color del código</label>
               <input
@@ -2161,6 +2254,34 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <p class="text-xs text-gray-400 mt-1">Ej: 10012345678902 (14 dígitos)</p>
                   <% "pharmacode" -> %>
                     <p class="text-xs text-gray-400 mt-1">Ej: 1234 (número entre 3-131070)</p>
+                  <% "CODE93" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: ABC123 (alfanumérico)</p>
+                  <% "CODABAR" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: A12345B (inicio/fin A-D + dígitos)</p>
+                  <% "MSI" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 1234567 (solo dígitos)</p>
+                  <% "GS1_128" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: (01)09501101530003 (AI + datos)</p>
+                  <% "GS1_DATABAR" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 0950110153000 (13-14 dígitos GTIN)</p>
+                  <% "GS1_DATABAR_STACKED" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 0950110153000 (13-14 dígitos GTIN)</p>
+                  <% "GS1_DATABAR_EXPANDED" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: (01)09501101530003(10)ABC (AI + datos)</p>
+                  <% "DATAMATRIX" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Texto libre, ideal para datos industriales</p>
+                  <% "PDF417" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Texto libre, alta capacidad de datos</p>
+                  <% "AZTEC" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Texto libre, usado en transporte</p>
+                  <% "MAXICODE" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Texto libre, usado en paquetería (UPS)</p>
+                  <% "POSTNET" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 12345 (5, 9 u 11 dígitos)</p>
+                  <% "PLANET" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: 12345678901 (11 o 13 dígitos)</p>
+                  <% "ROYALMAIL" -> %>
+                    <p class="text-xs text-gray-400 mt-1">Ej: LE28HS9Z (alfanumérico)</p>
                   <% _ -> %>
                 <% end %>
               </div>
@@ -2173,34 +2294,65 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 phx-value-field="barcode_format"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               >
-                <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC"}, {"ITF14", "ITF-14"}] do %>
-                  <% compatible = barcode_format_compatible?(@element.text_content, value) %>
-                  <option
-                    value={value}
-                    selected={@element.barcode_format == value}
-                    disabled={not compatible}
-                    class={if not compatible, do: "text-gray-400", else: ""}
-                  >
-                    <%= label %><%= if not compatible, do: " (incompatible)", else: "" %>
-                  </option>
-                <% end %>
+                <optgroup label="1D General">
+                  <%= for {value, label} <- [{"CODE128", "CODE128"}, {"CODE39", "CODE39"}, {"CODE93", "CODE93"}, {"CODABAR", "Codabar"}, {"MSI", "MSI"}, {"pharmacode", "Pharmacode"}] do %>
+                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                    </option>
+                  <% end %>
+                </optgroup>
+                <optgroup label="1D Retail">
+                  <%= for {value, label} <- [{"EAN13", "EAN-13"}, {"EAN8", "EAN-8"}, {"UPC", "UPC-A"}, {"ITF14", "ITF-14"}, {"GS1_DATABAR", "GS1 DataBar"}, {"GS1_DATABAR_STACKED", "GS1 DataBar Stacked"}, {"GS1_DATABAR_EXPANDED", "GS1 DataBar Expanded"}] do %>
+                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                    </option>
+                  <% end %>
+                </optgroup>
+                <optgroup label="1D Supply Chain">
+                  <%= for {value, label} <- [{"GS1_128", "GS1-128"}] do %>
+                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                    </option>
+                  <% end %>
+                </optgroup>
+                <optgroup label="2D">
+                  <%= for {value, label} <- [{"DATAMATRIX", "DataMatrix"}, {"PDF417", "PDF417"}, {"AZTEC", "Aztec"}, {"MAXICODE", "MaxiCode"}] do %>
+                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                    </option>
+                  <% end %>
+                </optgroup>
+                <optgroup label="Postal">
+                  <%= for {value, label} <- [{"POSTNET", "POSTNET"}, {"PLANET", "PLANET"}, {"ROYALMAIL", "Royal Mail"}] do %>
+                    <% compatible = barcode_format_compatible?(@element.text_content, value) %>
+                    <option value={value} selected={@element.barcode_format == value} disabled={not compatible}>
+                      <%= label %><%= if not compatible, do: " ✗", else: "" %>
+                    </option>
+                  <% end %>
+                </optgroup>
               </select>
             </div>
-            <div class="flex items-center">
-              <form phx-change="update_element">
-                <input type="hidden" name="field" value="barcode_show_text" />
-                <input type="hidden" name="value" value="false" />
-                <input
-                  type="checkbox"
-                  id="barcode_show_text"
-                  name="value"
-                  value="true"
-                  checked={@element.barcode_show_text}
-                  class="rounded border-gray-300"
-                />
-                <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
-              </form>
-            </div>
+            <%= unless @element.barcode_format in ~w(DATAMATRIX PDF417 AZTEC MAXICODE) do %>
+              <div class="flex items-center">
+                <form phx-change="update_element">
+                  <input type="hidden" name="field" value="barcode_show_text" />
+                  <input type="hidden" name="value" value="false" />
+                  <input
+                    type="checkbox"
+                    id="barcode_show_text"
+                    name="value"
+                    value="true"
+                    checked={@element.barcode_show_text}
+                    class="rounded border-gray-300"
+                  />
+                  <label for="barcode_show_text" class="ml-2 text-sm text-gray-700">Mostrar texto</label>
+                </form>
+              </div>
+            <% end %>
             <div>
               <label class="block text-sm font-medium text-gray-700">Color del código</label>
               <input
