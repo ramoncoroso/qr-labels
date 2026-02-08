@@ -7,7 +7,7 @@ Sistema web **production-ready** para generar etiquetas con códigos QR y de bar
 | Aspecto | Detalle |
 |---------|---------|
 | **Stack** | Elixir + Phoenix LiveView + PostgreSQL |
-| **Frontend** | TailwindCSS + Fabric.js + QRCode.js + JsBarcode |
+| **Frontend** | TailwindCSS + Fabric.js + bwip-js (21 formatos barcode/QR) |
 | **Infra** | Docker + Nginx + SSL |
 | **Generación QR** | Client-side (navegador del usuario) |
 
@@ -15,9 +15,9 @@ Sistema web **production-ready** para generar etiquetas con códigos QR y de bar
 
 ## Estado Actual del Proyecto
 
-**Fecha de última actualización:** 2026-02-07
+**Fecha de última actualización:** 2026-02-08
 
-### Progreso de Fases
+### Progreso de Fases Base
 
 | Fase | Descripción | Estado | Notas |
 |------|-------------|--------|-------|
@@ -26,10 +26,19 @@ Sistema web **production-ready** para generar etiquetas con códigos QR y de bar
 | 3 | UI Base + Navegación | ✅ Completado | LiveView components |
 | 4 | Editor Visual Canvas | ✅ Completado | Fabric.js integrado |
 | 5 | Importación Excel/BD | ✅ Completado | Excel parser + DB connector |
-| 6 | Generación QR/Barras | ✅ Completado | Client-side generation |
-| 7 | Sistema Impresión | ✅ Completado | PDF + Print engine |
+| 6 | Generación QR/Barras | ✅ Completado | Client-side generation, bwip-js |
+| 7 | Sistema Impresión | ✅ Completado | PDF + Print engine (label-sized pages) |
 | 8 | Production Hardening | ⚠️ Parcial | Ver issues de seguridad |
-| 9 | Testing & Docs | ⚠️ Parcial | 707 tests, 0 failures |
+| 9 | Testing & Docs | ✅ Completado | 739 tests, 0 failures |
+
+### Progreso del Plan de Producto (ver `PLAN_PRODUCTO.md`)
+
+| Fase | Descripción | Estado | Notas |
+|------|-------------|--------|-------|
+| 1.1 | Biblioteca de plantillas por industria | ✅ Completado | 30 plantillas en 5 categorías, seeds, `/templates` |
+| 1.2 | Formatos de código de barras industriales | ✅ Completado | bwip-js, 21 formatos, QR con logo embebido |
+| 1.3 | Campos calculados y variables dinámicas | Pendiente | Motor `{{expresiones}}` en JS |
+| 1.4 | Exportación ZPL (Zebra) | Pendiente | Generador server-side Elixir |
 
 ---
 
@@ -145,11 +154,15 @@ qr_label_system/
 │           └── auth_live/         # Login/registro
 │
 ├── assets/js/hooks/               # Frontend Hooks
+│   ├── barcode_generator.js       # Módulo compartido bwip-js (QR + 21 formatos barcode)
 │   ├── canvas_designer.js         # Fabric.js editor
 │   ├── code_generator.js          # QR + Barcode generation
 │   ├── excel_reader.js            # Excel parsing client-side
 │   ├── label_preview.js           # Preview labels
-│   └── print_engine.js            # Print + PDF export
+│   ├── print_engine.js            # Print + PDF export (label-sized pages)
+│   ├── single_label_print.js      # Print single labels (PDF-based)
+│   ├── qr_logo_upload.js          # QR logo file upload hook
+│   └── scroll_to.js               # Smooth scroll hook
 │
 ├── priv/repo/migrations/          # DB Migrations
 │   ├── 20240101000001_create_users.exs
@@ -202,9 +215,13 @@ qr_label_system/
 - ✅ Conexión a BD externa (PostgreSQL, MySQL, SQL Server)
 - ✅ Preview de columnas y datos
 
-### Códigos Soportados
-- ✅ **QR**: Cualquier contenido, error correction configurable
-- ✅ **Barras**: CODE128, CODE39, EAN-13, EAN-8, UPC-A, ITF-14
+### Códigos Soportados (21 formatos via bwip-js)
+- ✅ **QR**: Cualquier contenido, error correction configurable (L/M/Q/H), logo embebido opcional
+- ✅ **1D General**: CODE128, CODE39, CODE93, Codabar, MSI, Pharmacode
+- ✅ **1D Retail**: EAN-13, EAN-8, UPC-A, ITF-14, GS1 DataBar, GS1 DataBar Stacked, GS1 DataBar Expanded
+- ✅ **1D Supply Chain**: GS1-128
+- ✅ **2D**: DataMatrix, PDF417, Aztec, MaxiCode
+- ✅ **Postal**: POSTNET, PLANET, Royal Mail 4-State
 
 ### Impresión
 - ✅ Hojas A4/Carta con etiquetas adhesivas
@@ -242,8 +259,7 @@ qr_label_system/
 ### JavaScript (package.json)
 ```json
 {
-  "qrcode": "^1.5.3",
-  "jsbarcode": "^3.11.6",
+  "bwip-js": "^4.8.0",
   "fabric": "^5.3.0",
   "xlsx": "^0.18.5",
   "jspdf": "^2.5.1",
@@ -2060,3 +2076,130 @@ Los cambios de esta sesión son **mejoras de UX del editor** (estabilización pr
 | 2026-02-07 | **CODE REVIEW: zip leak, rich text, logging, deps cleanup** |
 | 2026-02-07 | **FIX COMPILATION WARNING + PERSISTENCIA RESIZE + QR/BARCODE RESIZE** |
 | 2026-02-07 | **PLACEHOLDERS "COMPLETAR" + MEJORAS UX CANVAS + FIX PREVIEW** |
+| 2026-02-08 | **FASE 1.2: CÓDIGOS DE BARRAS INDUSTRIALES** (bwip-js, 21 formatos, QR con logo) |
+| 2026-02-08 | **FIX: IMPRESIÓN PDF CON TAMAÑO DE ETIQUETA** (label-sized pages, print dialog) |
+| 2026-02-08 | **UX: TAGS INLINE, DESCRIPCIÓN EDITABLE, LÁPICES AMPLIADOS** |
+
+---
+
+## Sesión 2026-02-08 — Fase 1.2: Códigos de barras industriales + QR con logo
+
+### Resumen
+
+Implementación completa de la Fase 1.2 del plan de producto (`PLAN_PRODUCTO.md`). Migración de JsBarcode + qrcode.js a bwip-js, con 21 formatos de código de barras y soporte para QR con logo embebido.
+
+### 1. Módulo compartido `barcode_generator.js`
+
+**Archivo nuevo:** `assets/js/hooks/barcode_generator.js`
+
+Elimina la duplicación de código de generación de QR/barcode que existía en 5 archivos JS. Exporta:
+- `generateQR(content, config, options)` — genera QR via bwip-js, con overlay de logo si `qr_logo_data` presente
+- `generateBarcode(content, config, options)` — genera barcode via bwip-js, soporta 21 formatos
+- `validateBarcodeContent(content, format)` — validación por formato (regex, longitud, caracteres)
+- `is2DFormat(format)` — detecta formatos 2D (DataMatrix, PDF417, Aztec, MaxiCode)
+- `getFormatGroups()` — grupos de formatos para dropdown UI
+
+**5 archivos actualizados** para importar del módulo compartido:
+- `canvas_designer.js`, `label_preview.js`, `print_engine.js`, `single_label_print.js`, `code_generator.js`
+
+### 2. Migración a bwip-js
+
+- `npm install bwip-js` / `npm uninstall jsbarcode qrcode`
+- Diferencias de API clave: `bcid` en vez de `format`, colores sin `#`, `includetext` en vez de `displayValue`
+- Bundle creció de 3.7MB a 5.0MB (esperado, bwip-js incluye 100+ encoders)
+
+### 3. 14 nuevos formatos de barcode (total 21)
+
+**`element.ex`**: `@barcode_formats` expandido de 7 a 21 formatos
+
+**`editor.ex`**:
+- Dropdown plano reemplazado por `<optgroup>` agrupado (5 grupos)
+- `barcode_format_compatible?/2` actualizado con reglas para todos los formatos
+- Hints de ejemplo por formato
+- Checkbox "Mostrar texto" oculto para formatos 2D
+
+### 4. QR con logo embebido
+
+**`element.ex`**: Nuevos campos `qr_logo_data` (base64, max 500KB) y `qr_logo_size` (float 5-30%, default 25%)
+
+**`editor.ex`**: UI para subir logo (QRLogoUpload hook), preview, botón quitar, slider de tamaño
+
+**`qr_logo_upload.js`** (nuevo): Hook para validación de archivo y conversión a base64 via FileReader
+
+**`barcode_generator.js`**: `generateQR()` fuerza error level H con logo y dibuja overlay centrado con padding blanco
+
+### 5. Tests y plantillas
+
+- 63 tests en `element_test.exs` (antes 47): validación de 14 nuevos formatos + QR logo
+- 4 plantillas actualizadas: pharma→DATAMATRIX, logistics→GS1_128
+- **739 tests, 0 failures**
+
+### Commits
+
+| Hash | Descripción |
+|------|-------------|
+| `83519fd` | feat: Industrial barcodes with bwip-js, 21 formats, and QR logo support |
+
+---
+
+## Sesión 2026-02-08 — Fix impresión PDF y mejoras UX /designs
+
+### 1. Impresión PDF con tamaño de etiqueta
+
+**Archivos:** `print_engine.js`, `single_label_print.js`
+
+**Problema:** `window.print()` con CSS `@page size` no era respetado por macOS.
+
+**Solución:** Ambos hooks ahora generan PDF via jsPDF con:
+- Tamaño de página = tamaño exacto de la etiqueta (1 página = 1 etiqueta)
+- `pdf.autoPrint()` + `window.open(pdf.output('bloburl'), '_blank')` para print dialog
+- Eliminado código HTML obsoleto (`generatePrintHTML`, `labelToHTML`, etc.)
+
+### 2. Tags inline y descripción editable en /designs
+
+**Archivo:** `lib/qr_label_system_web/live/design_live/index.ex`
+
+- Tags y botón "+ Tag" movidos a la misma línea que medidas/tipo
+- Campo `description` visible entre nombre y medidas
+- Descripción editable inline (mismo patrón que rename: lápiz → input → confirmar/cancelar)
+- Iconos de editar nombre/descripción ampliados a `w-5 h-5`
+
+### 3. Botones Print/PDF en editor
+
+Botones de imprimir (🖨️) y PDF (📄) siempre visibles en el header del editor, a la derecha de "Guardar". PrintEngine hook montado siempre (fuera de condicionales).
+
+### Commits
+
+| Hash | Descripción |
+|------|-------------|
+| `4b6d3c7` | fix: Print via PDF with label-sized pages instead of HTML window.print |
+| `39850f8` | fix: Use label-sized pages for print and fix print dialog not opening |
+| `36fac3f` | feat: Add print/PDF buttons to editor header and use label-sized PDF pages |
+| `9bcc31e` | feat: Add inline description editing and enlarge pencil icons in design list |
+| `2fc41cd` | ui: Move tags inline with info row and show description in design list |
+
+---
+
+## Archivos Clave (Fase 1.2)
+
+| Archivo | Cambio |
+|---------|--------|
+| `assets/js/hooks/barcode_generator.js` | **NUEVO** — módulo compartido bwip-js |
+| `assets/js/hooks/qr_logo_upload.js` | **NUEVO** — hook upload logo QR |
+| `assets/package.json` | +bwip-js, -jsbarcode, -qrcode |
+| `assets/js/hooks/canvas_designer.js` | Imports del módulo compartido |
+| `assets/js/hooks/label_preview.js` | Imports del módulo compartido |
+| `assets/js/hooks/print_engine.js` | Imports compartido + PDF label-sized |
+| `assets/js/hooks/single_label_print.js` | Imports compartido + PDF label-sized |
+| `assets/js/hooks/code_generator.js` | Imports del módulo compartido |
+| `lib/qr_label_system/designs/element.ex` | +14 formatos, +qr_logo_data/size |
+| `lib/qr_label_system/designs/design.ex` | +qr_logo_data/size en element_to_json |
+| `lib/qr_label_system_web/live/design_live/editor.ex` | Dropdown agrupado, QR logo UI, print/PDF buttons |
+| `test/qr_label_system/designs/element_test.exs` | 63 tests (14 nuevos formatos + QR logo) |
+| `priv/repo/seeds/templates.exs` | Pharma→DATAMATRIX, logistics→GS1_128 |
+
+---
+
+## Nota: Bug corregido en print_engine.js
+
+**`print_engine.js` línea 326-327** tenía una llave de cierre extra (`}`) que cerraba `printLabels()` prematuramente. Corregido en esta sesión.

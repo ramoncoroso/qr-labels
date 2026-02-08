@@ -51,18 +51,24 @@ const PrintEngine = {
     for (const row of data) {
       const labelCodes = {}
 
-      // Generate codes for each element that has a binding
       for (const element of design.elements || []) {
-        const columnName = mapping[element.id]
-        if (!columnName) continue
+        if (element.type !== 'qr' && element.type !== 'barcode') continue
 
-        const value = row[columnName]
+        // Try mapped CSV value first, then fall back to static content
+        let value = null
+        const columnName = mapping[element.id]
+        if (columnName && row[columnName] != null) {
+          value = String(row[columnName])
+        } else {
+          value = element.binding || element.text_content
+        }
+
         if (!value) continue
 
         if (element.type === 'qr') {
-          labelCodes[element.id] = await this.generateQR(String(value), element)
+          labelCodes[element.id] = await this.generateQR(value, element)
         } else if (element.type === 'barcode') {
-          labelCodes[element.id] = this.generateBarcode(String(value), element)
+          labelCodes[element.id] = this.generateBarcode(value, element)
         }
       }
 
@@ -323,7 +329,6 @@ const PrintEngine = {
 
     pdf.autoPrint()
     window.open(pdf.output('bloburl'), '_blank')
-  }
   },
 
   async exportPDF(filename) {
