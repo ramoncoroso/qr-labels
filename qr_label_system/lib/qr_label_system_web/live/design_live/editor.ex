@@ -1211,6 +1211,34 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
+  # Format info for barcode info card in properties panel
+  defp barcode_format_info(format) do
+    case format do
+      "CODE128" -> %{name: "CODE128", category: "1D General", color: "blue", type: "Código 1D lineal (uso general)", length: "Variable", chars: "ASCII completo", usage: "Logística, inventario, etiquetas internas"}
+      "CODE39" -> %{name: "CODE39", category: "1D General", color: "blue", type: "Código 1D lineal (uso general)", length: "Variable", chars: "A-Z, 0-9, -.$/+%", usage: "Industria automotriz, defensa, salud"}
+      "CODE93" -> %{name: "CODE93", category: "1D General", color: "blue", type: "Código 1D lineal (uso general)", length: "Variable", chars: "A-Z, 0-9, -.$/+%", usage: "Correo canadiense, logística"}
+      "CODABAR" -> %{name: "Codabar", category: "1D General", color: "blue", type: "Código 1D lineal (uso general)", length: "Mín. 3 caracteres", chars: "0-9, -$:/.+, inicio/fin A-D", usage: "Bibliotecas, bancos de sangre, paquetería"}
+      "MSI" -> %{name: "MSI", category: "1D General", color: "blue", type: "Código 1D lineal (uso general)", length: "Variable", chars: "Solo dígitos", usage: "Estantes de supermercado, inventario"}
+      "pharmacode" -> %{name: "Pharmacode", category: "1D General", color: "blue", type: "Código 1D lineal (farmacéutico)", length: "1 – 6 dígitos", chars: "Solo dígitos (valor 3 – 131070)", usage: "Industria farmacéutica (empaque)"}
+      "EAN13" -> %{name: "EAN-13", category: "1D Retail", color: "emerald", type: "Código 1D lineal (retail)", length: "12 – 13 dígitos", chars: "Solo dígitos", usage: "Productos de consumo a nivel mundial"}
+      "EAN8" -> %{name: "EAN-8", category: "1D Retail", color: "emerald", type: "Código 1D lineal (retail)", length: "7 – 8 dígitos", chars: "Solo dígitos", usage: "Productos pequeños con espacio limitado"}
+      "UPC" -> %{name: "UPC-A", category: "1D Retail", color: "emerald", type: "Código 1D lineal (retail)", length: "11 – 12 dígitos", chars: "Solo dígitos", usage: "Productos de consumo en Norteamérica"}
+      "ITF14" -> %{name: "ITF-14", category: "1D Retail", color: "emerald", type: "Código 1D lineal (retail/logística)", length: "13 – 14 dígitos", chars: "Solo dígitos", usage: "Cajas y embalaje exterior (GTIN)"}
+      "GS1_DATABAR" -> %{name: "GS1 DataBar", category: "1D Retail", color: "emerald", type: "Código 1D lineal (retail)", length: "13 – 14 dígitos", chars: "Solo dígitos (GTIN)", usage: "Productos frescos, cupones"}
+      "GS1_DATABAR_STACKED" -> %{name: "GS1 DB Stacked", category: "1D Retail", color: "emerald", type: "Código 1D apilado (retail)", length: "13 – 14 dígitos", chars: "Solo dígitos (GTIN)", usage: "Productos muy pequeños (frutas, verduras)"}
+      "GS1_DATABAR_EXPANDED" -> %{name: "GS1 DB Expanded", category: "1D Retail", color: "emerald", type: "Código 1D expandido (retail)", length: "Mín. 2 caracteres", chars: "AI + datos variables", usage: "Productos con peso, fecha de vencimiento"}
+      "GS1_128" -> %{name: "GS1-128", category: "1D Supply Chain", color: "cyan", type: "Código 1D lineal (cadena de suministro)", length: "Mín. 2, máx. ~48 caracteres", chars: "AI + datos", usage: "Pallets, cajas, trazabilidad logística"}
+      "DATAMATRIX" -> %{name: "DataMatrix", category: "2D", color: "amber", type: "Código 2D matricial", length: "1 – 2335 caracteres", chars: "Texto libre", usage: "Electrónica, componentes pequeños, salud"}
+      "PDF417" -> %{name: "PDF417", category: "2D", color: "amber", type: "Código 2D apilado", length: "1 – 1850 caracteres", chars: "Texto libre", usage: "Documentos de identidad, boarding passes"}
+      "AZTEC" -> %{name: "Aztec", category: "2D", color: "amber", type: "Código 2D matricial", length: "1 – 3832 caracteres", chars: "Texto libre", usage: "Billetes de transporte, boletos"}
+      "MAXICODE" -> %{name: "MaxiCode", category: "2D", color: "amber", type: "Código 2D hexagonal", length: "1 – 93 caracteres", chars: "Texto libre", usage: "Paquetería (UPS), clasificación automática"}
+      "POSTNET" -> %{name: "POSTNET", category: "Postal", color: "pink", type: "Código postal de barras", length: "5, 9 u 11 dígitos", chars: "Solo dígitos", usage: "Correo de EE.UU. (USPS)"}
+      "PLANET" -> %{name: "PLANET", category: "Postal", color: "pink", type: "Código postal de barras", length: "11 o 13 dígitos", chars: "Solo dígitos", usage: "Rastreo de correo USPS"}
+      "ROYALMAIL" -> %{name: "Royal Mail", category: "Postal", color: "pink", type: "Código postal 4-state", length: "Variable", chars: "Alfanumérico (A-Z, 0-9)", usage: "Correo de Reino Unido (Royal Mail)"}
+      _ -> nil
+    end
+  end
+
   # History management for undo/redo
   @max_history_size 10
 
@@ -2109,6 +2137,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <input
                 type="text"
                 name="value"
+                data-field="text_content"
                 value={Map.get(@element, :text_content) || ""}
                 placeholder={get_fixed_text_placeholder(@element.type)}
                 phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
@@ -2133,6 +2162,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <input
                     type="text"
                     name="value"
+                    data-field="text_content"
                     value={@element.text_content || ""}
                     phx-debounce="500"
                     placeholder="Completar"
@@ -2239,6 +2269,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <input
                     type="text"
                     name="value"
+                    data-field="text_content"
                     value={@element.text_content || ""}
                     phx-debounce="500"
                     placeholder="Completar"
@@ -2290,10 +2321,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <% end %>
             <div>
               <label class="block text-sm font-medium text-gray-700">Formato</label>
+              <form phx-change="update_element">
+              <input type="hidden" name="field" value="barcode_format" />
               <select
                 name="value"
-                phx-change="update_element"
-                phx-value-field="barcode_format"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               >
                 <optgroup label="1D General">
@@ -2337,7 +2368,44 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <% end %>
                 </optgroup>
               </select>
+              </form>
             </div>
+            <%= if info = barcode_format_info(@element.barcode_format) do %>
+              <% color = info.color %>
+              <div class={[
+                "rounded-lg border p-2.5 text-xs space-y-1",
+                color == "blue" && "bg-blue-50 border-blue-200",
+                color == "emerald" && "bg-emerald-50 border-emerald-200",
+                color == "cyan" && "bg-cyan-50 border-cyan-200",
+                color == "amber" && "bg-amber-50 border-amber-200",
+                color == "pink" && "bg-pink-50 border-pink-200"
+              ]}>
+                <div class="flex items-center justify-between">
+                  <span class={[
+                    "font-semibold",
+                    color == "blue" && "text-blue-700",
+                    color == "emerald" && "text-emerald-700",
+                    color == "cyan" && "text-cyan-700",
+                    color == "amber" && "text-amber-700",
+                    color == "pink" && "text-pink-700"
+                  ]}><%= info.name %></span>
+                  <span class={[
+                    "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                    color == "blue" && "bg-blue-100 text-blue-600",
+                    color == "emerald" && "bg-emerald-100 text-emerald-600",
+                    color == "cyan" && "bg-cyan-100 text-cyan-600",
+                    color == "amber" && "bg-amber-100 text-amber-600",
+                    color == "pink" && "bg-pink-100 text-pink-600"
+                  ]}><%= info.category %></span>
+                </div>
+                <p class="text-gray-600"><%= info.type %></p>
+                <div class="text-gray-500 space-y-0.5">
+                  <p><span class="font-medium text-gray-600">Longitud:</span> <%= info.length %></p>
+                  <p><span class="font-medium text-gray-600">Caracteres:</span> <%= info.chars %></p>
+                  <p><span class="font-medium text-gray-600">Uso:</span> <%= info.usage %></p>
+                </div>
+              </div>
+            <% end %>
             <%= unless @element.barcode_format in ~w(DATAMATRIX PDF417 AZTEC MAXICODE) do %>
               <div class="flex items-center">
                 <form phx-change="update_element">

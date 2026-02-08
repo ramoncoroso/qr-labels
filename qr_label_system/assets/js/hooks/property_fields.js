@@ -19,7 +19,7 @@ const PropertyFields = {
 
     this._handleFocusin = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        this.focusedElementName = e.target.getAttribute('phx-value-field') || e.target.name
+        this.focusedElementName = e.target.getAttribute('data-field') || e.target.getAttribute('phx-value-field') || e.target.id
         this.focusedElementValue = e.target.value
         this.cursorPosition = e.target.selectionStart
       }
@@ -70,7 +70,7 @@ const PropertyFields = {
       // Sanitize the field name to prevent CSS selector injection
       const safeName = CSS.escape(this.focusedElementName)
       const input = this.el.querySelector(
-        `[phx-value-field="${safeName}"], [name="${safeName}"]`
+        `[data-field="${safeName}"], [phx-value-field="${safeName}"], #${safeName}`
       )
       if (input && document.activeElement !== input) {
         // Restore focus
