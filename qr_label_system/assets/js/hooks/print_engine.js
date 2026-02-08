@@ -75,7 +75,17 @@ const PrintEngine = {
       this.columnMapping = column_mapping || {}
 
       try {
-        const dataset = await getDataset(user_id, design_id)
+        let dataset = await getDataset(user_id, design_id)
+
+        // Fallback: data may still be under "unassigned" key (data-first flow)
+        if (!dataset || dataset.rows.length === 0) {
+          const unassigned = await getDataset(user_id, null)
+          if (unassigned && unassigned.rows.length > 0) {
+            await associateDataset(user_id, design_id)
+            dataset = await getDataset(user_id, design_id)
+          }
+        }
+
         const data = dataset && dataset.rows.length > 0 ? dataset.rows : [{}]
         this.labels = await this.generateAllLabels(design, data, column_mapping)
         this.renderPreview()
@@ -88,7 +98,17 @@ const PrintEngine = {
     // ZPL: generate entirely client-side (no server round-trip)
     this.handleEvent("generate_zpl_client", async ({design, dpi, user_id, design_id, mapping}) => {
       try {
-        const dataset = await getDataset(user_id, design_id)
+        let dataset = await getDataset(user_id, design_id)
+
+        // Fallback: data may still be under "unassigned" key (data-first flow)
+        if (!dataset || dataset.rows.length === 0) {
+          const unassigned = await getDataset(user_id, null)
+          if (unassigned && unassigned.rows.length > 0) {
+            await associateDataset(user_id, design_id)
+            dataset = await getDataset(user_id, design_id)
+          }
+        }
+
         const rows = (dataset && dataset.rows.length > 0) ? dataset.rows : [{}]
         const zpl = generateBatchZpl(design, rows, { dpi, mapping: mapping || {} })
         const blob = new Blob([zpl], { type: 'application/x-zpl' })

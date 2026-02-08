@@ -17,6 +17,11 @@ defmodule QrLabelSystemWeb.API.DataSourceController do
         |> put_status(:not_found)
         |> json(%{error: "Data source not found"})
 
+      data_source when data_source.user_id != conn.assigns.current_user.id ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "Not authorized"})
+
       data_source ->
         case DataSources.get_data_from_source(data_source, limit: 10) do
           {:ok, %{columns: columns, rows: rows}} ->

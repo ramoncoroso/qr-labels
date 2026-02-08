@@ -2721,8 +2721,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               id="live-preview"
               phx-hook="LabelPreview"
               phx-update="ignore"
-              data-preview-index={@preview_row_index}
-              data-total-rows={max(@upload_total_rows, 1)}
               class="inline-block"
             >
             </div>

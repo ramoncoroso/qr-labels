@@ -16,6 +16,11 @@ defmodule QrLabelSystemWeb.API.DesignController do
         |> put_status(:not_found)
         |> json(%{error: "Design not found"})
 
+      design when design.user_id != conn.assigns.current_user.id ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "Not authorized"})
+
       design ->
         export_data = %{
           name: design.name,

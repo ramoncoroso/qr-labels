@@ -20,7 +20,14 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
        |> assign(:design, design)
        |> assign(:quantity, 1)
        |> assign(:printing, false)
-       |> assign(:zpl_dpi, 203)}
+       |> assign(:zpl_dpi, 203)
+       |> push_event("update_preview", %{
+         design: Design.to_json(design),
+         row: %{},
+         mapping: %{},
+         preview_index: 0,
+         total_rows: 1
+       })}
     end
   end
 
@@ -128,9 +135,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
               <div
                 id="label-preview"
                 phx-hook="LabelPreview"
-                data-design={Jason.encode!(Design.to_json(@design))}
-                data-row={Jason.encode!(%{})}
-                data-mapping={Jason.encode!(%{})}
+                phx-update="ignore"
                 class="inline-block"
               >
               </div>
