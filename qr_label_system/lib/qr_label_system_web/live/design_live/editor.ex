@@ -1702,17 +1702,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <span><%= if length(@upload_data) > 0, do: "Cambiar datos", else: "Vincular datos" %></span>
           </.link>
           <button
-            phx-click="toggle_preview"
-            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_preview, do: "bg-indigo-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <span>Vista previa</span>
-          </button>
-
-          <button
             phx-click="save_design"
             class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 font-medium"
           >
@@ -1723,6 +1712,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </button>
 
           <div class="w-px h-6 bg-gray-300"></div>
+
+          <button
+            phx-click="toggle_preview"
+            class={"px-3 py-2 rounded-lg flex items-center space-x-2 font-medium transition #{if @show_preview, do: "bg-indigo-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <span>Vista previa</span>
+          </button>
 
           <!-- Print split button (hover dropdown, pure CSS) -->
           <div class="relative group/print flex">
