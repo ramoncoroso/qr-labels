@@ -116,6 +116,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:expression_visual_mode, :cards)
        |> assign(:expression_builder, %{})
        |> assign(:expression_applied, false)
+       |> assign(:collapsed_sections, MapSet.new())
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
        |> assign(:zpl_dpi, 203)
@@ -268,6 +269,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:expression_visual_mode, :cards)
        |> assign(:expression_builder, %{})}
     end
+  end
+
+  @impl true
+  def handle_event("toggle_section", %{"section" => section}, socket) do
+    collapsed = socket.assigns.collapsed_sections
+    collapsed = if MapSet.member?(collapsed, section),
+      do: MapSet.delete(collapsed, section),
+      else: MapSet.put(collapsed, section)
+    {:noreply, assign(socket, :collapsed_sections, collapsed)}
   end
 
   @impl true
@@ -2300,6 +2310,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     </div>
     <!-- PrintEngine hook (always mounted) -->
     <div id="print-engine-container" phx-hook="PrintEngine" class="hidden"></div>
+    """
+  end
+
+  defp section_header(assigns) do
+    ~H"""
+    <button type="button" phx-click="toggle_section" phx-value-section={@id}
+      class="w-full flex items-center justify-between py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors">
+      <span><%= @title %></span>
+      <svg class={"w-4 h-4 text-gray-400 transition-transform #{if @collapsed, do: "-rotate-90"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
     """
   end
 

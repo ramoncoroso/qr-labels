@@ -1825,10 +1825,17 @@ const CanvasDesigner = {
           this.recreateCodeElement(obj, value, 'binding')
           return // recreateCodeElement handles save
         }
-        // For text elements, show column name as visual indicator
+        // For text elements, show column name or evaluated expression
         if (obj.type === 'textbox') {
           if (value) {
-            obj.set('text', `[${value}]`)
+            if (isExpression(value)) {
+              const preview = evaluate(value, {}, { rowIndex: 0, batchSize: 1, now: new Date() })
+              obj.set('text', preview || value)
+              obj.set('fontStyle', 'italic')
+            } else {
+              obj.set('text', `[${value}]`)
+              obj.set('fontStyle', 'normal')
+            }
             obj.set('fill', obj._originalColor || data.color || '#000000')
             obj._isPlaceholder = false
           } else if (data.text_content && data.text_content.trim() !== '') {
