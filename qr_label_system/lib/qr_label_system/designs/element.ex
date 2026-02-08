@@ -17,7 +17,11 @@ defmodule QrLabelSystem.Designs.Element do
   import Ecto.Changeset
 
   @element_types ~w(qr barcode text line rectangle image circle)
-  @barcode_formats ~w(CODE128 CODE39 EAN13 EAN8 UPC ITF14 pharmacode)
+  @barcode_formats ~w(CODE128 CODE39 EAN13 EAN8 UPC ITF14 pharmacode
+    GS1_128 GS1_DATABAR GS1_DATABAR_STACKED GS1_DATABAR_EXPANDED
+    CODE93 MSI CODABAR
+    DATAMATRIX PDF417 AZTEC MAXICODE
+    POSTNET PLANET ROYALMAIL)
 
   @primary_key false
   embedded_schema do
@@ -34,6 +38,8 @@ defmodule QrLabelSystem.Designs.Element do
 
     # QR specific
     field :qr_error_level, :string, default: "M"
+    field :qr_logo_data, :string       # Base64 encoded logo for QR overlay
+    field :qr_logo_size, :float, default: 25.0  # Logo size as % of QR area (5-30)
 
     # Barcode specific
     field :barcode_format, :string, default: "CODE128"
@@ -72,7 +78,7 @@ defmodule QrLabelSystem.Designs.Element do
     |> cast(attrs, [
       :id, :type, :x, :y, :width, :height, :rotation,
       :binding,
-      :qr_error_level,
+      :qr_error_level, :qr_logo_data, :qr_logo_size,
       :barcode_format, :barcode_show_text,
       :font_size, :font_family, :font_weight, :text_align, :text_content,
       :color, :background_color, :border_width, :border_color, :border_radius,
@@ -85,6 +91,7 @@ defmodule QrLabelSystem.Designs.Element do
     |> validate_inclusion(:type, @element_types)
     |> validate_barcode_format()
     |> validate_qr_error_level()
+    |> validate_qr_logo()
     |> validate_image_data_size()
   end
 
@@ -108,6 +115,29 @@ defmodule QrLabelSystem.Designs.Element do
     else
       changeset
     end
+  end
+
+  @max_qr_logo_size 500_000  # 500KB limit for QR logo
+
+  defp validate_qr_logo(changeset) do
+    logo_data = get_field(changeset, :qr_logo_data)
+    logo_size = get_field(changeset, :qr_logo_size)
+
+    changeset
+    |> then(fn cs ->
+      if logo_data && byte_size(logo_data) > @max_qr_logo_size do
+        add_error(cs, :qr_logo_data, "logo too large, maximum size is 500KB")
+      else
+        cs
+      end
+    end)
+    |> then(fn cs ->
+      if logo_size && (logo_size < 5.0 or logo_size > 30.0) do
+        add_error(cs, :qr_logo_size, "must be between 5% and 30%")
+      else
+        cs
+      end
+    end)
   end
 
   defp generate_id_if_missing(changeset) do

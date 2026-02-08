@@ -10,8 +10,7 @@
  */
 
 import { fabric } from 'fabric'
-import QRCode from 'qrcode'
-import JsBarcode from 'jsbarcode'
+import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent } from './barcode_generator'
 
 // Constants
 const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usability
@@ -968,15 +967,8 @@ const CanvasDesigner = {
       placeholder._qrContent = content
 
       // Generate QR code asynchronously
-      QRCode.toDataURL(content, {
-        width: size,
-        margin: 0,
-        errorCorrectionLevel: element.qr_error_level || 'M',
-        color: {
-          dark: element.color || '#000000',
-          light: element.background_color || '#ffffff'
-        }
-      }).then(dataUrl => {
+      sharedGenerateQR(content, element, { sizePx: size }).then(dataUrl => {
+        if (!dataUrl) return
         if (this._isDestroyed) return
 
         const obj = this.elements.get(element.id)
@@ -1110,7 +1102,7 @@ const CanvasDesigner = {
     // If we have content, generate real barcode
     if (content) {
       // Validate content for format before attempting generation
-      const validation = this.validateBarcodeContent(content, format)
+      const validation = sharedValidateBarcodeContent(content, format)
       if (!validation.valid) {
         // Show error placeholder with format requirements
         return this.createBarcodeErrorPlaceholder(w, h, x, y, element.rotation, validation.error)
@@ -1122,26 +1114,15 @@ const CanvasDesigner = {
       placeholder._barcodeContent = content
       placeholder._barcodeFormat = format
 
-      // Generate barcode using canvas
+      // Generate barcode using shared module
       try {
-        const canvas = document.createElement('canvas')
-
-        // Configure JsBarcode options
-        const options = {
-          format: format,
-          width: 2,
-          height: h * 0.7, // Leave room for text
-          displayValue: element.barcode_show_text !== false,
+        const dataUrl = sharedGenerateBarcode(content, element, {
+          heightPx: h * 0.7,
           fontSize: Math.max(10, h * 0.15),
-          margin: 5,
-          background: element.background_color || '#ffffff',
-          lineColor: element.color || '#000000'
-        }
+          margin: 5
+        })
 
-        JsBarcode(canvas, content, options)
-
-        // Convert canvas to data URL
-        const dataUrl = canvas.toDataURL('image/png')
+        if (!dataUrl) throw new Error('Barcode generation returned null')
 
         fabric.Image.fromURL(dataUrl, (img) => {
           if (this._isDestroyed) return
@@ -1221,63 +1202,7 @@ const CanvasDesigner = {
     return this.createBarcodePlaceholder(w, h, x, y, element.rotation, 'Completar cód. barras', '#999999')
   },
 
-  /**
-   * Validate barcode content for a specific format
-   * Returns { valid: boolean, error: string }
-   */
-  validateBarcodeContent(content, format) {
-    const digitsOnly = /^\d+$/
-    const alphanumeric = /^[A-Z0-9\s\-\.$/+%]+$/i
-
-    switch (format) {
-      case 'EAN13':
-        if (!digitsOnly.test(content)) {
-          return { valid: false, error: 'EAN-13: solo dígitos' }
-        }
-        if (content.length !== 12 && content.length !== 13) {
-          return { valid: false, error: 'EAN-13: 12-13 dígitos' }
-        }
-        return { valid: true }
-
-      case 'EAN8':
-        if (!digitsOnly.test(content)) {
-          return { valid: false, error: 'EAN-8: solo dígitos' }
-        }
-        if (content.length !== 7 && content.length !== 8) {
-          return { valid: false, error: 'EAN-8: 7-8 dígitos' }
-        }
-        return { valid: true }
-
-      case 'UPC':
-        if (!digitsOnly.test(content)) {
-          return { valid: false, error: 'UPC: solo dígitos' }
-        }
-        if (content.length !== 11 && content.length !== 12) {
-          return { valid: false, error: 'UPC: 11-12 dígitos' }
-        }
-        return { valid: true }
-
-      case 'ITF14':
-        if (!digitsOnly.test(content)) {
-          return { valid: false, error: 'ITF-14: solo dígitos' }
-        }
-        if (content.length !== 13 && content.length !== 14) {
-          return { valid: false, error: 'ITF-14: 13-14 dígitos' }
-        }
-        return { valid: true }
-
-      case 'CODE39':
-        if (!alphanumeric.test(content)) {
-          return { valid: false, error: 'CODE39: A-Z, 0-9, -.$/' }
-        }
-        return { valid: true }
-
-      case 'CODE128':
-      default:
-        // CODE128 accepts almost anything
-        return { valid: true }
-    }
-  },
+  // validateBarcodeContent is now in barcode_generator.js (sharedValidateBarcodeContent)
 
   createBarcodePlaceholder(w, h, x, y, rotation, label, color) {
     const fillColor = color || '#3b82f6'

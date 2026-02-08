@@ -137,6 +137,91 @@ defmodule QrLabelSystem.Designs.ElementTest do
       assert changeset.valid?
     end
 
+    # New industrial formats
+    test "accepts GS1_128 format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "GS1_128"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts GS1_DATABAR format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "GS1_DATABAR"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts GS1_DATABAR_STACKED format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "GS1_DATABAR_STACKED"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts GS1_DATABAR_EXPANDED format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "GS1_DATABAR_EXPANDED"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts CODE93 format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "CODE93"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts MSI format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "MSI"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts CODABAR format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "CODABAR"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts DATAMATRIX format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "DATAMATRIX"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts PDF417 format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "PDF417"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts AZTEC format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "AZTEC"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts MAXICODE format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "MAXICODE"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts POSTNET format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "POSTNET"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts PLANET format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "PLANET"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts ROYALMAIL format" do
+      attrs = %{id: "el_1", type: "barcode", x: 10.0, y: 20.0, barcode_format: "ROYALMAIL"}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
     test "skips barcode format validation for non-barcode types" do
       attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, barcode_format: "INVALID"}
       changeset = Element.changeset(%Element{}, attrs)
@@ -180,6 +265,61 @@ defmodule QrLabelSystem.Designs.ElementTest do
       attrs = %{id: "el_1", type: "text", x: 10.0, y: 20.0, qr_error_level: "INVALID"}
       changeset = Element.changeset(%Element{}, attrs)
       assert changeset.valid?
+    end
+  end
+
+  describe "changeset/2 - qr_logo validation" do
+    test "accepts qr_logo_data within size limit" do
+      small_logo = String.duplicate("a", 1000)
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_data: small_logo}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "rejects qr_logo_data over 500KB" do
+      large_logo = String.duplicate("a", 500_001)
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_data: large_logo}
+      changeset = Element.changeset(%Element{}, attrs)
+      refute changeset.valid?
+      assert "logo too large, maximum size is 500KB" in errors_on(changeset).qr_logo_data
+    end
+
+    test "accepts valid qr_logo_size" do
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_size: 20.0}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "rejects qr_logo_size below 5%" do
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_size: 3.0}
+      changeset = Element.changeset(%Element{}, attrs)
+      refute changeset.valid?
+      assert "must be between 5% and 30%" in errors_on(changeset).qr_logo_size
+    end
+
+    test "rejects qr_logo_size above 30%" do
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_size: 35.0}
+      changeset = Element.changeset(%Element{}, attrs)
+      refute changeset.valid?
+      assert "must be between 5% and 30%" in errors_on(changeset).qr_logo_size
+    end
+
+    test "accepts boundary qr_logo_size of 5%" do
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_size: 5.0}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "accepts boundary qr_logo_size of 30%" do
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0, qr_logo_size: 30.0}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert changeset.valid?
+    end
+
+    test "defaults qr_logo_size to 25%" do
+      attrs = %{id: "el_1", type: "qr", x: 10.0, y: 20.0}
+      changeset = Element.changeset(%Element{}, attrs)
+      assert Ecto.Changeset.get_field(changeset, :qr_logo_size) == 25.0
     end
   end
 
@@ -295,8 +435,9 @@ defmodule QrLabelSystem.Designs.ElementTest do
   end
 
   describe "barcode_formats/0" do
-    test "returns all valid barcode formats" do
+    test "returns all valid barcode formats including new industrial formats" do
       formats = Element.barcode_formats()
+      # Original 7
       assert "CODE128" in formats
       assert "CODE39" in formats
       assert "EAN13" in formats
@@ -304,6 +445,25 @@ defmodule QrLabelSystem.Designs.ElementTest do
       assert "UPC" in formats
       assert "ITF14" in formats
       assert "pharmacode" in formats
+      # New 14
+      assert "GS1_128" in formats
+      assert "GS1_DATABAR" in formats
+      assert "GS1_DATABAR_STACKED" in formats
+      assert "GS1_DATABAR_EXPANDED" in formats
+      assert "CODE93" in formats
+      assert "MSI" in formats
+      assert "CODABAR" in formats
+      assert "DATAMATRIX" in formats
+      assert "PDF417" in formats
+      assert "AZTEC" in formats
+      assert "MAXICODE" in formats
+      assert "POSTNET" in formats
+      assert "PLANET" in formats
+      assert "ROYALMAIL" in formats
+    end
+
+    test "returns exactly 21 formats" do
+      assert length(Element.barcode_formats()) == 21
     end
   end
 end

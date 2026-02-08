@@ -12,6 +12,7 @@ import AutoUploadSubmit from "./auto_upload_submit"
 import PropertyFields from "./property_fields"
 import BorderRadiusSlider from "./border_radius_slider"
 import ScrollTo from "./scroll_to"
+import QRLogoUpload from "./qr_logo_upload"
 
 const Hooks = {
   CanvasDesigner,
@@ -27,7 +28,8 @@ const Hooks = {
   AutoUploadSubmit,
   PropertyFields,
   BorderRadiusSlider,
-  ScrollTo
+  ScrollTo,
+  QRLogoUpload
 }
 
 export default Hooks

@@ -3,8 +3,7 @@
  * Generates QR codes and barcodes client-side using qrcode and JsBarcode
  */
 
-import QRCode from 'qrcode'
-import JsBarcode from 'jsbarcode'
+import { generateQR, generateBarcode } from './barcode_generator'
 
 const CodeGenerator = {
   mounted() {
@@ -39,44 +38,11 @@ const CodeGenerator = {
   },
 
   async generateQR(content, config) {
-    try {
-      const options = {
-        width: Math.round((config.width || 20) * 3.78),
-        margin: 0,
-        errorCorrectionLevel: config.qr_error_level || 'M',
-        color: {
-          dark: '#000000',
-          light: '#FFFFFF'
-        }
-      }
-
-      return await QRCode.toDataURL(content, options)
-    } catch (err) {
-      console.error('Error generating QR code:', err)
-      return null
-    }
+    return generateQR(content, config)
   },
 
   generateBarcode(content, config) {
-    try {
-      const canvas = document.createElement('canvas')
-
-      JsBarcode(canvas, content, {
-        format: config.barcode_format || 'CODE128',
-        width: 2,
-        height: Math.round((config.height || 15) * 3.78),
-        displayValue: config.barcode_show_text !== false,
-        fontSize: 12,
-        margin: 0,
-        background: '#FFFFFF',
-        lineColor: '#000000'
-      })
-
-      return canvas.toDataURL('image/png')
-    } catch (err) {
-      console.error('Error generating barcode:', err)
-      return null
-    }
+    return generateBarcode(content, config)
   }
 }
 

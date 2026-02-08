@@ -136,6 +136,8 @@ defmodule QrLabelSystem.Designs.Design do
       rotation: element.rotation,
       binding: element.binding,
       qr_error_level: element.qr_error_level,
+      qr_logo_data: element.qr_logo_data,
+      qr_logo_size: element.qr_logo_size,
       barcode_format: element.barcode_format,
       barcode_show_text: element.barcode_show_text,
       font_size: element.font_size,

@@ -3,8 +3,7 @@
  * Renders a single label preview with QR/barcode generation
  */
 
-import QRCode from 'qrcode'
-import JsBarcode from 'jsbarcode'
+import { generateQR, generateBarcode } from './barcode_generator'
 
 const MM_TO_PX = 3.78
 
@@ -95,37 +94,14 @@ const LabelPreview = {
   },
 
   async generateQR(content, config, scale) {
-    try {
-      return await QRCode.toDataURL(content, {
-        width: Math.round((config.width || 20) * MM_TO_PX * scale),
-        margin: 0,
-        errorCorrectionLevel: config.qr_error_level || 'M',
-        color: {
-          dark: config.color || '#000000',
-          light: config.background_color || '#ffffff'
-        }
-      })
-    } catch (err) {
-      console.error('Error generating QR:', err)
-      return null
-    }
+    return generateQR(content, config, { scale })
   },
 
   generateBarcode(content, config, scale) {
-    try {
-      const canvas = document.createElement('canvas')
-      JsBarcode(canvas, content, {
-        format: config.barcode_format || 'CODE128',
-        width: Math.max(1, Math.round(scale)),
-        height: Math.round((config.height || 15) * MM_TO_PX * scale),
-        displayValue: config.barcode_show_text !== false,
-        margin: 0
-      })
-      return canvas.toDataURL('image/png')
-    } catch (err) {
-      console.error('Error generating barcode:', err)
-      return null
-    }
+    return generateBarcode(content, config, {
+      scale,
+      barWidth: Math.max(1, Math.round(scale))
+    })
   },
 
   renderElement(element, row, mapping, codes, scale, labelType) {

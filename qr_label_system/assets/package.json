@@ -9,13 +9,12 @@
     "deploy": "npm run build && npm run build:css -- --minify"
   },
   "dependencies": {
+    "bwip-js": "^4.8.0",
     "fabric": "^5.3.0",
     "jspdf": "^2.5.1",
-    "jsbarcode": "^3.11.6",
     "phoenix": "file:../deps/phoenix",
     "phoenix_html": "file:../deps/phoenix_html",
     "phoenix_live_view": "file:../deps/phoenix_live_view",
-    "qrcode": "^1.5.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

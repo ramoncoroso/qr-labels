@@ -253,7 +253,7 @@ templates = [
       SeedEl.t(SeedEl.id(7,7), 19.0, 26.0, 20.0, 4.5, b: "lote", s: 8.0, w: "bold", n: "Lote"),
       SeedEl.t(SeedEl.id(7,8), 42.0, 26.0, 13.0, 4.5, t: "Cad.:", s: 8.0, c: "#666666", n: "Label cad."),
       SeedEl.t(SeedEl.id(7,9), 56.0, 26.0, 20.0, 4.5, b: "fecha_caducidad", s: 8.0, w: "bold", n: "Caducidad"),
-      SeedEl.bc(SeedEl.id(7,10), 5.0, 33.0, 70.0, 14.0, b: "codigo_nacional", f: "CODE128", n: "Código nacional")
+      SeedEl.bc(SeedEl.id(7,10), 5.0, 33.0, 14.0, 14.0, b: "codigo_nacional", f: "DATAMATRIX", n: "DataMatrix")
     ]
   },
 
@@ -294,7 +294,7 @@ templates = [
       SeedEl.t(SeedEl.id(9,6), 48.0, 20.0, 13.0, 4.5, t: "Cad.:", s: 8.0, c: "#666666", n: "Label cad."),
       SeedEl.t(SeedEl.id(9,7), 62.0, 20.0, 34.0, 4.5, b: "fecha_caducidad", s: 8.0, w: "bold", n: "Caducidad"),
       SeedEl.q(SeedEl.id(9,8), 4.0, 27.0, 20.0, b: "codigo_trazabilidad", n: "QR trazabilidad"),
-      SeedEl.bc(SeedEl.id(9,9), 28.0, 30.0, 68.0, 15.0, b: "codigo_nacional", f: "CODE128", n: "Código nacional")
+      SeedEl.bc(SeedEl.id(9,9), 28.0, 30.0, 15.0, 15.0, b: "codigo_nacional", f: "DATAMATRIX", n: "DataMatrix")
     ]
   },
 
@@ -416,7 +416,7 @@ templates = [
       SeedEl.t(SeedEl.id(14,16), 8.0, 90.0, 25.0, 5.5, t: "Fecha:", s: 10.0, c: "#666666", n: "Label fecha"),
       SeedEl.t(SeedEl.id(14,17), 35.0, 90.0, 40.0, 5.5, b: "fecha_envio", s: 10.0, n: "Fecha envío"),
       SeedEl.q(SeedEl.id(14,18), 8.0, 105.0, 60.0, b: "sscc", n: "QR SSCC"),
-      SeedEl.bc(SeedEl.id(14,19), 8.0, 172.0, 132.0, 30.0, b: "sscc", f: "CODE128", n: "SSCC")
+      SeedEl.bc(SeedEl.id(14,19), 8.0, 172.0, 132.0, 30.0, b: "sscc", f: "GS1_128", n: "GS1-128 SSCC")
     ]
   },
 
@@ -447,7 +447,7 @@ templates = [
       SeedEl.t(SeedEl.id(15,16), 50.0, 71.0, 16.0, 5.0, t: "Peso:", s: 9.0, c: "#666666", n: "Label peso"),
       SeedEl.t(SeedEl.id(15,17), 67.0, 71.0, 28.0, 5.0, b: "peso_kg", s: 9.0, w: "bold", n: "Peso"),
       SeedEl.q(SeedEl.id(15,18), 5.0, 80.0, 30.0, b: "tracking", n: "QR tracking"),
-      SeedEl.bc(SeedEl.id(15,19), 5.0, 115.0, 90.0, 28.0, b: "tracking", f: "CODE128", n: "Código tracking")
+      SeedEl.bc(SeedEl.id(15,19), 5.0, 115.0, 90.0, 28.0, b: "tracking", f: "GS1_128", n: "GS1-128 tracking")
     ]
   },
 
