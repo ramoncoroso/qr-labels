@@ -51,6 +51,8 @@ defmodule QrLabelSystem.Designs.Element do
     field :font_weight, :string, default: "normal"
     field :text_align, :string, default: "left"
     field :text_content, :string
+    field :text_auto_fit, :boolean, default: false
+    field :text_min_font_size, :float, default: 6.0
 
     # Styling
     field :color, :string, default: "#000000"
@@ -81,6 +83,7 @@ defmodule QrLabelSystem.Designs.Element do
       :qr_error_level, :qr_logo_data, :qr_logo_size,
       :barcode_format, :barcode_show_text,
       :font_size, :font_family, :font_weight, :text_align, :text_content,
+      :text_auto_fit, :text_min_font_size,
       :color, :background_color, :border_width, :border_color, :border_radius,
       :image_url, :image_data, :image_filename,
       :z_index, :visible, :locked, :name

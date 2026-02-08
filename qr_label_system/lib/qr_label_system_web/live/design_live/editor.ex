@@ -115,6 +115,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:show_expression_mode, false)
        |> assign(:expression_visual_mode, :cards)
        |> assign(:expression_builder, %{})
+       |> assign(:expression_applied, false)
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
        |> assign(:zpl_dpi, 203)
@@ -237,24 +238,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       is_nil(element) ->
         {:noreply, socket}
 
-      # Normal selection - update element but preserve show_binding_mode if element has binding
+      # Normal selection - detect initial tab from element's binding
       true ->
-        # Only reset show_binding_mode if the element doesn't have a binding
-        # This preserves binding mode when re-selecting an element in binding mode
-        new_show_binding_mode = if has_binding?(element) do
-          socket.assigns.show_binding_mode
-        else
-          false
+        {init_binding, init_expression} = cond do
+          has_expression?(element) -> {false, true}
+          has_binding?(element) -> {true, false}
+          true -> {false, false}
         end
-
-        # Preserve expression mode if element has expression binding
-        new_show_expression_mode = has_expression?(element)
 
         {:noreply,
          socket
          |> assign(:selected_element, element)
-         |> assign(:show_binding_mode, new_show_binding_mode)
-         |> assign(:show_expression_mode, new_show_expression_mode)
+         |> assign(:show_binding_mode, init_binding)
+         |> assign(:show_expression_mode, init_expression)
          |> assign(:expression_visual_mode, :cards)
          |> assign(:expression_builder, %{})}
     end
@@ -425,120 +421,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("set_content_mode", %{"mode" => mode}, socket) do
+    # Tabs are UI-only: no binding changes, no push_event to canvas.
+    # Binding only changes when user takes an explicit action
+    # (select column, type text, apply pattern).
     if socket.assigns.selected_element do
-      element_id = Map.get(socket.assigns.selected_element, :id) ||
-                   Map.get(socket.assigns.selected_element, "id")
-      element_type = Map.get(socket.assigns.selected_element, :type) ||
-                     Map.get(socket.assigns.selected_element, "type")
-
-      # Get current values
-      current_binding = Map.get(socket.assigns.selected_element, :binding) ||
-                        Map.get(socket.assigns.selected_element, "binding") || ""
-      _current_text = Map.get(socket.assigns.selected_element, :text_content) ||
-                      Map.get(socket.assigns.selected_element, "text_content") || ""
-
       case mode do
         "binding" ->
-          # Switch to binding mode: set binding to empty string (not nil)
-          # This signals "binding mode active but no column selected yet"
-          binding_value = if current_binding != "" && current_binding != nil do
-            current_binding
-          else
-            ""  # Empty string = binding mode, nil = fixed mode
-          end
-
-          updated_element = socket.assigns.selected_element
-            |> Map.put(:binding, binding_value)
-            |> Map.put("binding", binding_value)
-
-          # For text elements, sync binding to canvas immediately
-          # QR/barcode will sync when user selects a column (to avoid recreation issues)
-          # IMPORTANT: Set show_binding_mode=true to keep UI in binding mode
-          # even if element_selected fires with stale data before element_modified completes
-          socket = socket
-            |> assign(:selected_element, updated_element)
-            |> assign(:pending_selection_id, element_id)
-            |> assign(:show_binding_mode, true)
-            |> assign(:show_expression_mode, false)
-            |> assign(:expression_visual_mode, :cards)
-            |> assign(:expression_builder, %{})
-
-          socket = if element_type == "text" do
-            push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
-          else
-            socket
-          end
-
-          {:noreply, socket}
+          {:noreply,
+           socket
+           |> assign(:show_binding_mode, true)
+           |> assign(:show_expression_mode, false)}
 
         "fixed" ->
-          # Switch to fixed mode: clear binding and preserve text_content
-          updated_element = socket.assigns.selected_element
-            |> Map.put(:binding, nil)
-            |> Map.put("binding", nil)
-
-          # For text elements, sync binding to canvas immediately
-          # QR/barcode will sync when user types content (to avoid recreation issues)
-          socket = socket
-            |> assign(:selected_element, updated_element)
-            |> assign(:pending_selection_id, element_id)
-            |> assign(:show_binding_mode, false)
-            |> assign(:show_expression_mode, false)
-            |> assign(:expression_visual_mode, :cards)
-            |> assign(:expression_builder, %{})
-
-          socket = if element_type == "text" do
-            push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: nil})
-          else
-            socket
-          end
-
-          {:noreply, socket}
+          {:noreply,
+           socket
+           |> assign(:show_binding_mode, false)
+           |> assign(:show_expression_mode, false)}
 
         "expression" ->
-          # Switch to expression mode: pre-fill with column reference if one is selected
-          binding_value = cond do
-            is_binary(current_binding) && String.contains?(current_binding, "{{") ->
-              # Already an expression, keep it
-              current_binding
-            is_binary(current_binding) && current_binding != "" ->
-              # Column is selected, wrap it as expression reference
-              "{{#{current_binding}}}"
-            true ->
-              ""
-          end
-
-          updated_element = socket.assigns.selected_element
-            |> Map.put(:binding, binding_value)
-            |> Map.put("binding", binding_value)
-
-          # Pre-fill builder with column if coming from Column tab
-          builder = case extract_simple_column_ref(current_binding) do
-            {:ok, col_name} -> %{"column" => col_name}
-            :none ->
-              # Also try extracting from wrapped expression like {{col}}
-              case extract_simple_column_ref(binding_value) do
-                {:ok, col_name} -> %{"column" => col_name}
-                :none -> %{}
-              end
-          end
-
-          # Always start with cards — user reaches advanced via "Modo avanzado"
-          socket = socket
-            |> assign(:selected_element, updated_element)
-            |> assign(:pending_selection_id, element_id)
-            |> assign(:show_binding_mode, false)
-            |> assign(:show_expression_mode, true)
-            |> assign(:expression_visual_mode, :cards)
-            |> assign(:expression_builder, builder)
-
-          socket = if element_type == "text" do
-            push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
-          else
-            socket
-          end
-
-          {:noreply, socket}
+          {:noreply,
+           socket
+           |> assign(:show_binding_mode, false)
+           |> assign(:show_expression_mode, true)}
 
         _ ->
           {:noreply, socket}
@@ -597,7 +501,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply,
      socket
      |> assign(:expression_visual_mode, {:form, pattern_id})
-     |> assign(:expression_builder, config)}
+     |> assign(:expression_builder, config)
+     |> assign(:expression_applied, false)}
   end
 
   @impl true
@@ -609,7 +514,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       {key, value}, acc -> Map.put(acc, key, value)
     end)
 
-    {:noreply, assign(socket, :expression_builder, new_builder)}
+    {:noreply,
+     socket
+     |> assign(:expression_builder, new_builder)
+     |> assign(:expression_applied, false)}
   end
 
   @impl true
@@ -628,9 +536,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           |> Map.put(:binding, expr)
           |> Map.put("binding", expr)
 
+        # Stay in form view so user can tweak and re-apply
         socket = socket
           |> assign(:selected_element, updated_element)
-          |> assign(:expression_visual_mode, :advanced)
+          |> assign(:expression_applied, true)
 
         socket = if element_type == "text" do
           push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: expr})
@@ -650,7 +559,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply,
      socket
      |> assign(:expression_visual_mode, :cards)
-     |> assign(:expression_builder, %{})}
+     |> assign(:expression_builder, %{})
+     |> assign(:expression_applied, false)}
   end
 
   @impl true
@@ -1349,7 +1259,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           font_weight: "normal",
           text_align: "left",
           text_content: "",
-          text_auto_fit: true,
+          text_auto_fit: false,
           text_min_font_size: 6.0,
           color: "#000000",
           binding: nil,
@@ -2237,7 +2147,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} preview_data={@preview_data} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -2748,13 +2658,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     </div>
 
                     <!-- Botón aplicar -->
-                    <button
-                      type="button"
-                      phx-click="apply_expression_pattern"
-                      class="w-full bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                    >
-                      Aplicar
-                    </button>
+                    <%= if @expression_applied do %>
+                      <button
+                        type="button"
+                        phx-click="apply_expression_pattern"
+                        class="w-full bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                        Aplicado
+                      </button>
+                    <% else %>
+                      <button
+                        type="button"
+                        phx-click="apply_expression_pattern"
+                        class="w-full bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                      >
+                        Aplicar
+                      </button>
+                    <% end %>
                   <% end %>
 
                 <% :advanced -> %>
@@ -3219,14 +3140,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     type="checkbox"
                     name="value"
                     value="true"
-                    checked={Map.get(@element, :text_auto_fit, true) == true}
+                    checked={Map.get(@element, :text_auto_fit, false) == true}
                     class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span class="font-medium">Ajustar al área</span>
                 </form>
               </label>
               <p class="text-xs text-gray-400 mt-0.5 ml-6">Reduce la fuente para que el texto quepa</p>
-              <%= if Map.get(@element, :text_auto_fit, true) == true do %>
+              <%= if Map.get(@element, :text_auto_fit, false) == true do %>
                 <div class="mt-2 ml-6">
                   <label class="block text-xs text-gray-500">Tamaño mínimo (pt)</label>
                   <form phx-change="update_element" class="mt-0.5">
@@ -3550,10 +3471,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     is_binary(binding) && String.contains?(binding, "{{")
   end
 
-  defp content_mode(element, show_binding_mode, show_expression_mode) do
+  defp content_mode(_element, show_binding_mode, show_expression_mode) do
     cond do
-      has_expression?(element) or show_expression_mode -> :expression
-      has_binding?(element) or show_binding_mode -> :column
+      show_expression_mode -> :expression
+      show_binding_mode -> :column
       true -> :text
     end
   end

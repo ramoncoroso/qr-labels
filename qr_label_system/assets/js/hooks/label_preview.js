@@ -5,6 +5,7 @@
 
 import { generateQR, generateBarcode } from './barcode_generator'
 import { resolveText, resolveCodeValue } from './expression_engine'
+import { calcAutoFitFontSize } from './text_utils'
 
 const MM_TO_PX = 3.78
 
@@ -146,12 +147,31 @@ const LabelPreview = {
 
         div.textContent = textContent || '[Texto]'
         div.style.width = `${element.width * scale * MM_TO_PX}px`
-        div.style.fontSize = `${(element.font_size || 12) * (MM_TO_PX / 6) * scale}px`
+
+        let previewFontSize = (element.font_size || 12) * (MM_TO_PX / 6) * scale
+        if (element.text_auto_fit === true && textContent && element.width && element.height) {
+          const previewBoxW = element.width * scale * MM_TO_PX
+          const previewBoxH = element.height * scale * MM_TO_PX
+          div.style.height = `${previewBoxH}px`
+          const minFs = (element.text_min_font_size || 6) * (MM_TO_PX / 6) * scale
+          const result = calcAutoFitFontSize(
+            textContent, previewBoxW, previewBoxH, previewFontSize, minFs,
+            element.font_family || 'Arial', element.font_weight || 'normal'
+          )
+          previewFontSize = result.fontSize
+          div.style.overflow = 'hidden'
+          if (result.overflows) {
+            div.style.outline = '2px dashed #dc2626'
+          }
+        } else {
+          div.style.overflow = 'visible'
+        }
+
+        div.style.fontSize = `${previewFontSize}px`
         div.style.fontFamily = element.font_family || 'Arial'
         div.style.fontWeight = element.font_weight || 'normal'
         div.style.color = element.color || '#000000'
         div.style.textAlign = element.text_align || 'left'
-        div.style.overflow = 'visible'
         div.style.whiteSpace = 'normal'
         div.style.wordBreak = 'break-word'
         break

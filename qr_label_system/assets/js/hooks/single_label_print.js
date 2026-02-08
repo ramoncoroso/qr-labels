@@ -5,9 +5,11 @@
 
 import { generateQR, generateBarcode } from './barcode_generator'
 import { resolveText, resolveCodeValue } from './expression_engine'
+import { calcAutoFitFontSize } from './text_utils'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
+const PX_PER_MM = 6
 
 /**
  * Print a PDF blob by opening it in a new window and triggering print().
@@ -139,8 +141,10 @@ const SingleLabelPrint = {
       pdf.rect(offsetX, offsetY, design.width_mm, design.height_mm, 'S')
     }
 
-    // Render elements
-    for (const element of design.elements || []) {
+    // Render elements sorted by z_index (lower = back, higher = front)
+    const sortedElements = [...(design.elements || [])].sort((a, b) => (a.z_index || 0) - (b.z_index || 0))
+    for (const element of sortedElements) {
+      if (element.visible === false) continue
       await this.renderElementToPDF(pdf, element, codes, offsetX, offsetY, context)
     }
   },
@@ -161,7 +165,19 @@ const SingleLabelPrint = {
       case 'text':
         const textContent = resolveText(element, {}, null, context || {})
 
-        pdf.setFontSize(element.font_size || 12)
+        let singleFontSize = element.font_size || 12
+        if (element.text_auto_fit === true && textContent && element.width && element.height) {
+          const boxWPx = element.width * PX_PER_MM
+          const boxHPx = element.height * PX_PER_MM
+          const minFsPx = (element.text_min_font_size || 6)
+          const result = calcAutoFitFontSize(
+            textContent, boxWPx, boxHPx, singleFontSize, minFsPx,
+            element.font_family || 'Arial', element.font_weight || 'normal'
+          )
+          singleFontSize = result.fontSize
+        }
+
+        pdf.setFontSize(singleFontSize)
         pdf.setTextColor(element.color || '#000000')
 
         if (element.font_weight === 'bold') {
@@ -177,7 +193,7 @@ const SingleLabelPrint = {
           textX = x + element.width
         }
 
-        pdf.text(textContent, textX, y + (element.font_size || 12) * 0.35, {
+        pdf.text(textContent, textX, y + singleFontSize * 0.35, {
           align: element.text_align || 'left',
           maxWidth: element.width
         })

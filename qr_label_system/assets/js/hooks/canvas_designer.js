@@ -12,6 +12,7 @@
 import { fabric } from 'fabric'
 import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent, getFormatInfo } from './barcode_generator'
 import { isExpression, evaluate } from './expression_engine'
+import { calcAutoFitFontSize } from './text_utils'
 
 // Constants
 const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usability
@@ -562,15 +563,17 @@ const CanvasDesigner = {
         }
       }
       this.updateFormatBadgePosition(obj)
+      this.updateDepthOverlays()
       this.saveElementsImmediate()
     })
 
-    // Snap while moving + sync format badge
+    // Snap while moving + sync format badge + update depth overlays
     this.canvas.on('object:moving', (e) => {
       if (this.snapEnabled) {
         this.handleSnap(e.target)
       }
       this.updateFormatBadgePosition(e.target)
+      this.updateDepthOverlays()
     })
 
     // Clear alignment lines when done moving
@@ -1427,15 +1430,30 @@ const CanvasDesigner = {
       textbox.set('fontStyle', 'italic')
     }
 
-    // Auto-fit width to content
-    const textWidth = textbox.calcTextWidth()
-    const minWidth = 10 * PX_PER_MM // Minimum 10mm
-    const padding = 2 * PX_PER_MM // 2mm padding
-    const fittedWidth = Math.max(textWidth + padding, minWidth)
+    // Auto-fit font size to bounding box (only when explicitly enabled)
+    if (element.text_auto_fit === true && content && element.width && element.height) {
+      const boxW = (element.width || 30) * PX_PER_MM
+      const boxH = (element.height || 14) * PX_PER_MM
+      const minFontSize = element.text_min_font_size || 6
+      const { fontSize: fittedSize, overflows } = calcAutoFitFontSize(
+        content, boxW, boxH, fontSize, minFontSize,
+        element.font_family || 'Arial', element.font_weight || 'normal'
+      )
+      textbox.set('fontSize', fittedSize)
+      textbox._textOverflows = overflows
+      if (overflows) {
+        textbox.set({ stroke: '#dc2626', strokeDashArray: [5, 3], strokeWidth: 1.5 })
+      }
+    } else {
+      // Legacy behavior: auto-fit width to content
+      const textWidth = textbox.calcTextWidth()
+      const minWidth = 10 * PX_PER_MM // Minimum 10mm
+      const padding = 2 * PX_PER_MM // 2mm padding
+      const fittedWidth = Math.max(textWidth + padding, minWidth)
 
-    // Only auto-fit if we don't have an explicit width from saved data
-    if (!element.width || element.width === 60) {
-      textbox.set('width', fittedWidth)
+      if (!element.width || element.width === 60) {
+        textbox.set('width', fittedWidth)
+      }
     }
 
     return textbox
@@ -1628,8 +1646,12 @@ const CanvasDesigner = {
     const data = obj.elementData || {}
 
     // Parse numeric values
-    if (['x', 'y', 'width', 'height', 'rotation', 'font_size', 'border_width', 'border_radius'].includes(field)) {
+    if (['x', 'y', 'width', 'height', 'rotation', 'font_size', 'border_width', 'border_radius', 'text_min_font_size'].includes(field)) {
       value = parseFloat(value) || 0
+    }
+    // Parse boolean values
+    if (['text_auto_fit'].includes(field)) {
+      value = value === true || value === 'true'
     }
 
     data[field] = value
@@ -1681,8 +1703,11 @@ const CanvasDesigner = {
           const newH = value * PX_PER_MM
           obj.set('scaleY', newH / obj.height)
           obj._explicitSizeUpdate = true
+        } else if (obj.type === 'textbox' && data.text_auto_fit === true) {
+          // When auto-fit is on, height is user-controlled (bounding box)
+          this.updateTextFit(obj)
         }
-        // Height is auto-calculated for textbox
+        // When auto-fit is off, height is auto-calculated by Fabric (no action needed)
         break
       }
       case 'rotation':
@@ -1716,7 +1741,7 @@ const CanvasDesigner = {
           obj.initDimensions()
           obj.setCoords()
           // Auto-fit width to content if text is short
-          this.autoFitTextWidth(obj)
+          this.updateTextFit(obj)
         } else if (obj.elementType === 'qr' || obj.elementType === 'barcode') {
           // For QR and barcode, changing text_content requires regenerating
           // Pass 'text_content' to preserve the binding value (important for fixed text mode)
@@ -1729,24 +1754,30 @@ const CanvasDesigner = {
         if (obj.type === 'textbox') {
           obj.set('fontSize', value)
           // Recalculate dimensions after font size change
-          this.autoFitTextWidth(obj)
+          this.updateTextFit(obj)
         }
         break
       case 'font_weight':
         if (obj.type === 'textbox') {
           obj.set('fontWeight', value)
-          this.autoFitTextWidth(obj)
+          this.updateTextFit(obj)
         }
         break
       case 'font_family':
         if (obj.type === 'textbox') {
           obj.set('fontFamily', value)
-          this.autoFitTextWidth(obj)
+          this.updateTextFit(obj)
         }
         break
       case 'text_align':
         if (obj.type === 'textbox') {
           obj.set('textAlign', value)
+        }
+        break
+      case 'text_auto_fit':
+      case 'text_min_font_size':
+        if (obj.type === 'textbox') {
+          this.updateTextFit(obj)
         }
         break
       case 'background_color':
@@ -1803,7 +1834,7 @@ const CanvasDesigner = {
           }
           obj.initDimensions()
           obj.setCoords()
-          this.autoFitTextWidth(obj)
+          this.updateTextFit(obj)
         }
         break
       case 'qr_error_level':
@@ -1839,23 +1870,48 @@ const CanvasDesigner = {
   },
 
   /**
-   * Auto-fit text width to content (with minimum width)
+   * Update text fit: auto-shrink font or auto-expand width depending on text_auto_fit setting.
    */
-  autoFitTextWidth(textObj) {
+  updateTextFit(textObj) {
     if (!textObj || textObj.type !== 'textbox') return
 
-    // Get the actual text width
-    const textWidth = textObj.calcTextWidth()
-    const minWidth = 10 * PX_PER_MM // Minimum 10mm
-    const padding = 2 * PX_PER_MM // 2mm padding
+    const data = textObj.elementData
+    if (data && data.text_auto_fit === true) {
+      // Auto-fit mode: shrink font to fit bounding box
+      const boxW = textObj.width
+      const boxH = (data.height || 14) * PX_PER_MM
+      const maxFontSize = data.font_size || textObj.fontSize
+      const minFontSize = data.text_min_font_size || 6
 
-    // Set width to fit content (with minimum and padding)
-    const newWidth = Math.max(textWidth + padding, minWidth)
-    textObj.set('width', newWidth)
+      const content = textObj.text || ''
+      const { fontSize, overflows } = calcAutoFitFontSize(
+        content, boxW, boxH, maxFontSize, minFontSize,
+        data.font_family || 'Arial', data.font_weight || 'normal'
+      )
+      textObj.set('fontSize', fontSize)
+      textObj._textOverflows = overflows
 
-    // Update elementData
-    if (textObj.elementData) {
-      textObj.elementData.width = newWidth / PX_PER_MM
+      // Update overflow indicator
+      if (overflows) {
+        textObj.set({ stroke: '#dc2626', strokeDashArray: [5, 3], strokeWidth: 1.5 })
+      } else {
+        textObj.set({ stroke: null, strokeDashArray: null, strokeWidth: 0 })
+      }
+    } else {
+      // Legacy mode: auto-expand width
+      const textWidth = textObj.calcTextWidth()
+      const minWidth = 10 * PX_PER_MM
+      const padding = 2 * PX_PER_MM
+      const newWidth = Math.max(textWidth + padding, minWidth)
+      textObj.set('width', newWidth)
+
+      if (data) {
+        data.width = newWidth / PX_PER_MM
+      }
+
+      // Clear any overflow indicator from previous auto-fit
+      textObj.set({ stroke: null, strokeDashArray: null, strokeWidth: 0 })
+      textObj._textOverflows = false
     }
   },
 
@@ -2058,6 +2114,7 @@ const CanvasDesigner = {
       this.removeFormatBadge(obj)
       this.canvas.remove(obj)
       this.elements.delete(id)
+      this.updateDepthOverlays()
       this.canvas.renderAll()
       this.saveElements()
     }
@@ -2257,8 +2314,13 @@ const CanvasDesigner = {
         // Textbox: Fabric.js modifies width directly (not via scale)
         // Always read current width from the object
         width = Math.round((obj.width / PX_PER_MM) * 100) / 100
-        // Height is auto-calculated by Fabric based on text content
-        height = Math.round((obj.height / PX_PER_MM) * 100) / 100
+        if (data.text_auto_fit === true) {
+          // Auto-fit ON: preserve user-defined height (bounding box)
+          height = data.height || Math.round((obj.height / PX_PER_MM) * 100) / 100
+        } else {
+          // Auto-fit OFF: height is auto-calculated by Fabric
+          height = Math.round((obj.height / PX_PER_MM) * 100) / 100
+        }
         // Update elementData to stay in sync
         if (data.width !== width || data.height !== height) {
           data.width = width
@@ -2692,6 +2754,96 @@ const CanvasDesigner = {
     sorted.forEach(item => {
       this.canvas.bringToFront(item.obj)
     })
+
+    // Update depth overlays after reordering
+    this.updateDepthOverlays()
+  },
+
+  // ============================================================================
+  // Depth Overlay System
+  // Draws semi-transparent overlays at intersection areas between stacked elements
+  // to visually indicate which element is on top (lower elements get dimmed where covered)
+  // ============================================================================
+
+  // Remove all existing depth overlay objects from the canvas
+  clearDepthOverlays() {
+    const toRemove = this.canvas.getObjects().filter(o => o._isDepthOverlay)
+    toRemove.forEach(o => this.canvas.remove(o))
+  },
+
+  // Calculate the intersection rectangle of two axis-aligned bounding boxes
+  // Returns null if no intersection
+  getIntersectionRect(r1, r2) {
+    const x1 = Math.max(r1.left, r2.left)
+    const y1 = Math.max(r1.top, r2.top)
+    const x2 = Math.min(r1.left + r1.width, r2.left + r2.width)
+    const y2 = Math.min(r1.top + r1.height, r2.top + r2.height)
+
+    if (x2 <= x1 || y2 <= y1) return null // No overlap
+    return { left: x1, top: y1, width: x2 - x1, height: y2 - y1 }
+  },
+
+  // Main method: recalculate and draw depth overlays at all intersection areas
+  updateDepthOverlays() {
+    this.clearDepthOverlays()
+
+    if (this.elements.size <= 1) return
+
+    // Collect elements with their bounding rects sorted by z_index ascending
+    const items = []
+    this.elements.forEach((obj, id) => {
+      if (!obj.visible) return
+      items.push({
+        id,
+        obj,
+        zIndex: obj.elementData?.z_index || 0,
+        bounds: obj.getBoundingRect(true) // true = absolute coordinates
+      })
+    })
+    items.sort((a, b) => a.zIndex - b.zIndex)
+
+    // For each pair where upper overlaps lower, create a dim overlay
+    for (let i = 0; i < items.length; i++) {
+      const lower = items[i]
+      for (let j = i + 1; j < items.length; j++) {
+        const upper = items[j]
+        if (upper.zIndex <= lower.zIndex) continue
+
+        const inter = this.getIntersectionRect(lower.bounds, upper.bounds)
+        if (!inter) continue
+
+        // Create semi-transparent overlay at the intersection
+        const overlay = new fabric.Rect({
+          left: inter.left,
+          top: inter.top,
+          width: inter.width,
+          height: inter.height,
+          fill: 'rgba(0,0,0,0.12)',
+          selectable: false,
+          evented: false,
+          excludeFromExport: true,
+          _isDepthOverlay: true,
+          // Place just above the lower element visually
+          _depthLowerZ: lower.zIndex,
+          _depthUpperZ: upper.zIndex
+        })
+        this.canvas.add(overlay)
+      }
+    }
+
+    // Position overlays between upper and lower elements in canvas z-order
+    // Re-apply full z-ordering: elements interleaved with their overlays
+    // Strategy: bring elements to front in z_index order, placing overlays just before the upper element
+    const allOverlays = this.canvas.getObjects().filter(o => o._isDepthOverlay)
+
+    items.forEach(item => {
+      // Before bringing this element to front, bring overlays that sit just below it
+      allOverlays
+        .filter(ov => ov._depthUpperZ === item.zIndex)
+        .forEach(ov => this.canvas.bringToFront(ov))
+
+      this.canvas.bringToFront(item.obj)
+    })
   },
 
   reorderLayers(orderedIds) {
@@ -2720,6 +2872,7 @@ const CanvasDesigner = {
       this.canvas.discardActiveObject()
     }
 
+    this.updateDepthOverlays()
     this.canvas.renderAll()
     this.saveElements()
   },
@@ -2762,6 +2915,7 @@ const CanvasDesigner = {
 
     obj.elementData.z_index = maxZ + 1
     this.canvas.bringToFront(obj)
+    this.updateDepthOverlays()
     this.canvas.renderAll()
     this.saveElements()
   },

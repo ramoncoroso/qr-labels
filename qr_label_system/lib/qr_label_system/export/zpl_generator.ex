@@ -85,17 +85,49 @@ defmodule QrLabelSystem.Export.ZplGenerator do
 
   # ── Text ─────────────────────────────────────────────────────
 
+  # Average character width as ratio of font height (monospace ~0.6)
+  @avg_char_width_ratio 0.6
+
   defp text_to_zpl(element, row, context, x, y, dpmm) do
     text = ExpressionEvaluator.resolve_text(element, row, context)
     text = escape_zpl(text)
 
     # Font height in dots (canvas font_size is in px at 6px/mm)
     font_h = mm_to_dots((element.font_size || 10) / 6, dpmm)
-    font_w = font_h  # Square proportions for ^A0
 
+    # Auto-fit: reduce font size if text overflows bounding box
+    font_h =
+      if Map.get(element, :text_auto_fit, false) and text != "" do
+        box_w = mm_to_dots(element.width || 60, dpmm)
+        box_h = mm_to_dots(element.height || 14, dpmm)
+        min_font_h = mm_to_dots((Map.get(element, :text_min_font_size, 6)) / 6, dpmm)
+        calc_auto_fit_font_dots(text, box_w, box_h, font_h, max(min_font_h, 1))
+      else
+        font_h
+      end
+
+    font_w = font_h
     rot = rotation_to_zpl(element.rotation)
 
     "^FO#{x},#{y}^A0#{rot},#{font_h},#{font_w}^FD#{text}^FS"
+  end
+
+  defp calc_auto_fit_font_dots(_text, _box_w, _box_h, font_h, min_font_h) when font_h < min_font_h do
+    min_font_h
+  end
+
+  defp calc_auto_fit_font_dots(text, box_w, box_h, font_h, min_font_h) do
+    char_w = max(round(font_h * @avg_char_width_ratio), 1)
+    chars_per_line = max(div(box_w, char_w), 1)
+    num_lines = ceil(String.length(text) / chars_per_line)
+    line_height = round(font_h * 1.2)
+    total_height = num_lines * line_height
+
+    if total_height <= box_h do
+      font_h
+    else
+      calc_auto_fit_font_dots(text, box_w, box_h, font_h - 1, min_font_h)
+    end
   end
 
   # ── Barcodes ─────────────────────────────────────────────────

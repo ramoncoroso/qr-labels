@@ -5,6 +5,7 @@
 
 import { generateQR, generateBarcode } from './barcode_generator'
 import { resolveText, resolveCodeValue } from './expression_engine'
+import { calcAutoFitFontSize } from './text_utils'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
@@ -238,8 +239,10 @@ const PrintEngine = {
     labelDiv.style.borderRadius = `${(design.border_radius || 0) * scale * MM_TO_PX}px`
     labelDiv.style.overflow = 'hidden'
 
-    // Render elements
-    for (const element of design.elements || []) {
+    // Render elements sorted by z_index (lower = back, higher = front)
+    const sortedElements = [...(design.elements || [])].sort((a, b) => (a.z_index || 0) - (b.z_index || 0))
+    for (const element of sortedElements) {
+      if (element.visible === false) continue
       const elementDiv = this.renderElement(element, label, scale)
       if (elementDiv) {
         labelDiv.appendChild(elementDiv)
@@ -287,12 +290,28 @@ const PrintEngine = {
 
         div.textContent = textContent
         div.style.width = `${element.width * scale * MM_TO_PX}px`
-        div.style.fontSize = `${(element.font_size || 12) * (MM_TO_PX / PX_PER_MM) * scale}px`
+
+        let printFontSize = (element.font_size || 12) * (MM_TO_PX / PX_PER_MM) * scale
+        if (element.text_auto_fit === true && textContent && element.width && element.height) {
+          const printBoxW = element.width * scale * MM_TO_PX
+          const printBoxH = element.height * scale * MM_TO_PX
+          div.style.height = `${printBoxH}px`
+          const minFs = (element.text_min_font_size || 6) * (MM_TO_PX / PX_PER_MM) * scale
+          const result = calcAutoFitFontSize(
+            textContent, printBoxW, printBoxH, printFontSize, minFs,
+            element.font_family || 'Arial', element.font_weight || 'normal'
+          )
+          printFontSize = result.fontSize
+          div.style.overflow = 'hidden'
+        } else {
+          div.style.overflow = 'visible'
+        }
+
+        div.style.fontSize = `${printFontSize}px`
         div.style.fontFamily = element.font_family || 'Arial'
         div.style.fontWeight = element.font_weight || 'normal'
         div.style.color = element.color || '#000000'
         div.style.textAlign = element.text_align || 'left'
-        div.style.overflow = 'visible'
         div.style.whiteSpace = 'normal'
         div.style.wordBreak = 'break-word'
         break
@@ -404,8 +423,20 @@ const PrintEngine = {
       case 'text':
         const pdfTextContent = resolveText(element, label.rowData || {}, this.columnMapping, label.context || {})
 
-        const fontSizePt = (element.font_size || 12) * FONT_PX_TO_PT
-        const fontSizeMM = (element.font_size || 12) / PX_PER_MM
+        let pdfFontSizePx = element.font_size || 12
+        if (element.text_auto_fit === true && pdfTextContent && element.width && element.height) {
+          const boxWPx = element.width * PX_PER_MM
+          const boxHPx = element.height * PX_PER_MM
+          const minFsPx = (element.text_min_font_size || 6)
+          const result = calcAutoFitFontSize(
+            pdfTextContent, boxWPx, boxHPx, pdfFontSizePx, minFsPx,
+            element.font_family || 'Arial', element.font_weight || 'normal'
+          )
+          pdfFontSizePx = result.fontSize
+        }
+
+        const fontSizePt = pdfFontSizePx * FONT_PX_TO_PT
+        const fontSizeMM = pdfFontSizePx / PX_PER_MM
         pdf.setFontSize(fontSizePt)
         pdf.setTextColor(element.color || '#000000')
 

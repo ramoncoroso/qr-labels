@@ -145,6 +145,8 @@ defmodule QrLabelSystem.Designs.Design do
       font_weight: element.font_weight,
       text_align: element.text_align,
       text_content: element.text_content,
+      text_auto_fit: element.text_auto_fit,
+      text_min_font_size: element.text_min_font_size,
       color: element.color,
       background_color: element.background_color,
       border_width: element.border_width,
