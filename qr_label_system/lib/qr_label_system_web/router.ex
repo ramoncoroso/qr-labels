@@ -104,6 +104,7 @@ defmodule QrLabelSystemWeb.Router do
 
     # File upload for data sources
     post "/data-sources/upload", DataSourceController, :upload
+    post "/data-sources/cancel-upload", DataSourceController, :cancel_upload
 
     # DELETE for data sources
     delete "/data-sources/:id", DataSourceController, :delete

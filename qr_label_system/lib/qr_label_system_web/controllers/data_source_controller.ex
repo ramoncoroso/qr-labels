@@ -93,7 +93,7 @@ defmodule QrLabelSystemWeb.DataSourceController do
 
   defp detect_type(".xlsx"), do: "excel"
   defp detect_type(".xls"), do: "excel"
-  defp detect_type(".csv"), do: "csv"
+  defp detect_type(".csv"), do: "excel"
   defp detect_type(_), do: "excel"
 
   @doc """
@@ -123,6 +123,8 @@ defmodule QrLabelSystemWeb.DataSourceController do
 
     case DataSources.create_data_source(data_source_params) do
       {:ok, _data_source} ->
+        cleanup_uploaded_file(conn)
+
         conn
         |> delete_session(:uploaded_file_path)
         |> delete_session(:uploaded_file_name)
@@ -136,6 +138,20 @@ defmodule QrLabelSystemWeb.DataSourceController do
         |> put_flash(:error, "Error al agregar los datos. Verifica la información.")
         |> redirect(to: ~p"/data-sources/new/details")
     end
+  end
+
+  @doc """
+  Cancels an in-progress upload, cleaning up the temporary file.
+  """
+  def cancel_upload(conn, _params) do
+    cleanup_uploaded_file(conn)
+
+    conn
+    |> delete_session(:uploaded_file_path)
+    |> delete_session(:uploaded_file_name)
+    |> delete_session(:detected_type)
+    |> delete_session(:suggested_name)
+    |> redirect(to: ~p"/data-sources")
   end
 
   @doc """
@@ -154,6 +170,15 @@ defmodule QrLabelSystemWeb.DataSourceController do
       conn
       |> put_flash(:error, "No tienes permiso para eliminar estos datos")
       |> redirect(to: ~p"/data-sources")
+    end
+  end
+
+  defp cleanup_uploaded_file(conn) do
+    case get_session(conn, :uploaded_file_path) do
+      nil -> :ok
+      path when is_binary(path) ->
+        if File.exists?(path), do: File.rm(path)
+      _ -> :ok
     end
   end
 end
