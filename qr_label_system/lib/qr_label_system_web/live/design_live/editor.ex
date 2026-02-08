@@ -93,7 +93,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:show_expression_mode, false)
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
-       |> assign(:show_zpl_panel, false)
        |> assign(:zpl_dpi, 203)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
@@ -463,10 +462,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           {:noreply, socket}
 
         "expression" ->
-          # Switch to expression mode: set binding to expression template placeholder
+          # Switch to expression mode: pre-fill with column reference if one is selected
           binding_value = cond do
             is_binary(current_binding) && String.contains?(current_binding, "{{") ->
+              # Already an expression, keep it
               current_binding
+            is_binary(current_binding) && current_binding != "" ->
+              # Column is selected, wrap it as expression reference
+              "{{#{current_binding}}}"
             true ->
               ""
           end
@@ -505,7 +508,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       current_binding = Map.get(socket.assigns.selected_element, :binding) ||
                         Map.get(socket.assigns.selected_element, "binding") || ""
 
-      new_binding = current_binding <> template
+      # If current binding is a simple column reference like {{col}},
+      # replace "valor" placeholder in template with the column name
+      new_binding = case extract_simple_column_ref(current_binding) do
+        {:ok, col_name} ->
+          String.replace(template, "valor", col_name)
+        :none ->
+          current_binding <> template
+      end
 
       updated_element = socket.assigns.selected_element
         |> Map.put(:binding, new_binding)
@@ -518,6 +528,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       {:noreply, socket}
     else
       {:noreply, socket}
+    end
+  end
+
+  # Extracts column name from a simple reference like "{{col_name}}"
+  defp extract_simple_column_ref(binding) do
+    case Regex.run(~r/^\{\{([a-zA-Z0-9_\s]+)\}\}$/, String.trim(binding || "")) do
+      [_, col_name] -> {:ok, String.trim(col_name)}
+      _ -> :none
     end
   end
 
@@ -1018,11 +1036,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
-  def handle_event("toggle_zpl_panel", _params, socket) do
-    {:noreply, assign(socket, :show_zpl_panel, !socket.assigns.show_zpl_panel)}
-  end
-
-  @impl true
   def handle_event("set_zpl_dpi", %{"dpi" => dpi_str}, socket) do
     dpi = case Integer.parse(dpi_str) do
       {n, _} when n in [203, 300, 600] -> n
@@ -1046,7 +1059,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     {:noreply,
      socket
-     |> assign(:show_zpl_panel, false)
      |> push_event("download_file", %{
        content: zpl_content,
        filename: filename,
@@ -1712,41 +1724,57 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           <div class="w-px h-6 bg-gray-300"></div>
 
-          <!-- Print / PDF buttons -->
-          <button
-            phx-click="generate_and_print"
-            class="p-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 transition"
-            title="Imprimir etiquetas"
-          >
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-          </button>
-          <button
-            phx-click="generate_and_download_pdf"
-            class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 transition"
-            title="Descargar PDF"
-          >
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </button>
-          <!-- ZPL Export -->
-          <div class="relative">
+          <!-- Print split button (hover dropdown, pure CSS) -->
+          <div class="relative group/print flex">
             <button
-              phx-click="toggle_zpl_panel"
-              class={"p-2 rounded-lg border transition #{if @show_zpl_panel, do: "bg-violet-100 border-violet-300 text-violet-700", else: "bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700"}"}
-              title="Exportar ZPL (impresora térmica)"
+              phx-click="generate_and_print"
+              class="flex items-center space-x-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-l-lg transition text-sm font-medium"
+              title="Imprimir etiquetas"
             >
-              <span class="text-xs font-bold leading-none">ZPL</span>
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>Imprimir</span>
             </button>
-            <%= if @show_zpl_panel do %>
-              <div class="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50">
-                <p class="text-xs font-medium text-gray-700 mb-2">Exportar ZPL</p>
-                <div class="space-y-2">
+            <div class="flex items-center px-1.5 py-2 bg-indigo-600 group-hover/print:bg-indigo-700 border-l border-indigo-500 rounded-r-lg transition text-white cursor-default">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            <!-- Dropdown: hidden by default, shown on hover -->
+            <div class="invisible opacity-0 group-hover/print:visible group-hover/print:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
+              <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                <button
+                  phx-click="generate_and_print"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left"
+                >
+                  <svg class="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
                   <div>
-                    <label class="text-xs text-gray-500">Resolución (DPI)</label>
-                    <div class="flex gap-1 mt-1">
+                    <p class="text-sm font-medium text-gray-900">Imprimir</p>
+                    <p class="text-xs text-gray-500">Enviar al navegador</p>
+                  </div>
+                </button>
+                <button
+                  phx-click="generate_and_download_pdf"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
+                >
+                  <svg class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">Descargar PDF</p>
+                    <p class="text-xs text-gray-500">Archivo listo para imprimir</p>
+                  </div>
+                </button>
+                <div class="border-t border-gray-100 px-4 py-3">
+                  <div class="flex items-center space-x-3 mb-2">
+                    <span class="text-sm font-bold text-violet-600 leading-none">ZPL</span>
+                    <p class="text-xs text-gray-500">Impresora termica Zebra</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex gap-1 flex-1">
                       <%= for dpi <- [203, 300, 600] do %>
                         <button
                           type="button"
@@ -1758,16 +1786,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                         </button>
                       <% end %>
                     </div>
+                    <button
+                      phx-click="download_zpl"
+                      class="px-3 py-1 text-xs font-medium bg-violet-600 text-white rounded hover:bg-violet-700 transition"
+                    >
+                      .zpl
+                    </button>
                   </div>
-                  <button
-                    phx-click="download_zpl"
-                    class="w-full px-3 py-2 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition"
-                  >
-                    Descargar .zpl
-                  </button>
                 </div>
               </div>
-            <% end %>
+            </div>
           </div>
         </div>
       </div>
@@ -2206,8 +2234,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           <% end %>
 
-          <!-- Print / PDF Actions -->
-          <div class="mt-3 space-y-2">
+          <!-- Print Actions -->
+          <div class="mt-3">
             <button
               phx-click="generate_and_print"
               class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
@@ -2217,15 +2245,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
               <span>Imprimir <%= if length(@upload_data) > 0, do: "#{length(@upload_data)} etiquetas", else: "etiqueta" %></span>
             </button>
-            <button
-              phx-click="generate_and_download_pdf"
-              class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm"
-            >
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span>Descargar PDF</span>
-            </button>
+            <div class="flex items-center justify-center gap-3 mt-2 text-xs">
+              <button phx-click="generate_and_download_pdf" class="text-gray-500 hover:text-indigo-600 transition flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                PDF
+              </button>
+              <span class="text-gray-300">|</span>
+              <button phx-click="download_zpl" class="text-gray-500 hover:text-violet-600 transition flex items-center gap-1">
+                <span class="font-bold leading-none">ZPL</span>
+                <span class="text-gray-400"><%= @zpl_dpi %></span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

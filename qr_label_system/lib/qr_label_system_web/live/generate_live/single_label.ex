@@ -19,7 +19,8 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
        |> assign(:page_title, "Imprimir: #{design.name}")
        |> assign(:design, design)
        |> assign(:quantity, 1)
-       |> assign(:printing, false)}
+       |> assign(:printing, false)
+       |> assign(:zpl_dpi, 203)}
     end
   end
 
@@ -57,6 +58,33 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
      push_event(socket, "download_single_pdf", %{
        design: Design.to_json(socket.assigns.design),
        quantity: socket.assigns.quantity
+     })}
+  end
+
+  @impl true
+  def handle_event("set_zpl_dpi", %{"dpi" => dpi_str}, socket) do
+    dpi = case Integer.parse(dpi_str) do
+      {n, _} when n in [203, 300, 600] -> n
+      _ -> 203
+    end
+    {:noreply, assign(socket, :zpl_dpi, dpi)}
+  end
+
+  @impl true
+  def handle_event("download_zpl", _params, socket) do
+    design = socket.assigns.design
+    dpi = socket.assigns.zpl_dpi
+    quantity = socket.assigns.quantity
+
+    rows = List.duplicate(%{}, quantity)
+    zpl_content = QrLabelSystem.Export.ZplGenerator.generate_batch(design, rows, dpi: dpi)
+    filename = "#{design.name || "etiqueta"}-#{dpi}dpi.zpl"
+
+    {:noreply,
+     push_event(socket, "download_file", %{
+       content: zpl_content,
+       filename: filename,
+       mime_type: "application/x-zpl"
      })}
   end
 
@@ -203,15 +231,19 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
                 <% end %>
               </button>
 
-              <button
-                phx-click="download_pdf"
-                class="w-full py-4 rounded-xl font-medium transition flex items-center justify-center space-x-2 bg-gray-100 text-gray-700 hover:bg-gray-200"
-              >
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Descargar PDF</span>
-              </button>
+              <div class="flex items-center justify-center gap-4 text-sm">
+                <button phx-click="download_pdf" class="text-gray-500 hover:text-indigo-600 transition flex items-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Descargar PDF
+                </button>
+                <span class="text-gray-300">|</span>
+                <button phx-click="download_zpl" class="text-gray-500 hover:text-violet-600 transition flex items-center gap-1.5">
+                  <span class="font-bold text-xs leading-none">ZPL</span>
+                  <span class="text-gray-400 text-xs"><%= @zpl_dpi %> dpi</span>
+                </button>
+              </div>
 
               <.link
                 navigate={~p"/designs/#{@design.id}/edit"}

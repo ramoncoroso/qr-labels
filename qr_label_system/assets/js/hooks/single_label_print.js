@@ -47,6 +47,16 @@ const SingleLabelPrint = {
         console.error('Error exporting PDF:', err)
       }
     })
+
+    this.handleEvent("download_file", ({content, filename, mime_type}) => {
+      const blob = new Blob([content], { type: mime_type })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    })
   },
 
   async generateCodes(design, context) {
