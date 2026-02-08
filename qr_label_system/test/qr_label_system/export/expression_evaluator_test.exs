@@ -85,10 +85,10 @@ defmodule QrLabelSystem.Export.ExpressionEvaluatorTest do
   end
 
   describe "evaluate/3 - date functions" do
-    test "HOY returns formatted date" do
+    test "HOY returns ISO date when no format" do
       now = ~U[2026-03-15 10:30:00Z]
       result = ExpressionEvaluator.evaluate("{{HOY()}}", %{}, %{now: now})
-      assert result == "15/03/2026"
+      assert result == "2026-03-15"
     end
 
     test "HOY with custom format" do
@@ -100,7 +100,7 @@ defmodule QrLabelSystem.Export.ExpressionEvaluatorTest do
     test "SUMAR_DIAS adds days" do
       now = ~U[2026-01-01 00:00:00Z]
       result = ExpressionEvaluator.evaluate("{{SUMAR_DIAS(, 30)}}", %{}, %{now: now})
-      assert result == "31/01/2026"
+      assert result == "2026-01-31"
     end
 
     test "SUMAR_MESES adds months" do

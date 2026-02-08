@@ -272,20 +272,36 @@ function formatDate(date, fmt) {
     .replace('ss', ss)
 }
 
+function toISODate(date) {
+  const y = String(date.getFullYear())
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 function parseDate(str) {
   if (str instanceof Date) return str
+  // Try ISO format first (YYYY-MM-DD) — reliable cross-browser
+  if (typeof str === 'string') {
+    const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (isoMatch) return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]))
+    // Try DD/MM/YYYY format
+    const dmyMatch = str.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+    if (dmyMatch) return new Date(parseInt(dmyMatch[3]), parseInt(dmyMatch[2]) - 1, parseInt(dmyMatch[1]))
+  }
   const d = new Date(str)
   return isNaN(d.getTime()) ? new Date() : d
 }
 
 FUNCTIONS['HOY'] = (args, _row, context) => {
   const now = context.now || new Date()
-  return formatDate(now, args[0] || 'DD/MM/AAAA')
+  // No format arg = ISO for composability; with format = human-readable
+  return args[0] ? formatDate(now, args[0]) : toISODate(now)
 }
 
 FUNCTIONS['AHORA'] = (args, _row, context) => {
   const now = context.now || new Date()
-  return formatDate(now, args[0] || 'DD/MM/AAAA hh:mm')
+  return formatDate(now, args[0] || 'AAAA-MM-DD hh:mm')
 }
 
 FUNCTIONS['SUMAR_DIAS'] = (args, _row, context) => {
@@ -293,7 +309,8 @@ FUNCTIONS['SUMAR_DIAS'] = (args, _row, context) => {
   const days = parseInt(args[1]) || 0
   const result = new Date(base)
   result.setDate(result.getDate() + days)
-  return formatDate(result, args[2] || 'DD/MM/AAAA')
+  // No explicit format = ISO for composability with FORMATO_FECHA
+  return args[2] ? formatDate(result, args[2]) : toISODate(result)
 }
 
 FUNCTIONS['SUMAR_MESES'] = (args, _row, context) => {
@@ -301,7 +318,8 @@ FUNCTIONS['SUMAR_MESES'] = (args, _row, context) => {
   const months = parseInt(args[1]) || 0
   const result = new Date(base)
   result.setMonth(result.getMonth() + months)
-  return formatDate(result, args[2] || 'DD/MM/AAAA')
+  // No explicit format = ISO for composability with FORMATO_FECHA
+  return args[2] ? formatDate(result, args[2]) : toISODate(result)
 }
 
 FUNCTIONS['FORMATO_FECHA'] = (args) => {

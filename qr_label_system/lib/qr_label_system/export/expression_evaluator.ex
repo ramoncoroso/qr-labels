@@ -202,33 +202,32 @@ defmodule QrLabelSystem.Export.ExpressionEvaluator do
   defp call_function("HOY", args, _row, ctx) do
     now = Map.get(ctx, :now, DateTime.utc_now())
     fmt = to_s(Enum.at(args, 0))
-    fmt = if fmt == "", do: "DD/MM/AAAA", else: fmt
-    format_date(now, fmt)
+    # No format arg = ISO for composability; with format = human-readable
+    if fmt == "", do: Date.to_iso8601(to_date(now)), else: format_date(now, fmt)
   end
 
   defp call_function("AHORA", args, _row, ctx) do
     now = Map.get(ctx, :now, DateTime.utc_now())
     fmt = to_s(Enum.at(args, 0))
-    fmt = if fmt == "", do: "DD/MM/AAAA hh:mm", else: fmt
-    format_date(now, fmt)
+    if fmt == "", do: format_date(now, "AAAA-MM-DD hh:mm"), else: format_date(now, fmt)
   end
 
   defp call_function("SUMAR_DIAS", args, _row, ctx) do
     base = parse_date(Enum.at(args, 0), ctx)
     days = to_i(Enum.at(args, 1), 0)
     fmt = to_s(Enum.at(args, 2))
-    fmt = if fmt == "", do: "DD/MM/AAAA", else: fmt
     result = Date.add(base, days)
-    format_date(result, fmt)
+    # If no explicit format, return ISO for composability with FORMATO_FECHA
+    if fmt == "", do: Date.to_iso8601(result), else: format_date(result, fmt)
   end
 
   defp call_function("SUMAR_MESES", args, _row, ctx) do
     base = parse_date(Enum.at(args, 0), ctx)
     months = to_i(Enum.at(args, 1), 0)
     fmt = to_s(Enum.at(args, 2))
-    fmt = if fmt == "", do: "DD/MM/AAAA", else: fmt
     result = Date.add(base, months * 30)
-    format_date(result, fmt)
+    # If no explicit format, return ISO for composability with FORMATO_FECHA
+    if fmt == "", do: Date.to_iso8601(result), else: format_date(result, fmt)
   end
 
   defp call_function("FORMATO_FECHA", args, _row, _ctx) do
@@ -427,16 +426,36 @@ defmodule QrLabelSystem.Export.ExpressionEvaluator do
   defp parse_date("", ctx), do: Map.get(ctx, :now, DateTime.utc_now()) |> to_date()
   defp parse_date(str, ctx) when is_binary(str) do
     case Date.from_iso8601(str) do
-      {:ok, date} -> date
-      _ -> Map.get(ctx, :now, DateTime.utc_now()) |> to_date()
+      {:ok, date} ->
+        date
+      _ ->
+        # Try DD/MM/AAAA format
+        case Regex.run(~r/^(\d{2})\/(\d{2})\/(\d{4})$/, str) do
+          [_, d, m, y] ->
+            case Date.new(to_i(y, 2026), to_i(m, 1), to_i(d, 1)) do
+              {:ok, date} -> date
+              _ -> Map.get(ctx, :now, DateTime.utc_now()) |> to_date()
+            end
+          _ ->
+            Map.get(ctx, :now, DateTime.utc_now()) |> to_date()
+        end
     end
   end
   defp parse_date(_, ctx), do: Map.get(ctx, :now, DateTime.utc_now()) |> to_date()
 
   defp parse_date_str(str) do
     case Date.from_iso8601(str) do
-      {:ok, date} -> date
-      _ -> Date.utc_today()
+      {:ok, date} ->
+        date
+      _ ->
+        case Regex.run(~r/^(\d{2})\/(\d{2})\/(\d{4})$/, str) do
+          [_, d, m, y] ->
+            case Date.new(to_i(y, 2026), to_i(m, 1), to_i(d, 1)) do
+              {:ok, date} -> date
+              _ -> Date.utc_today()
+            end
+          _ -> Date.utc_today()
+        end
     end
   end
 
