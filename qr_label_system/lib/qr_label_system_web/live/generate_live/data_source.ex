@@ -3,6 +3,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.DataSources
+  alias QrLabelSystem.UploadDataStore
   alias QrLabelSystem.Security.FileSanitizer
 
   # Maximum file size: 10 MB
@@ -90,12 +91,16 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
   @impl true
   def handle_event("use_uploaded_data", _params, socket) do
     if socket.assigns.upload_data do
-      # Store in session and redirect to mapping
-      {:noreply,
-       socket
-       |> put_flash(:upload_data, socket.assigns.upload_data)
-       |> put_flash(:upload_columns, socket.assigns.upload_columns)
-       |> push_navigate(to: ~p"/generate/map/#{socket.assigns.design.id}/upload")}
+      user_id = socket.assigns.current_user.id
+      design_id = socket.assigns.design.id
+      columns = socket.assigns.upload_columns
+      rows = socket.assigns.upload_data
+      sample_rows = Enum.take(rows, 5)
+
+      # Store lightweight metadata in ETS (columns + sample only, not full dataset)
+      UploadDataStore.put_metadata(user_id, design_id, columns, length(rows), sample_rows)
+
+      {:noreply, push_navigate(socket, to: ~p"/generate/map/#{design_id}/upload")}
     else
       {:noreply, put_flash(socket, :error, "No hay datos cargados")}
     end
