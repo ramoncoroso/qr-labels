@@ -4,6 +4,7 @@
  */
 
 import { generateQR, generateBarcode } from './barcode_generator'
+import { resolveText, resolveCodeValue } from './expression_engine'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
@@ -63,26 +64,33 @@ const PrintEngine = {
     this.handleEvent("export_pdf", ({filename}) => {
       this.exportPDF(filename)
     })
+
+    // Generic file download handler (used by ZPL export and others)
+    this.handleEvent("download_file", ({content, filename, mime_type}) => {
+      const blob = new Blob([content], { type: mime_type })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    })
   },
 
   async generateAllLabels(design, data, mapping) {
     const labels = []
+    const batchSize = data.length
+    const now = new Date()
 
-    for (const row of data) {
+    for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
+      const row = data[rowIndex]
+      const context = { rowIndex, batchSize, now }
       const labelCodes = {}
 
       for (const element of design.elements || []) {
         if (element.type !== 'qr' && element.type !== 'barcode') continue
 
-        // Try mapped CSV value first, then fall back to static content
-        let value = null
-        const columnName = mapping[element.id]
-        if (columnName && row[columnName] != null) {
-          value = String(row[columnName])
-        } else {
-          value = element.binding || element.text_content
-        }
-
+        const value = resolveCodeValue(element, row, mapping, context)
         if (!value) continue
 
         if (element.type === 'qr') {
@@ -94,7 +102,8 @@ const PrintEngine = {
 
       labels.push({
         rowData: row,
-        codes: labelCodes
+        codes: labelCodes,
+        context
       })
     }
 
@@ -274,17 +283,7 @@ const PrintEngine = {
         break
 
       case 'text':
-        let textContent = element.text_content || ''
-
-        // Use column_mapping to resolve the actual column name, then fall back to binding
-        if (label.rowData) {
-          const columnName = this.columnMapping[element.id]
-          if (columnName && label.rowData[columnName] != null) {
-            textContent = String(label.rowData[columnName])
-          } else if (element.binding && label.rowData[element.binding] != null) {
-            textContent = String(label.rowData[element.binding])
-          }
-        }
+        const textContent = resolveText(element, label.rowData || {}, this.columnMapping, label.context || {})
 
         div.textContent = textContent
         div.style.width = `${element.width * scale * MM_TO_PX}px`
@@ -403,15 +402,7 @@ const PrintEngine = {
         break
 
       case 'text':
-        let textContent = element.text_content || ''
-        if (label.rowData) {
-          const columnName = this.columnMapping[element.id]
-          if (columnName && label.rowData[columnName] != null) {
-            textContent = String(label.rowData[columnName])
-          } else if (element.binding && label.rowData[element.binding] != null) {
-            textContent = String(label.rowData[element.binding])
-          }
-        }
+        const pdfTextContent = resolveText(element, label.rowData || {}, this.columnMapping, label.context || {})
 
         const fontSizePt = (element.font_size || 12) * FONT_PX_TO_PT
         const fontSizeMM = (element.font_size || 12) / PX_PER_MM
@@ -431,7 +422,7 @@ const PrintEngine = {
           textX = x + element.width
         }
 
-        pdf.text(textContent, textX, y + fontSizeMM * 0.75, {
+        pdf.text(pdfTextContent, textX, y + fontSizeMM * 0.75, {
           align: element.text_align || 'left',
           maxWidth: element.width
         })

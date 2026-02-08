@@ -90,8 +90,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:rename_value, design.name)
        |> assign(:canvas_loaded, false)
        |> assign(:show_binding_mode, show_binding_mode)
+       |> assign(:show_expression_mode, false)
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
+       |> assign(:show_zpl_panel, false)
+       |> assign(:zpl_dpi, 203)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -221,10 +224,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           false
         end
 
+        # Preserve expression mode if element has expression binding
+        new_show_expression_mode = has_expression?(element)
+
         {:noreply,
          socket
          |> assign(:selected_element, element)
-         |> assign(:show_binding_mode, new_show_binding_mode)}
+         |> assign(:show_binding_mode, new_show_binding_mode)
+         |> assign(:show_expression_mode, new_show_expression_mode)}
     end
   end
 
@@ -423,6 +430,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
             |> assign(:show_binding_mode, true)
+            |> assign(:show_expression_mode, false)
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
@@ -444,6 +452,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
             |> assign(:show_binding_mode, false)
+            |> assign(:show_expression_mode, false)
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: nil})
@@ -453,9 +462,60 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           {:noreply, socket}
 
+        "expression" ->
+          # Switch to expression mode: set binding to expression template placeholder
+          binding_value = cond do
+            is_binary(current_binding) && String.contains?(current_binding, "{{") ->
+              current_binding
+            true ->
+              ""
+          end
+
+          updated_element = socket.assigns.selected_element
+            |> Map.put(:binding, binding_value)
+            |> Map.put("binding", binding_value)
+
+          socket = socket
+            |> assign(:selected_element, updated_element)
+            |> assign(:pending_selection_id, element_id)
+            |> assign(:show_binding_mode, false)
+            |> assign(:show_expression_mode, true)
+
+          socket = if element_type == "text" do
+            push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
+          else
+            socket
+          end
+
+          {:noreply, socket}
+
         _ ->
           {:noreply, socket}
       end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("insert_expression_function", %{"template" => template}, socket) do
+    if socket.assigns.selected_element do
+      element_id = Map.get(socket.assigns.selected_element, :id) ||
+                   Map.get(socket.assigns.selected_element, "id")
+      current_binding = Map.get(socket.assigns.selected_element, :binding) ||
+                        Map.get(socket.assigns.selected_element, "binding") || ""
+
+      new_binding = current_binding <> template
+
+      updated_element = socket.assigns.selected_element
+        |> Map.put(:binding, new_binding)
+        |> Map.put("binding", new_binding)
+
+      socket = socket
+        |> assign(:selected_element, updated_element)
+        |> push_event("update_element_property", %{id: element_id, field: "binding", value: new_binding})
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -957,6 +1017,43 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, put_flash(socket, :info, "#{count} etiquetas enviadas a impresión")}
   end
 
+  @impl true
+  def handle_event("toggle_zpl_panel", _params, socket) do
+    {:noreply, assign(socket, :show_zpl_panel, !socket.assigns.show_zpl_panel)}
+  end
+
+  @impl true
+  def handle_event("set_zpl_dpi", %{"dpi" => dpi_str}, socket) do
+    dpi = case Integer.parse(dpi_str) do
+      {n, _} when n in [203, 300, 600] -> n
+      _ -> 203
+    end
+    {:noreply, assign(socket, :zpl_dpi, dpi)}
+  end
+
+  @impl true
+  def handle_event("download_zpl", _params, socket) do
+    design = socket.assigns.design
+    dpi = socket.assigns.zpl_dpi
+
+    upload_data = case socket.assigns.upload_data do
+      [] -> [%{}]
+      data -> data
+    end
+
+    zpl_content = QrLabelSystem.Export.ZplGenerator.generate_batch(design, upload_data, dpi: dpi)
+    filename = "#{design.name || "etiquetas"}-#{dpi}dpi.zpl"
+
+    {:noreply,
+     socket
+     |> assign(:show_zpl_panel, false)
+     |> push_event("download_file", %{
+       content: zpl_content,
+       filename: filename,
+       mime_type: "application/x-zpl"
+     })}
+  end
+
   defp push_generate_batch(socket) do
     design = socket.assigns.design
     upload_data = case socket.assigns.upload_data do
@@ -1434,7 +1531,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     columns = Map.keys(preview_data)
 
     elements
-    |> Enum.filter(&(&1.binding))
+    |> Enum.filter(fn el ->
+      binding = el.binding
+      # Skip nil bindings and expression bindings (they auto-resolve)
+      binding && is_binary(binding) && !String.contains?(binding, "{{")
+    end)
     |> Enum.reduce(%{}, fn element, acc ->
       # Try to find matching column
       binding = element.binding
@@ -1630,6 +1731,44 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </button>
+          <!-- ZPL Export -->
+          <div class="relative">
+            <button
+              phx-click="toggle_zpl_panel"
+              class={"p-2 rounded-lg border transition #{if @show_zpl_panel, do: "bg-violet-100 border-violet-300 text-violet-700", else: "bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700"}"}
+              title="Exportar ZPL (impresora térmica)"
+            >
+              <span class="text-xs font-bold leading-none">ZPL</span>
+            </button>
+            <%= if @show_zpl_panel do %>
+              <div class="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50">
+                <p class="text-xs font-medium text-gray-700 mb-2">Exportar ZPL</p>
+                <div class="space-y-2">
+                  <div>
+                    <label class="text-xs text-gray-500">Resolución (DPI)</label>
+                    <div class="flex gap-1 mt-1">
+                      <%= for dpi <- [203, 300, 600] do %>
+                        <button
+                          type="button"
+                          phx-click="set_zpl_dpi"
+                          phx-value-dpi={dpi}
+                          class={"flex-1 px-2 py-1 text-xs rounded border transition #{if @zpl_dpi == dpi, do: "bg-violet-600 text-white border-violet-600", else: "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}"}
+                        >
+                          <%= dpi %>
+                        </button>
+                      <% end %>
+                    </div>
+                  </div>
+                  <button
+                    phx-click="download_zpl"
+                    class="w-full px-3 py-2 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition"
+                  >
+                    Descargar .zpl
+                  </button>
+                </div>
+              </div>
+            <% end %>
+          </div>
         </div>
       </div>
 
@@ -1944,7 +2083,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -2048,6 +2187,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               data-design={Jason.encode!(Design.to_json(@design))}
               data-row={Jason.encode!(@preview_data)}
               data-mapping={Jason.encode!(build_auto_mapping(@design.elements || [], @preview_data))}
+              data-preview-index={@preview_row_index}
+              data-total-rows={max(length(@upload_data), 1)}
               class="inline-block"
             >
             </div>
@@ -2181,101 +2322,195 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       </div>
 
       <%= if @label_type == "multiple" && @element.type in ["qr", "barcode", "text"] do %>
-        <!-- Contenido del elemento: vincular a columna o texto fijo -->
+        <% cm = content_mode(@element, @show_binding_mode, @show_expression_mode) %>
+        <!-- Contenido del elemento: columna, texto fijo, o expresión -->
         <div class="border-t pt-4 space-y-3">
           <label class="block text-sm font-medium text-gray-700">Contenido del elemento</label>
 
-          <!-- Selector de modo -->
+          <!-- Selector de modo (3 tabs) -->
           <div class="flex rounded-lg border border-gray-300 overflow-hidden">
             <button
               type="button"
               phx-click="set_content_mode"
               phx-value-mode="binding"
-              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if has_binding?(@element) or @show_binding_mode, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+              class={"flex-1 px-2 py-2 text-xs font-medium transition-colors #{if cm == :column, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
             >
-              Vincular a columna
+              Columna
             </button>
             <button
               type="button"
               phx-click="set_content_mode"
               phx-value-mode="fixed"
-              class={"flex-1 px-3 py-2 text-sm font-medium transition-colors #{if !has_binding?(@element) and !@show_binding_mode, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+              class={"flex-1 px-2 py-2 text-xs font-medium transition-colors border-l border-gray-300 #{if cm == :text, do: "bg-indigo-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
             >
               Texto fijo
             </button>
+            <button
+              type="button"
+              phx-click="set_content_mode"
+              phx-value-mode="expression"
+              class={"flex-1 px-2 py-2 text-xs font-medium transition-colors border-l border-gray-300 #{if cm == :expression, do: "bg-violet-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-50"}"}
+            >
+              Expresion
+            </button>
           </div>
 
-          <%= if has_binding?(@element) or @show_binding_mode do %>
-            <!-- Modo: Vincular a columna -->
-            <%= if length(@available_columns) > 0 do %>
-              <form phx-change="update_element">
-                <input type="hidden" name="field" value="binding" />
-                <select
-                  name="value"
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                >
-                  <option value="">Seleccionar columna...</option>
-                  <%= for col <- @available_columns do %>
-                    <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
-                  <% end %>
-                </select>
-              </form>
-              <p class="text-xs text-gray-500">
-                El contenido cambiará según cada fila de datos
-              </p>
-            <% else %>
-              <!-- No hay datos cargados - mostrar opción para cargar -->
-              <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <div class="flex items-start space-x-3">
-                  <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div class="flex-1">
-                    <p class="text-sm font-medium text-amber-800">No hay datos cargados</p>
-                    <p class="text-xs text-amber-700 mt-1">
-                      Para vincular a una columna, primero debes cargar un archivo de datos.
-                    </p>
-                    <.link
-                      navigate={~p"/generate/data?design_id=#{@design_id}&element_id=#{@element.id}"}
-                      class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
-                    >
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <span>Cargar datos</span>
-                    </.link>
+          <%= case cm do %>
+            <% :column -> %>
+              <!-- Modo: Vincular a columna -->
+              <%= if length(@available_columns) > 0 do %>
+                <form phx-change="update_element">
+                  <input type="hidden" name="field" value="binding" />
+                  <select
+                    name="value"
+                    class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                  >
+                    <option value="">Seleccionar columna...</option>
+                    <%= for col <- @available_columns do %>
+                      <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
+                    <% end %>
+                  </select>
+                </form>
+                <p class="text-xs text-gray-500">
+                  El contenido cambiará según cada fila de datos
+                </p>
+              <% else %>
+                <!-- No hay datos cargados -->
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div class="flex items-start space-x-3">
+                    <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div class="flex-1">
+                      <p class="text-sm font-medium text-amber-800">No hay datos cargados</p>
+                      <p class="text-xs text-amber-700 mt-1">
+                        Para vincular a una columna, primero debes cargar un archivo de datos.
+                      </p>
+                      <.link
+                        navigate={~p"/generate/data?design_id=#{@design_id}&element_id=#{@element.id}"}
+                        class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
+                      >
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span>Cargar datos</span>
+                      </.link>
+                    </div>
                   </div>
                 </div>
+              <% end %>
+
+            <% :text -> %>
+              <!-- Modo: Texto fijo -->
+              <% bc_validation = if @element.type == "barcode", do: validate_barcode_content(Map.get(@element, :text_content), @element.barcode_format), else: nil %>
+              <form phx-change="update_element">
+                <input type="hidden" name="field" value="text_content" />
+                <input
+                  type="text"
+                  name="value"
+                  data-field="text_content"
+                  value={Map.get(@element, :text_content) || ""}
+                  placeholder={get_fixed_text_placeholder(@element.type)}
+                  phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
+                  class={[
+                    "block w-full rounded-md shadow-sm text-sm",
+                    if(bc_validation && not bc_validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
+                  ]}
+                />
+              </form>
+              <%= if bc_validation && bc_validation.hint do %>
+                <p class={[
+                  "text-xs mt-1",
+                  if(not bc_validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
+                ]}><%= bc_validation.hint %></p>
+              <% else %>
+                <p class="text-xs text-gray-500 mt-1">
+                  Este contenido será igual en todas las etiquetas
+                </p>
+              <% end %>
+
+            <% :expression -> %>
+              <!-- Modo: Expresión -->
+              <form phx-change="update_element">
+                <input type="hidden" name="field" value="binding" />
+                <textarea
+                  name="value"
+                  rows="3"
+                  phx-debounce="500"
+                  placeholder={"Ej: Lote: {{lote}} - {{HOY()}}"}
+                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm font-mono"
+                ><%= Map.get(@element, :binding) || "" %></textarea>
+              </form>
+
+              <!-- Quick-insert function buttons -->
+              <div class="space-y-2">
+                <p class="text-xs font-medium text-gray-500">Insertar funcion:</p>
+                <div class="flex flex-wrap gap-1">
+                  <span class="text-xs text-gray-400 w-full">Texto</span>
+                  <%= for {label, tmpl} <- [{"MAYUS", "MAYUS(valor)"}, {"MINUS", "MINUS(valor)"}, {"CONCAT", "CONCAT(v1, v2)"}, {"RECORTAR", "RECORTAR(valor, largo)"}] do %>
+                    <button
+                      type="button"
+                      phx-click="insert_expression_function"
+                      phx-value-template={"{{#{tmpl}}}"}
+                      class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100"
+                    ><%= label %></button>
+                  <% end %>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  <span class="text-xs text-gray-400 w-full">Fechas</span>
+                  <%= for {label, tmpl} <- [{"HOY", "HOY()"}, {"AHORA", "AHORA()"}, {"+DIAS", "SUMAR_DIAS(HOY(), 30)"}, {"+MESES", "SUMAR_MESES(HOY(), 6)"}] do %>
+                    <button
+                      type="button"
+                      phx-click="insert_expression_function"
+                      phx-value-template={"{{#{tmpl}}}"}
+                      class="px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 rounded border border-emerald-200 hover:bg-emerald-100"
+                    ><%= label %></button>
+                  <% end %>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  <span class="text-xs text-gray-400 w-full">Contadores</span>
+                  <%= for {label, tmpl} <- [{"CONTADOR", "CONTADOR(1, 1, 4)"}, {"LOTE", "LOTE(AAMM-####)"}, {"#NUM", "FORMATO_NUM(valor, 2)"}] do %>
+                    <button
+                      type="button"
+                      phx-click="insert_expression_function"
+                      phx-value-template={"{{#{tmpl}}}"}
+                      class="px-2 py-0.5 text-xs bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100"
+                    ><%= label %></button>
+                  <% end %>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  <span class="text-xs text-gray-400 w-full">Condicionales</span>
+                  <%= for {label, tmpl} <- [{"SI", "SI(valor == X, si, no)"}, {"VACIO", "VACIO(valor)"}, {"DEFECTO", "POR_DEFECTO(valor, alt)"}] do %>
+                    <button
+                      type="button"
+                      phx-click="insert_expression_function"
+                      phx-value-template={"{{#{tmpl}}}"}
+                      class="px-2 py-0.5 text-xs bg-violet-50 text-violet-700 rounded border border-violet-200 hover:bg-violet-100"
+                    ><%= label %></button>
+                  <% end %>
+                </div>
               </div>
-            <% end %>
-          <% else %>
-            <!-- Modo: Texto fijo -->
-            <% bc_validation = if @element.type == "barcode", do: validate_barcode_content(Map.get(@element, :text_content), @element.barcode_format), else: nil %>
-            <form phx-change="update_element">
-              <input type="hidden" name="field" value="text_content" />
-              <input
-                type="text"
-                name="value"
-                data-field="text_content"
-                value={Map.get(@element, :text_content) || ""}
-                placeholder={get_fixed_text_placeholder(@element.type)}
-                phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
-                class={[
-                  "block w-full rounded-md shadow-sm text-sm",
-                  if(bc_validation && not bc_validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
-                ]}
-              />
-            </form>
-            <%= if bc_validation && bc_validation.hint do %>
-              <p class={[
-                "text-xs mt-1",
-                if(not bc_validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
-              ]}><%= bc_validation.hint %></p>
-            <% else %>
-              <p class="text-xs text-gray-500 mt-1">
-                Este contenido será igual en todas las etiquetas
+
+              <!-- Column references -->
+              <%= if length(@available_columns) > 0 do %>
+                <div class="space-y-1">
+                  <p class="text-xs font-medium text-gray-500">Insertar columna:</p>
+                  <div class="flex flex-wrap gap-1">
+                    <%= for col <- @available_columns do %>
+                      <button
+                        type="button"
+                        phx-click="insert_expression_function"
+                        phx-value-template={"{{#{col}}}"}
+                        class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
+                      ><%= col %></button>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+
+              <p class="text-xs text-gray-500">
+                Usa <code class="bg-gray-100 px-1 rounded">{{"{{"}}</code> y <code class="bg-gray-100 px-1 rounded">{{"}}"}}</code> para expresiones. Texto fuera de llaves se muestra literal.
               </p>
-            <% end %>
           <% end %>
         </div>
       <% end %>
@@ -2937,6 +3172,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     binding = if is_nil(binding), do: Map.get(element, "binding"), else: binding
     # nil means fixed text mode, anything else (including "") means binding mode
     binding != nil
+  end
+
+  defp has_expression?(element) do
+    binding = Map.get(element, :binding) || Map.get(element, "binding") || ""
+    is_binary(binding) && String.contains?(binding, "{{")
+  end
+
+  defp content_mode(element, show_binding_mode, show_expression_mode) do
+    cond do
+      has_expression?(element) or show_expression_mode -> :expression
+      has_binding?(element) or show_binding_mode -> :column
+      true -> :text
+    end
   end
 
   # Placeholder text for fixed content input

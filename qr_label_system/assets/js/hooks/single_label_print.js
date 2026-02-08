@@ -4,6 +4,7 @@
  */
 
 import { generateQR, generateBarcode } from './barcode_generator'
+import { resolveText, resolveCodeValue } from './expression_engine'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
@@ -48,16 +49,16 @@ const SingleLabelPrint = {
     })
   },
 
-  async generateCodes(design) {
+  async generateCodes(design, context) {
     const codes = {}
 
     for (const element of design.elements || []) {
       if (element.type === 'qr') {
-        const content = element.binding || element.text_content || 'QR'
-        codes[element.id] = await this.generateQR(content, element)
+        const content = resolveCodeValue(element, {}, null, context)
+        codes[element.id] = await this.generateQR(content || 'QR', element)
       } else if (element.type === 'barcode') {
-        const content = element.binding || element.text_content || '123456789'
-        codes[element.id] = this.generateBarcode(content, element)
+        const content = resolveCodeValue(element, {}, null, context)
+        codes[element.id] = this.generateBarcode(content || '123456789', element)
       }
     }
 
@@ -73,9 +74,9 @@ const SingleLabelPrint = {
   },
 
   async printLabels(design, quantity) {
-    const codes = await this.generateCodes(design)
     const w = design.width_mm
     const h = design.height_mm
+    const now = new Date()
 
     const pdf = new jsPDF({
       orientation: w > h ? 'l' : 'p',
@@ -85,16 +86,18 @@ const SingleLabelPrint = {
 
     for (let i = 0; i < quantity; i++) {
       if (i > 0) pdf.addPage([w, h], w > h ? 'l' : 'p')
-      await this.renderLabelToPDF(pdf, design, codes, 0, 0)
+      const context = { rowIndex: i, batchSize: quantity, now }
+      const codes = await this.generateCodes(design, context)
+      await this.renderLabelToPDF(pdf, design, codes, 0, 0, context)
     }
 
     printPdfBlob(pdf.output('blob'))
   },
 
   async exportPDF(design, quantity) {
-    const codes = await this.generateCodes(design)
     const w = design.width_mm
     const h = design.height_mm
+    const now = new Date()
 
     const pdf = new jsPDF({
       orientation: w > h ? 'l' : 'p',
@@ -106,13 +109,15 @@ const SingleLabelPrint = {
       if (i > 0) {
         pdf.addPage([w, h], w > h ? 'l' : 'p')
       }
-      await this.renderLabelToPDF(pdf, design, codes, 0, 0)
+      const context = { rowIndex: i, batchSize: quantity, now }
+      const codes = await this.generateCodes(design, context)
+      await this.renderLabelToPDF(pdf, design, codes, 0, 0, context)
     }
 
     pdf.save(`etiquetas-${design.name || 'label'}.pdf`)
   },
 
-  async renderLabelToPDF(pdf, design, codes, offsetX, offsetY) {
+  async renderLabelToPDF(pdf, design, codes, offsetX, offsetY, context) {
     // Draw label background
     pdf.setFillColor(design.background_color || '#FFFFFF')
     pdf.rect(offsetX, offsetY, design.width_mm, design.height_mm, 'F')
@@ -126,11 +131,11 @@ const SingleLabelPrint = {
 
     // Render elements
     for (const element of design.elements || []) {
-      await this.renderElementToPDF(pdf, element, codes, offsetX, offsetY)
+      await this.renderElementToPDF(pdf, element, codes, offsetX, offsetY, context)
     }
   },
 
-  async renderElementToPDF(pdf, element, codes, offsetX, offsetY) {
+  async renderElementToPDF(pdf, element, codes, offsetX, offsetY, context) {
     const x = offsetX + element.x
     const y = offsetY + element.y
 
@@ -144,7 +149,7 @@ const SingleLabelPrint = {
         break
 
       case 'text':
-        const textContent = element.text_content || ''
+        const textContent = resolveText(element, {}, null, context || {})
 
         pdf.setFontSize(element.font_size || 12)
         pdf.setTextColor(element.color || '#000000')

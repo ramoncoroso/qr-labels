@@ -4,6 +4,7 @@
  */
 
 import { generateQR, generateBarcode } from './barcode_generator'
+import { resolveText, resolveCodeValue } from './expression_engine'
 
 const MM_TO_PX = 3.78
 
@@ -40,9 +41,14 @@ const LabelPreview = {
     const scaleY = maxHeight / labelHeightPx
     const scale = Math.min(scaleX, scaleY, 2) // Cap at 2x for small labels
 
+    // Build context for expression evaluation
+    const previewIndex = parseInt(this.el.dataset.previewIndex || '0')
+    const totalRows = parseInt(this.el.dataset.totalRows || '1')
+    const context = { rowIndex: previewIndex, batchSize: totalRows, now: new Date() }
+
     // Generate codes for this row (pass label_type to differentiate single vs multiple)
     const labelType = design.label_type || 'single'
-    const codes = await this.generateCodes(design.elements || [], row, mapping, scale, labelType)
+    const codes = await this.generateCodes(design.elements || [], row, mapping, scale, labelType, context)
 
     // Create label element
     const labelDiv = document.createElement('div')
@@ -61,7 +67,7 @@ const LabelPreview = {
       // Skip invisible elements
       if (element.visible === false) continue
 
-      const elementDiv = this.renderElement(element, row, mapping, codes, scale, labelType)
+      const elementDiv = this.renderElement(element, row, mapping, codes, scale, labelType, context)
       if (elementDiv) {
         labelDiv.appendChild(elementDiv)
       }
@@ -70,17 +76,13 @@ const LabelPreview = {
     this.el.appendChild(labelDiv)
   },
 
-  async generateCodes(elements, row, mapping, scale, labelType) {
+  async generateCodes(elements, row, mapping, scale, labelType, context) {
     const codes = {}
 
     for (const element of elements) {
       if (element.type !== 'qr' && element.type !== 'barcode') continue
 
-      // Try mapped data first (multiple labels), then text_content, then binding
-      // This matches the canvas logic: element.text_content || element.binding || ''
-      const columnName = mapping[element.id]
-      const value = (columnName ? row[columnName] : null) || element.text_content || element.binding
-
+      const value = resolveCodeValue(element, row, mapping, context)
       if (!value) continue
 
       if (element.type === 'qr') {
@@ -104,7 +106,7 @@ const LabelPreview = {
     })
   },
 
-  renderElement(element, row, mapping, codes, scale, labelType) {
+  renderElement(element, row, mapping, codes, scale, labelType, context) {
     const div = document.createElement('div')
     div.style.position = 'absolute'
     div.style.left = `${element.x * scale * MM_TO_PX}px`
@@ -140,17 +142,7 @@ const LabelPreview = {
         break
 
       case 'text':
-        let textContent = element.text_content || ''
-
-        // For multiple labels, try to get value from row data
-        if (labelType === 'multiple') {
-          const columnName = mapping[element.id]
-          if (columnName && row[columnName]) {
-            textContent = row[columnName]
-          } else if (element.binding && row[element.binding]) {
-            textContent = row[element.binding]
-          }
-        }
+        const textContent = resolveText(element, row || {}, mapping, context || {})
 
         div.textContent = textContent || '[Texto]'
         div.style.width = `${element.width * scale * MM_TO_PX}px`

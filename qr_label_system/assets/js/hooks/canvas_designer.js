@@ -11,6 +11,7 @@
 
 import { fabric } from 'fabric'
 import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent, getFormatInfo } from './barcode_generator'
+import { isExpression, evaluate } from './expression_engine'
 
 // Constants
 const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usability
@@ -1383,8 +1384,21 @@ const CanvasDesigner = {
 
   createText(element, x, y) {
     // Show binding as [ColumnName] indicator, or text_content, or placeholder
+    // Expressions: evaluate with empty row (functions like HOY() resolve, column refs show placeholder)
     const hasContent = element.binding || (element.text_content && element.text_content.trim() !== '')
-    const content = element.binding ? `[${element.binding}]` : (hasContent ? element.text_content : 'Completar texto')
+    let content
+    let isExpr = false
+    if (isExpression(element.binding)) {
+      isExpr = true
+      const preview = evaluate(element.binding, {}, { rowIndex: 0, batchSize: 1, now: new Date() })
+      content = preview || element.binding
+    } else if (element.binding) {
+      content = `[${element.binding}]`
+    } else if (hasContent) {
+      content = element.text_content
+    } else {
+      content = 'Completar texto'
+    }
     const isPlaceholder = !hasContent
     const fontSize = element.font_size || 12
 
@@ -1403,9 +1417,15 @@ const CanvasDesigner = {
       splitByGrapheme: false
     })
 
-    // Track placeholder state and original color
+    // Track placeholder state, expression state, and original color
     textbox._isPlaceholder = isPlaceholder
+    textbox._isExpression = isExpr
     textbox._originalColor = element.color || '#000000'
+
+    // Visual indicator for expressions: italic style
+    if (isExpr) {
+      textbox.set('fontStyle', 'italic')
+    }
 
     // Auto-fit width to content
     const textWidth = textbox.calcTextWidth()
