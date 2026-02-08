@@ -831,7 +831,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("select_version", %{"version" => version_str}, socket) do
-    version_number = String.to_integer(version_str)
+    case Integer.parse(version_str) do
+      {version_number, ""} ->
+        handle_select_version(socket, version_number)
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp handle_select_version(socket, version_number) do
     version = Versioning.get_version(socket.assigns.design.id, version_number)
 
     # Compute diff against current (most recent) version
@@ -864,29 +873,34 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("restore_version", %{"version" => version_str}, socket) do
-    version_number = String.to_integer(version_str)
-    design = socket.assigns.design
-    user_id = socket.assigns.current_user.id
+    case Integer.parse(version_str) do
+      {version_number, ""} ->
+        design = socket.assigns.design
+        user_id = socket.assigns.current_user.id
 
-    case Versioning.restore_version(design, version_number, user_id) do
-      {:ok, updated_design} ->
-        # Reload versions list (light — elements not needed for panel display)
-        versions = Versioning.list_versions_light(design.id)
+        case Versioning.restore_version(design, version_number, user_id) do
+          {:ok, updated_design} ->
+            # Reload versions list (light — elements not needed for panel display)
+            versions = Versioning.list_versions_light(design.id)
 
-        {:noreply,
-         socket
-         |> assign(:design, updated_design)
-         |> assign(:versions, versions)
-         |> assign(:selected_version, nil)
-         |> assign(:version_diff, nil)
-         |> push_event("load_design", %{design: Design.to_json(updated_design)})
-         |> put_flash(:info, "Restaurado desde v#{version_number}")}
+            {:noreply,
+             socket
+             |> assign(:design, updated_design)
+             |> assign(:versions, versions)
+             |> assign(:selected_version, nil)
+             |> assign(:version_diff, nil)
+             |> push_event("load_design", %{design: Design.to_json(updated_design)})
+             |> put_flash(:info, "Restaurado desde v#{version_number}")}
 
-      {:error, :version_not_found} ->
-        {:noreply, put_flash(socket, :error, "Versión no encontrada")}
+          {:error, :version_not_found} ->
+            {:noreply, put_flash(socket, :error, "Versión no encontrada")}
 
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Error al restaurar versión")}
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, "Error al restaurar versión")}
+        end
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -2027,13 +2041,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
               <span>Guardar</span>
             </button>
-            <div class="flex items-center px-1.5 py-2 bg-blue-600 group-hover/save:bg-blue-700 border-l border-blue-500 rounded-r-lg transition text-white cursor-default">
+            <button type="button" class="flex items-center px-1.5 py-2 bg-blue-600 group-hover/save:bg-blue-700 border-l border-blue-500 rounded-r-lg transition text-white" aria-haspopup="true" aria-label="Opciones de guardado">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
-            </div>
-            <!-- Dropdown: hidden by default, shown on hover -->
-            <div class="invisible opacity-0 group-hover/save:visible group-hover/save:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
+            </button>
+            <!-- Dropdown: shown on hover or keyboard focus -->
+            <div class="invisible opacity-0 group-hover/save:visible group-hover/save:opacity-100 group-focus-within/save:visible group-focus-within/save:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
               <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                 <button
                   phx-click="save_design"
@@ -2077,13 +2091,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
               <span>Imprimir</span>
             </button>
-            <div class="flex items-center px-1.5 py-2 bg-emerald-600 group-hover/print:bg-emerald-700 border-l border-emerald-500 rounded-r-lg transition text-white cursor-default">
+            <button type="button" class="flex items-center px-1.5 py-2 bg-emerald-600 group-hover/print:bg-emerald-700 border-l border-emerald-500 rounded-r-lg transition text-white" aria-haspopup="true" aria-label="Opciones de impresión">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
-            </div>
-            <!-- Dropdown: hidden by default, shown on hover -->
-            <div class="invisible opacity-0 group-hover/print:visible group-hover/print:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
+            </button>
+            <!-- Dropdown: shown on hover or keyboard focus -->
+            <div class="invisible opacity-0 group-hover/print:visible group-hover/print:opacity-100 group-focus-within/print:visible group-focus-within/print:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
               <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                 <button
                   phx-click="toggle_preview"

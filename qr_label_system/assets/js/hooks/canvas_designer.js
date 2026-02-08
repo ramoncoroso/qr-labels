@@ -598,12 +598,29 @@ const CanvasDesigner = {
 
     this.canvas.on('text:editing:exited', (e) => {
       const obj = e.target
-      if (obj && obj.elementId && (!obj.text || obj.text.trim() === '')) {
-        // Restore placeholder
+      const hasBinding = obj && obj.elementData && obj.elementData.binding
+      if (obj && obj.elementId && (!obj.text || obj.text.trim() === '') && !hasBinding) {
+        // Restore placeholder (only for unbound text elements)
         obj.set('text', 'Completar texto')
         obj.set('fill', '#999999')
         obj._isPlaceholder = true
         // Save empty text_content to backend
+        if (obj.elementData) {
+          obj.elementData.text_content = ''
+        }
+        this.canvas.renderAll()
+      } else if (obj && obj.elementId && (!obj.text || obj.text.trim() === '') && hasBinding) {
+        // Bound element with empty text: restore binding display
+        const binding = obj.elementData.binding
+        if (isExpression(binding)) {
+          const preview = evaluate(binding, {}, { rowIndex: 0, batchSize: 1, now: new Date() })
+          obj.set('text', preview || binding)
+          obj.set('fontStyle', 'italic')
+        } else {
+          obj.set('text', `[${binding}]`)
+        }
+        obj.set('fill', obj._originalColor || '#000000')
+        obj._isPlaceholder = false
         if (obj.elementData) {
           obj.elementData.text_content = ''
         }
@@ -1766,6 +1783,17 @@ const CanvasDesigner = {
         if (obj.type === 'textbox') {
           if (value && value.trim() !== '') {
             obj.set('text', value)
+            obj.set('fill', obj._originalColor || data.color || '#000000')
+            obj._isPlaceholder = false
+          } else if (data.binding) {
+            // text_content cleared but has binding: show binding indicator
+            if (isExpression(data.binding)) {
+              const preview = evaluate(data.binding, {}, { rowIndex: 0, batchSize: 1, now: new Date() })
+              obj.set('text', preview || data.binding)
+              obj.set('fontStyle', 'italic')
+            } else {
+              obj.set('text', `[${data.binding}]`)
+            }
             obj.set('fill', obj._originalColor || data.color || '#000000')
             obj._isPlaceholder = false
           } else {

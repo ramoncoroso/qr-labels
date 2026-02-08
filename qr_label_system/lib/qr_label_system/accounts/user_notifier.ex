@@ -16,18 +16,32 @@ defmodule QrLabelSystem.Accounts.UserNotifier do
       |> text_body(body)
 
     require Logger
-    Logger.info("Sending email to #{recipient}: #{subject}")
+    masked = mask_email(recipient)
+    Logger.info("Sending email to #{masked}: #{subject}")
 
     case Mailer.deliver(email) do
       {:ok, _metadata} ->
-        Logger.info("Email sent successfully to #{recipient}")
+        Logger.info("Email sent successfully to #{masked}")
         {:ok, email}
 
       {:error, reason} = error ->
-        Logger.error("Failed to send email to #{recipient}: #{inspect(reason)}")
+        Logger.error("Failed to send email to #{masked}: #{inspect(reason)}")
         error
     end
   end
+
+  defp mask_email(email) when is_binary(email) do
+    case String.split(email, "@") do
+      [local, domain] ->
+        masked_local = String.first(local) <> "***"
+        "#{masked_local}@#{domain}"
+
+      _ ->
+        "***"
+    end
+  end
+
+  defp mask_email(_), do: "***"
 
   @doc """
   Deliver magic link instructions to log in to the account.
