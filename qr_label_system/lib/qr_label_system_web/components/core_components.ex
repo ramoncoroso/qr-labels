@@ -368,7 +368,26 @@ defmodule QrLabelSystemWeb.CoreComponents do
     """
   end
 
-  # All other inputs text, currentinput, password, etc. are handled here...
+  def input(%{type: "color"} = assigns) do
+    ~H"""
+    <div phx-feedback-for={@name} class="text-center">
+      <label for={@id} class="block text-sm font-semibold leading-6 text-slate-800">
+        <%= @label %><span :if={@rest[:required]} class="text-indigo-500 ml-0.5">*</span>
+      </label>
+      <input
+        type="color"
+        name={@name}
+        id={@id}
+        value={Phoenix.HTML.Form.normalize_value("color", @value)}
+        class="mt-2 mx-auto block w-10 h-[38px] rounded-lg border border-gray-300 cursor-pointer p-1"
+        {@rest}
+      />
+      <.error :for={msg <- @errors}><%= msg %></.error>
+    </div>
+    """
+  end
+
+  # All other inputs text, number, password, etc. are handled here...
   def input(assigns) do
     ~H"""
     <div phx-feedback-for={@name}>
