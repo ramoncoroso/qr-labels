@@ -104,6 +104,191 @@ export function getFormatGroups() {
 }
 
 /**
+ * Get detailed format info for a barcode format (for badges and info cards)
+ * @param {string} format - Format key (e.g. 'CODE128', 'EAN13')
+ * @returns {Object|null} Format metadata or null if unknown
+ */
+export function getFormatInfo(format) {
+  const FORMATS = {
+    // 1D General — blue
+    'CODE128': {
+      name: 'CODE128', category: '1D General',
+      badge: { bg: '#eff6ff', text: '#3b82f6', border: '#93c5fd' },
+      type: 'Código 1D lineal (uso general)',
+      capacity: 'ASCII completo, longitud variable',
+      usage: 'Logística, inventario, etiquetas internas',
+      extra: 'El más versátil de los códigos 1D'
+    },
+    'CODE39': {
+      name: 'CODE39', category: '1D General',
+      badge: { bg: '#eff6ff', text: '#3b82f6', border: '#93c5fd' },
+      type: 'Código 1D lineal (uso general)',
+      capacity: 'A-Z, 0-9, -.$/+%, longitud variable',
+      usage: 'Industria automotriz, defensa, salud',
+      extra: 'Auto-delimitable, no requiere checksum'
+    },
+    'CODE93': {
+      name: 'CODE93', category: '1D General',
+      badge: { bg: '#eff6ff', text: '#3b82f6', border: '#93c5fd' },
+      type: 'Código 1D lineal (uso general)',
+      capacity: 'A-Z, 0-9, -.$/+%, longitud variable',
+      usage: 'Correo canadiense, logística',
+      extra: 'Más compacto que CODE39'
+    },
+    'CODABAR': {
+      name: 'Codabar', category: '1D General',
+      badge: { bg: '#eff6ff', text: '#3b82f6', border: '#93c5fd' },
+      type: 'Código 1D lineal (uso general)',
+      capacity: '0-9, -$:/.+, inicio/fin A-D',
+      usage: 'Bibliotecas, bancos de sangre, paquetería',
+      extra: 'Requiere caracteres de inicio/fin (A-D)'
+    },
+    'MSI': {
+      name: 'MSI', category: '1D General',
+      badge: { bg: '#eff6ff', text: '#3b82f6', border: '#93c5fd' },
+      type: 'Código 1D lineal (uso general)',
+      capacity: 'Solo dígitos, longitud variable',
+      usage: 'Estantes de supermercado, inventario',
+      extra: 'Variante de Plessey, requiere checksum'
+    },
+    'pharmacode': {
+      name: 'Pharmacode', category: '1D General',
+      badge: { bg: '#eff6ff', text: '#3b82f6', border: '#93c5fd' },
+      type: 'Código 1D lineal (farmacéutico)',
+      capacity: 'Número entre 3-131070',
+      usage: 'Industria farmacéutica (empaque)',
+      extra: 'Diseñado para ser leído incluso mal impreso'
+    },
+    // 1D Retail — green
+    'EAN13': {
+      name: 'EAN-13', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D lineal (retail)',
+      capacity: '12-13 dígitos (incluye checksum)',
+      usage: 'Productos de consumo a nivel mundial',
+      extra: 'Estándar global de punto de venta'
+    },
+    'EAN8': {
+      name: 'EAN-8', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D lineal (retail)',
+      capacity: '7-8 dígitos (incluye checksum)',
+      usage: 'Productos pequeños con espacio limitado',
+      extra: 'Versión compacta de EAN-13'
+    },
+    'UPC': {
+      name: 'UPC-A', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D lineal (retail)',
+      capacity: '11-12 dígitos (incluye checksum)',
+      usage: 'Productos de consumo en Norteamérica',
+      extra: 'Estándar de EE.UU. y Canadá'
+    },
+    'ITF14': {
+      name: 'ITF-14', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D lineal (retail/logística)',
+      capacity: '13-14 dígitos',
+      usage: 'Cajas y embalaje exterior (GTIN)',
+      extra: 'Imprimible directo en cartón corrugado'
+    },
+    'GS1_DATABAR': {
+      name: 'GS1 DataBar', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D lineal (retail)',
+      capacity: '13-14 dígitos (GTIN)',
+      usage: 'Productos frescos, cupones',
+      extra: 'Más compacto que EAN/UPC'
+    },
+    'GS1_DATABAR_STACKED': {
+      name: 'GS1 DB Stacked', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D apilado (retail)',
+      capacity: '13-14 dígitos (GTIN)',
+      usage: 'Productos muy pequeños (frutas, verduras)',
+      extra: 'Versión apilada, ocupa menos ancho'
+    },
+    'GS1_DATABAR_EXPANDED': {
+      name: 'GS1 DB Exp.', category: '1D Retail',
+      badge: { bg: '#ecfdf5', text: '#10b981', border: '#6ee7b7' },
+      type: 'Código 1D lineal expandido (retail)',
+      capacity: 'AI + datos variables',
+      usage: 'Productos con peso, fecha de vencimiento',
+      extra: 'Soporta datos adicionales GS1 (lote, peso, fecha)'
+    },
+    // 1D Supply Chain — cyan
+    'GS1_128': {
+      name: 'GS1-128', category: '1D Supply Chain',
+      badge: { bg: '#ecfeff', text: '#06b6d4', border: '#67e8f9' },
+      type: 'Código 1D lineal (cadena de suministro)',
+      capacity: 'AI + datos, hasta ~48 caracteres',
+      usage: 'Pallets, cajas, trazabilidad logística',
+      extra: 'Estándar GS1 para cadena de suministro'
+    },
+    // 2D — amber
+    'DATAMATRIX': {
+      name: 'DataMatrix', category: '2D',
+      badge: { bg: '#fffbeb', text: '#f59e0b', border: '#fcd34d' },
+      type: 'Código 2D matricial',
+      capacity: 'Hasta 2335 alfanuméricos',
+      usage: 'Electrónica, componentes pequeños, salud',
+      extra: 'Legible incluso con daño parcial'
+    },
+    'PDF417': {
+      name: 'PDF417', category: '2D',
+      badge: { bg: '#fffbeb', text: '#f59e0b', border: '#fcd34d' },
+      type: 'Código 2D apilado',
+      capacity: 'Hasta 1850 alfanuméricos',
+      usage: 'Documentos de identidad, boarding passes',
+      extra: 'Puede enlazar múltiples símbolos'
+    },
+    'AZTEC': {
+      name: 'Aztec', category: '2D',
+      badge: { bg: '#fffbeb', text: '#f59e0b', border: '#fcd34d' },
+      type: 'Código 2D matricial',
+      capacity: 'Hasta 3832 alfanuméricos',
+      usage: 'Billetes de transporte, boletos',
+      extra: 'No requiere zona blanca alrededor'
+    },
+    'MAXICODE': {
+      name: 'MaxiCode', category: '2D',
+      badge: { bg: '#fffbeb', text: '#f59e0b', border: '#fcd34d' },
+      type: 'Código 2D hexagonal',
+      capacity: 'Hasta 93 alfanuméricos',
+      usage: 'Paquetería (UPS), clasificación automática',
+      extra: 'Tamaño fijo, lectura a alta velocidad'
+    },
+    // Postal — pink
+    'POSTNET': {
+      name: 'POSTNET', category: 'Postal',
+      badge: { bg: '#fdf2f8', text: '#ec4899', border: '#f9a8d4' },
+      type: 'Código postal de barras',
+      capacity: '5, 9 u 11 dígitos',
+      usage: 'Correo de EE.UU. (USPS)',
+      extra: 'Codifica ZIP, ZIP+4 o DPBC'
+    },
+    'PLANET': {
+      name: 'PLANET', category: 'Postal',
+      badge: { bg: '#fdf2f8', text: '#ec4899', border: '#f9a8d4' },
+      type: 'Código postal de barras',
+      capacity: '11 o 13 dígitos',
+      usage: 'Rastreo de correo USPS',
+      extra: 'Complemento de POSTNET para tracking'
+    },
+    'ROYALMAIL': {
+      name: 'Royal Mail', category: 'Postal',
+      badge: { bg: '#fdf2f8', text: '#ec4899', border: '#f9a8d4' },
+      type: 'Código postal 4-state',
+      capacity: 'Alfanumérico, longitud variable',
+      usage: 'Correo de Reino Unido (Royal Mail)',
+      extra: 'Barras de 4 alturas diferentes'
+    }
+  }
+
+  return FORMATS[format] || null
+}
+
+/**
  * Strip '#' from hex color for bwip-js (expects "000000" not "#000000")
  */
 function toBwipColor(hex) {

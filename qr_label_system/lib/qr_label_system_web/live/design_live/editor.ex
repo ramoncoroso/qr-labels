@@ -1211,6 +1211,124 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
+  # Validate barcode content and return structured result for UI feedback
+  # Returns %{valid: bool, hint: string|nil}
+  defp validate_barcode_content(nil, _format), do: %{valid: true, hint: nil}
+  defp validate_barcode_content("", _format), do: %{valid: true, hint: nil}
+  defp validate_barcode_content(content, format) do
+    content = String.trim(content)
+    len = String.length(content)
+    digits_only = Regex.match?(~r/^\d+$/, content)
+
+    case format do
+      f when f in ~w(EAN13 EAN8 UPC ITF14 GS1_DATABAR GS1_DATABAR_STACKED) ->
+        {min, max} = range_for_format(f)
+        cond do
+          not digits_only -> %{valid: false, hint: "Solo dígitos"}
+          len < min -> %{valid: false, hint: "Llevas #{len}, #{falta_n(min - len)} para el mínimo de #{min}"}
+          len > max -> %{valid: false, hint: "Llevas #{len}, #{sobra_n(len - max)} del máximo de #{max}"}
+          true -> %{valid: true, hint: "#{len} dígitos ✓"}
+        end
+
+      "POSTNET" ->
+        cond do
+          not digits_only -> %{valid: false, hint: "Solo dígitos"}
+          len in [5, 9, 11] -> %{valid: true, hint: "#{len} dígitos ✓"}
+          true ->
+            target = nearest_above(len, [5, 9, 11])
+            %{valid: false, hint: "Llevas #{len}, #{falta_n(target - len)} para #{target} dígitos"}
+        end
+
+      "PLANET" ->
+        cond do
+          not digits_only -> %{valid: false, hint: "Solo dígitos"}
+          len in [11, 13] -> %{valid: true, hint: "#{len} dígitos ✓"}
+          true ->
+            target = nearest_above(len, [11, 13])
+            %{valid: false, hint: "Llevas #{len}, #{falta_n(target - len)} para #{target} dígitos"}
+        end
+
+      f when f in ~w(GS1_DATABAR_EXPANDED GS1_128) ->
+        if len < 2 do
+          %{valid: false, hint: "Llevas #{len}, #{falta_n(2 - len)} para el mínimo de 2"}
+        else
+          %{valid: true, hint: "#{len} caracteres ✓"}
+        end
+
+      "MSI" ->
+        if not digits_only do
+          %{valid: false, hint: "Solo dígitos"}
+        else
+          %{valid: true, hint: nil}
+        end
+
+      "CODE39" ->
+        if not Regex.match?(~r/^[A-Z0-9\-. \$\/\+%]*$/i, content) do
+          %{valid: false, hint: "Solo A-Z, 0-9, -.$/+%"}
+        else
+          %{valid: true, hint: nil}
+        end
+
+      "CODE93" ->
+        if not Regex.match?(~r/^[A-Z0-9\-. \$\/\+%]*$/i, content) do
+          %{valid: false, hint: "Solo A-Z, 0-9, -.$/+%"}
+        else
+          %{valid: true, hint: nil}
+        end
+
+      "CODABAR" ->
+        if not Regex.match?(~r/^[A-Da-d][0-9\-\$:\/\.+]+[A-Da-d]$/i, content) do
+          %{valid: false, hint: "Formato: A-D + dígitos + A-D (mín. 3)"}
+        else
+          %{valid: true, hint: "#{len} caracteres ✓"}
+        end
+
+      "ROYALMAIL" ->
+        if not Regex.match?(~r/^[A-Z0-9]+$/i, content) do
+          %{valid: false, hint: "Solo alfanumérico (A-Z, 0-9)"}
+        else
+          %{valid: true, hint: nil}
+        end
+
+      "pharmacode" ->
+        cond do
+          not digits_only -> %{valid: false, hint: "Solo dígitos"}
+          true ->
+            case Integer.parse(content) do
+              {num, ""} when num >= 3 and num <= 131070 ->
+                %{valid: true, hint: "Valor #{num} ✓"}
+              {num, ""} when num < 3 ->
+                %{valid: false, hint: "Valor #{num}, el mínimo es 3"}
+              {num, ""} ->
+                %{valid: false, hint: "Valor #{num}, el máximo es 131070"}
+              _ ->
+                %{valid: false, hint: "Valor inválido"}
+            end
+        end
+
+      # 2D formats accept any text
+      _ -> %{valid: true, hint: nil}
+    end
+  end
+
+  defp range_for_format("EAN13"), do: {12, 13}
+  defp range_for_format("EAN8"), do: {7, 8}
+  defp range_for_format("UPC"), do: {11, 12}
+  defp range_for_format("ITF14"), do: {13, 14}
+  defp range_for_format("GS1_DATABAR"), do: {13, 14}
+  defp range_for_format("GS1_DATABAR_STACKED"), do: {13, 14}
+
+  defp falta_n(1), do: "falta 1"
+  defp falta_n(n), do: "faltan #{n}"
+
+  defp sobra_n(1), do: "sobra 1"
+  defp sobra_n(n), do: "sobran #{n}"
+
+  # Find the nearest valid length >= current length, or the max if already past all
+  defp nearest_above(len, targets) do
+    Enum.find(targets, List.last(targets), &(&1 >= len))
+  end
+
   # Format info for barcode info card in properties panel
   defp barcode_format_info(format) do
     case format do
@@ -2132,6 +2250,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <% end %>
           <% else %>
             <!-- Modo: Texto fijo -->
+            <% bc_validation = if @element.type == "barcode", do: validate_barcode_content(Map.get(@element, :text_content), @element.barcode_format), else: nil %>
             <form phx-change="update_element">
               <input type="hidden" name="field" value="text_content" />
               <input
@@ -2141,12 +2260,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 value={Map.get(@element, :text_content) || ""}
                 placeholder={get_fixed_text_placeholder(@element.type)}
                 phx-debounce={if @element.type in ["qr", "barcode"], do: "500", else: "300"}
-                class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                class={[
+                  "block w-full rounded-md shadow-sm text-sm",
+                  if(bc_validation && not bc_validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
+                ]}
               />
             </form>
-            <p class="text-xs text-gray-500">
-              Este contenido será igual en todas las etiquetas
-            </p>
+            <%= if bc_validation && bc_validation.hint do %>
+              <p class={[
+                "text-xs mt-1",
+                if(not bc_validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
+              ]}><%= bc_validation.hint %></p>
+            <% else %>
+              <p class="text-xs text-gray-500 mt-1">
+                Este contenido será igual en todas las etiquetas
+              </p>
+            <% end %>
           <% end %>
         </div>
       <% end %>
@@ -2262,6 +2391,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <% "barcode" -> %>
           <div class="border-t pt-4 space-y-3">
             <%= if @label_type == "single" do %>
+              <% validation = validate_barcode_content(@element.text_content, @element.barcode_format) %>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Contenido código Barras</label>
                 <form phx-change="update_element">
@@ -2273,49 +2403,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     value={@element.text_content || ""}
                     phx-debounce="500"
                     placeholder="Completar"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                    class={[
+                      "mt-1 block w-full rounded-md shadow-sm text-sm",
+                      if(not validation.valid, do: "border-red-400 focus:border-red-500 focus:ring-red-500", else: "border-gray-300")
+                    ]}
                   />
                 </form>
-                <%= case @element.barcode_format do %>
-                  <% "EAN13" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 5901234123457 (13 dígitos)</p>
-                  <% "EAN8" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 12345678 (8 dígitos)</p>
-                  <% "UPC" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 012345678905 (12 dígitos)</p>
-                  <% "ITF14" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 10012345678902 (14 dígitos)</p>
-                  <% "pharmacode" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 1234 (número entre 3-131070)</p>
-                  <% "CODE93" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: ABC123 (alfanumérico)</p>
-                  <% "CODABAR" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: A12345B (inicio/fin A-D + dígitos)</p>
-                  <% "MSI" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 1234567 (solo dígitos)</p>
-                  <% "GS1_128" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: (01)09501101530003 (AI + datos)</p>
-                  <% "GS1_DATABAR" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 0950110153000 (13-14 dígitos GTIN)</p>
-                  <% "GS1_DATABAR_STACKED" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 0950110153000 (13-14 dígitos GTIN)</p>
-                  <% "GS1_DATABAR_EXPANDED" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: (01)09501101530003(10)ABC (AI + datos)</p>
-                  <% "DATAMATRIX" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Texto libre, ideal para datos industriales</p>
-                  <% "PDF417" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Texto libre, alta capacidad de datos</p>
-                  <% "AZTEC" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Texto libre, usado en transporte</p>
-                  <% "MAXICODE" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Texto libre, usado en paquetería (UPS)</p>
-                  <% "POSTNET" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 12345 (5, 9 u 11 dígitos)</p>
-                  <% "PLANET" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: 12345678901 (11 o 13 dígitos)</p>
-                  <% "ROYALMAIL" -> %>
-                    <p class="text-xs text-gray-400 mt-1">Ej: LE28HS9Z (alfanumérico)</p>
-                  <% _ -> %>
+                <%= if validation.hint do %>
+                  <p class={[
+                    "text-xs mt-1",
+                    if(not validation.valid, do: "text-red-500 font-medium", else: "text-gray-400")
+                  ]}><%= validation.hint %></p>
                 <% end %>
               </div>
             <% end %>

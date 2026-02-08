@@ -10,7 +10,7 @@
  */
 
 import { fabric } from 'fabric'
-import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent } from './barcode_generator'
+import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent, getFormatInfo } from './barcode_generator'
 
 // Constants
 const PX_PER_MM = 6 // Fixed pixels per mm - good balance between size and usability
@@ -560,14 +560,16 @@ const CanvasDesigner = {
           }
         }
       }
+      this.updateFormatBadgePosition(obj)
       this.saveElementsImmediate()
     })
 
-    // Snap while moving
+    // Snap while moving + sync format badge
     this.canvas.on('object:moving', (e) => {
       if (this.snapEnabled) {
         this.handleSnap(e.target)
       }
+      this.updateFormatBadgePosition(e.target)
     })
 
     // Clear alignment lines when done moving
@@ -931,6 +933,11 @@ const CanvasDesigner = {
     this.elements.set(element.id, obj)
     this.canvas.add(obj)
 
+    // Add format badge for barcode elements
+    if (element.type === 'barcode') {
+      this.addFormatBadge(obj, element.barcode_format || 'CODE128', element.id)
+    }
+
     // Handle z-index ordering
     if (element.z_index !== undefined) {
       this.applyZIndexOrdering()
@@ -1092,6 +1099,79 @@ const CanvasDesigner = {
     })
   },
 
+  createFormatBadge(format, elementId, x, y) {
+    const info = getFormatInfo(format)
+    if (!info) return null
+
+    const label = info.name
+    const colors = info.badge
+
+    const text = new fabric.Text(label, {
+      fontSize: 9,
+      fontFamily: 'Arial',
+      fontWeight: 'bold',
+      fill: colors.text,
+      originX: 'left',
+      originY: 'top'
+    })
+
+    const padX = 4
+    const padY = 2
+    const rect = new fabric.Rect({
+      width: text.width + padX * 2,
+      height: text.height + padY * 2,
+      fill: colors.bg,
+      stroke: colors.border,
+      strokeWidth: 1,
+      rx: 3,
+      ry: 3,
+      originX: 'left',
+      originY: 'top'
+    })
+
+    text.set({ left: padX, top: padY })
+
+    const badge = new fabric.Group([rect, text], {
+      left: x,
+      top: y - (text.height + padY * 2) - 2,
+      selectable: false,
+      evented: false,
+      excludeFromExport: true,
+      _isFormatBadge: true,
+      _parentElementId: elementId
+    })
+
+    return badge
+  },
+
+  addFormatBadge(obj, format, elementId) {
+    if (!obj || !this.canvas) return
+    const badge = this.createFormatBadge(format, elementId, obj.left, obj.top)
+    if (badge) {
+      obj._formatBadge = badge
+      this.canvas.add(badge)
+    }
+  },
+
+  removeFormatBadge(obj) {
+    if (obj && obj._formatBadge && this.canvas) {
+      this.canvas.remove(obj._formatBadge)
+      obj._formatBadge = null
+    }
+  },
+
+  updateFormatBadgePosition(obj) {
+    if (obj && obj._formatBadge) {
+      const badge = obj._formatBadge
+      badge.set({
+        left: obj.left,
+        top: obj.top - badge.height - 2,
+        angle: 0
+      })
+      badge.setCoords()
+    }
+  },
+
   createBarcode(element, x, y) {
     const w = (element.width || 40) * PX_PER_MM
     const h = (element.height || 15) * PX_PER_MM
@@ -1164,10 +1244,17 @@ const CanvasDesigner = {
             borderScaleFactor: 2
           })
 
+          // Remove old badge if placeholder had one
+          this.removeFormatBadge(obj)
+
           // Replace placeholder with actual barcode image
           this.canvas.remove(obj)
           this.elements.set(element.id, img)
           this.canvas.add(img)
+
+          // Add format badge
+          this.addFormatBadge(img, format, element.id)
+
           this.applyZIndexOrdering()
           this.canvas.renderAll()
         }, { crossOrigin: 'anonymous' })
@@ -1187,6 +1274,7 @@ const CanvasDesigner = {
             errorPlaceholder.elementType = obj.elementType
             errorPlaceholder.elementData = obj.elementData
 
+            this.removeFormatBadge(obj)
             this.canvas.remove(obj)
             this.elements.set(element.id, errorPlaceholder)
             this.canvas.add(errorPlaceholder)
@@ -1772,7 +1860,8 @@ const CanvasDesigner = {
     data.x = x
     data.y = y
 
-    // Remove old object
+    // Remove old badge and object
+    this.removeFormatBadge(obj)
     this.canvas.remove(obj)
     this.elements.delete(elementId)
 
@@ -1809,6 +1898,12 @@ const CanvasDesigner = {
 
       this.elements.set(elementId, newObj)
       this.canvas.add(newObj)
+
+      // Add format badge for barcode elements
+      if (elementType === 'barcode') {
+        this.addFormatBadge(newObj, data.barcode_format || 'CODE128', elementId)
+      }
+
       this.canvas.setActiveObject(newObj)
       this.canvas.renderAll()
       // Save immediately (not debounced) to persist the correct dimensions
@@ -1880,7 +1975,8 @@ const CanvasDesigner = {
     // Set flag to prevent deselection event during recreation
     this._isRecreatingElement = true
 
-    // Remove old object
+    // Remove old badge and object
+    this.removeFormatBadge(obj)
     this.canvas.remove(obj)
     this.elements.delete(elementId)
 
@@ -1917,6 +2013,12 @@ const CanvasDesigner = {
 
       this.elements.set(elementId, newObj)
       this.canvas.add(newObj)
+
+      // Add format badge for barcode elements
+      if (elementType === 'barcode') {
+        this.addFormatBadge(newObj, data.barcode_format || 'CODE128', elementId)
+      }
+
       this.canvas.setActiveObject(newObj)
       this.canvas.renderAll()
 
@@ -1933,6 +2035,7 @@ const CanvasDesigner = {
   deleteElement(id) {
     const obj = this.elements.get(id)
     if (obj) {
+      this.removeFormatBadge(obj)
       this.canvas.remove(obj)
       this.elements.delete(id)
       this.canvas.renderAll()
@@ -1950,6 +2053,7 @@ const CanvasDesigner = {
     ids.forEach(id => {
       const obj = this.elements.get(id)
       if (obj) {
+        this.removeFormatBadge(obj)
         this.canvas.remove(obj)
         this.elements.delete(id)
       }
@@ -2236,7 +2340,8 @@ const CanvasDesigner = {
     data.x = x
     data.y = y
 
-    // Remove old object
+    // Remove old badge and object
+    this.removeFormatBadge(obj)
     this.canvas.remove(obj)
     this.elements.delete(elementId)
 
@@ -2273,6 +2378,11 @@ const CanvasDesigner = {
 
       this.elements.set(elementId, newObj)
       this.canvas.add(newObj)
+
+      // Add format badge for barcode elements
+      if (elementType === 'barcode') {
+        this.addFormatBadge(newObj, data.barcode_format || 'CODE128', elementId)
+      }
 
       // Restore selection if this was the active object
       if (this.canvas.getActiveObject() === obj) {
