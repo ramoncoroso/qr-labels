@@ -32,7 +32,7 @@ defmodule QrLabelSystem.Accounts.UserNotifier do
 
   defp mask_email(email) when is_binary(email) do
     case String.split(email, "@") do
-      [local, domain] ->
+      [local, domain] when byte_size(local) > 0 ->
         masked_local = String.first(local) <> "***"
         "#{masked_local}@#{domain}"
 
