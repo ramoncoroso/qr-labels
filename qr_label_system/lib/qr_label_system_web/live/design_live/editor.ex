@@ -149,6 +149,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         socket
       end
 
+      # Send initial preview data via push_event (no longer in HTML attributes)
+      socket = push_preview_update(socket)
+
       {:noreply, socket}
     end
   end
@@ -1810,6 +1813,18 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       Map.has_key?(map, Atom.to_string(key)) -> Map.put(map, Atom.to_string(key), value)
       true -> Map.put(map, key, value)
     end
+  end
+
+  # Push preview update to the LabelPreview hook via push_event
+  defp push_preview_update(socket) do
+    design = socket.assigns.design
+    push_event(socket, "update_preview", %{
+      design: Design.to_json_light(design),
+      row: socket.assigns.preview_data,
+      mapping: build_auto_mapping(design.elements || [], socket.assigns.preview_data),
+      preview_index: socket.assigns.preview_row_index,
+      total_rows: max(socket.assigns.upload_total_rows, 1)
+    })
   end
 
   defp build_auto_mapping(elements, preview_data) do
