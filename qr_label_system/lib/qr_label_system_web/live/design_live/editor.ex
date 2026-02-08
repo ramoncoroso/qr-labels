@@ -5,13 +5,35 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.Designs.Design
+  alias QrLabelSystem.Export.ExpressionEvaluator
   alias QrLabelSystem.Security.FileSanitizer
+
+  # Expression pattern definitions for visual builder
+  @expression_patterns [
+    %{id: :uppercase, label: "MAYUSCULAS", icon: "Aa", color: "blue", needs_column: true,
+      description: "Texto a mayusculas"},
+    %{id: :lowercase, label: "minusculas", icon: "aa", color: "blue", needs_column: true,
+      description: "Texto a minusculas"},
+    %{id: :today, label: "Hoy", icon: "📅", color: "emerald", needs_column: false,
+      description: "Fecha de hoy"},
+    %{id: :counter, label: "Numeracion", icon: "#", color: "amber", needs_column: false,
+      description: "Secuencia automatica"},
+    %{id: :batch, label: "Lote", icon: "⚙", color: "amber", needs_column: false,
+      description: "Codigo de lote"},
+    %{id: :expiry, label: "Vencimiento", icon: "+", color: "emerald", needs_column: false,
+      description: "Fecha futura desde hoy"},
+    %{id: :conditional, label: "Condicional", icon: "?", color: "violet", needs_column: true,
+      description: "Valor segun condicion"},
+    %{id: :format_number, label: "Formato #", icon: "0.0", color: "amber", needs_column: true,
+      description: "Numero con decimales"}
+  ]
 
   # Whitelist of allowed fields for element updates (security)
   @allowed_element_fields ~w(x y width height rotation binding qr_error_level
     qr_logo_data qr_logo_size
     barcode_format barcode_show_text font_size font_family font_weight
-    text_align text_content color background_color border_width border_color border_radius
+    text_align text_content text_auto_fit text_min_font_size
+    color background_color border_width border_color border_radius
     z_index visible locked name image_data image_filename)
 
   @impl true
@@ -91,6 +113,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:canvas_loaded, false)
        |> assign(:show_binding_mode, show_binding_mode)
        |> assign(:show_expression_mode, false)
+       |> assign(:expression_visual_mode, :cards)
+       |> assign(:expression_builder, %{})
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
        |> assign(:zpl_dpi, 203)
@@ -230,7 +254,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
          socket
          |> assign(:selected_element, element)
          |> assign(:show_binding_mode, new_show_binding_mode)
-         |> assign(:show_expression_mode, new_show_expression_mode)}
+         |> assign(:show_expression_mode, new_show_expression_mode)
+         |> assign(:expression_visual_mode, :cards)
+         |> assign(:expression_builder, %{})}
     end
   end
 
@@ -240,7 +266,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if Map.get(socket.assigns, :pending_selection_id) do
       {:noreply, socket}
     else
-      {:noreply, assign(socket, :selected_element, nil)}
+      {:noreply,
+       socket
+       |> assign(:selected_element, nil)
+       |> assign(:expression_visual_mode, :cards)
+       |> assign(:expression_builder, %{})}
     end
   end
 
@@ -430,6 +460,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> assign(:pending_selection_id, element_id)
             |> assign(:show_binding_mode, true)
             |> assign(:show_expression_mode, false)
+            |> assign(:expression_visual_mode, :cards)
+            |> assign(:expression_builder, %{})
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
@@ -452,6 +484,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> assign(:pending_selection_id, element_id)
             |> assign(:show_binding_mode, false)
             |> assign(:show_expression_mode, false)
+            |> assign(:expression_visual_mode, :cards)
+            |> assign(:expression_builder, %{})
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: nil})
@@ -478,11 +512,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> Map.put(:binding, binding_value)
             |> Map.put("binding", binding_value)
 
+          # Pre-fill builder with column if coming from Column tab
+          builder = case extract_simple_column_ref(current_binding) do
+            {:ok, col_name} -> %{"column" => col_name}
+            :none ->
+              # Also try extracting from wrapped expression like {{col}}
+              case extract_simple_column_ref(binding_value) do
+                {:ok, col_name} -> %{"column" => col_name}
+                :none -> %{}
+              end
+          end
+
+          # Always start with cards — user reaches advanced via "Modo avanzado"
           socket = socket
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
             |> assign(:show_binding_mode, false)
             |> assign(:show_expression_mode, true)
+            |> assign(:expression_visual_mode, :cards)
+            |> assign(:expression_builder, builder)
 
           socket = if element_type == "text" do
             push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: binding_value})
@@ -537,6 +585,82 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       [_, col_name] -> {:ok, String.trim(col_name)}
       _ -> :none
     end
+  end
+
+  @impl true
+  def handle_event("select_expression_pattern", %{"pattern" => pattern_str}, socket) do
+    pattern_id = String.to_existing_atom(pattern_str)
+    # Pre-fill with column from builder if available
+    col = Map.get(socket.assigns.expression_builder, "column")
+    config = default_builder_config(pattern_id, col)
+
+    {:noreply,
+     socket
+     |> assign(:expression_visual_mode, {:form, pattern_id})
+     |> assign(:expression_builder, config)}
+  end
+
+  @impl true
+  def handle_event("update_expression_builder", params, socket) do
+    # Merge changed fields into expression_builder
+    builder = socket.assigns.expression_builder
+    new_builder = Enum.reduce(params, builder, fn
+      {"_target", _}, acc -> acc
+      {key, value}, acc -> Map.put(acc, key, value)
+    end)
+
+    {:noreply, assign(socket, :expression_builder, new_builder)}
+  end
+
+  @impl true
+  def handle_event("apply_expression_pattern", _params, socket) do
+    case socket.assigns.expression_visual_mode do
+      {:form, pattern_id} when socket.assigns.selected_element != nil ->
+        config = socket.assigns.expression_builder
+        expr = build_expression_from_pattern(pattern_id, config)
+
+        element_id = Map.get(socket.assigns.selected_element, :id) ||
+                     Map.get(socket.assigns.selected_element, "id")
+        element_type = Map.get(socket.assigns.selected_element, :type) ||
+                       Map.get(socket.assigns.selected_element, "type")
+
+        updated_element = socket.assigns.selected_element
+          |> Map.put(:binding, expr)
+          |> Map.put("binding", expr)
+
+        socket = socket
+          |> assign(:selected_element, updated_element)
+          |> assign(:expression_visual_mode, :advanced)
+
+        socket = if element_type == "text" do
+          push_event(socket, "update_element_property", %{id: element_id, field: "binding", value: expr})
+        else
+          socket
+        end
+
+        {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("back_to_expression_cards", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:expression_visual_mode, :cards)
+     |> assign(:expression_builder, %{})}
+  end
+
+  @impl true
+  def handle_event("toggle_expression_advanced", _params, socket) do
+    new_mode = case socket.assigns.expression_visual_mode do
+      :advanced -> :cards
+      _ -> :advanced
+    end
+
+    {:noreply, assign(socket, :expression_visual_mode, new_mode)}
   end
 
   @impl true
@@ -1225,6 +1349,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           font_weight: "normal",
           text_align: "left",
           text_content: "",
+          text_auto_fit: true,
+          text_min_font_size: 6.0,
           color: "#000000",
           binding: nil,
           name: "Texto #{number}"
@@ -2111,7 +2237,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= String.capitalize(@selected_element.type) %>
                 </span>
               </div>
-              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} />
+              <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} preview_data={@preview_data} />
 
               <div class="mt-6 pt-4 border-t">
                 <button
@@ -2462,87 +2588,269 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <% end %>
 
             <% :expression -> %>
-              <!-- Modo: Expresión -->
-              <form phx-change="update_element">
-                <input type="hidden" name="field" value="binding" />
-                <textarea
-                  name="value"
-                  rows="3"
-                  phx-debounce="500"
-                  placeholder={"Ej: Lote: {{lote}} - {{HOY()}}"}
-                  class="block w-full rounded-md border-gray-300 shadow-sm text-sm font-mono"
-                ><%= Map.get(@element, :binding) || "" %></textarea>
-              </form>
-
-              <!-- Quick-insert function buttons -->
-              <div class="space-y-2">
-                <p class="text-xs font-medium text-gray-500">Insertar funcion:</p>
-                <div class="flex flex-wrap gap-1">
-                  <span class="text-xs text-gray-400 w-full">Texto</span>
-                  <%= for {label, tmpl} <- [{"MAYUS", "MAYUS(valor)"}, {"MINUS", "MINUS(valor)"}, {"CONCAT", "CONCAT(v1, v2)"}, {"RECORTAR", "RECORTAR(valor, largo)"}] do %>
-                    <button
-                      type="button"
-                      phx-click="insert_expression_function"
-                      phx-value-template={"{{#{tmpl}}}"}
-                      class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100"
-                    ><%= label %></button>
-                  <% end %>
-                </div>
-                <div class="flex flex-wrap gap-1">
-                  <span class="text-xs text-gray-400 w-full">Fechas</span>
-                  <%= for {label, tmpl} <- [{"HOY", "HOY()"}, {"AHORA", "AHORA()"}, {"+DIAS", "SUMAR_DIAS(HOY(), 30)"}, {"+MESES", "SUMAR_MESES(HOY(), 6)"}] do %>
-                    <button
-                      type="button"
-                      phx-click="insert_expression_function"
-                      phx-value-template={"{{#{tmpl}}}"}
-                      class="px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 rounded border border-emerald-200 hover:bg-emerald-100"
-                    ><%= label %></button>
-                  <% end %>
-                </div>
-                <div class="flex flex-wrap gap-1">
-                  <span class="text-xs text-gray-400 w-full">Contadores</span>
-                  <%= for {label, tmpl} <- [{"CONTADOR", "CONTADOR(1, 1, 4)"}, {"LOTE", "LOTE(AAMM-####)"}, {"#NUM", "FORMATO_NUM(valor, 2)"}] do %>
-                    <button
-                      type="button"
-                      phx-click="insert_expression_function"
-                      phx-value-template={"{{#{tmpl}}}"}
-                      class="px-2 py-0.5 text-xs bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100"
-                    ><%= label %></button>
-                  <% end %>
-                </div>
-                <div class="flex flex-wrap gap-1">
-                  <span class="text-xs text-gray-400 w-full">Condicionales</span>
-                  <%= for {label, tmpl} <- [{"SI", "SI(valor == X, si, no)"}, {"VACIO", "VACIO(valor)"}, {"DEFECTO", "POR_DEFECTO(valor, alt)"}] do %>
-                    <button
-                      type="button"
-                      phx-click="insert_expression_function"
-                      phx-value-template={"{{#{tmpl}}}"}
-                      class="px-2 py-0.5 text-xs bg-violet-50 text-violet-700 rounded border border-violet-200 hover:bg-violet-100"
-                    ><%= label %></button>
-                  <% end %>
-                </div>
-              </div>
-
-              <!-- Column references -->
-              <%= if length(@available_columns) > 0 do %>
-                <div class="space-y-1">
-                  <p class="text-xs font-medium text-gray-500">Insertar columna:</p>
-                  <div class="flex flex-wrap gap-1">
-                    <%= for col <- @available_columns do %>
+              <!-- Modo: Expresión — Constructor Visual -->
+              <%= case @expression_visual_mode do %>
+                <% :cards -> %>
+                  <!-- Grid de patrones -->
+                  <div class="grid grid-cols-2 gap-2">
+                    <%= for pattern <- expression_patterns() do %>
+                      <% {card_cls, text_cls, icon_cls} = pattern_color_classes(pattern.color) %>
+                      <% disabled = pattern.needs_column && length(@available_columns) == 0 %>
                       <button
                         type="button"
-                        phx-click="insert_expression_function"
-                        phx-value-template={"{{#{col}}}"}
-                        class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
-                      ><%= col %></button>
+                        phx-click="select_expression_pattern"
+                        phx-value-pattern={pattern.id}
+                        disabled={disabled}
+                        class={"flex flex-col items-start p-2.5 rounded-lg border text-left transition-colors #{card_cls} #{if disabled, do: "opacity-40 cursor-not-allowed", else: "cursor-pointer"}"}
+                      >
+                        <div class="flex items-center gap-1.5 mb-0.5 min-w-0">
+                          <span class={"text-xs font-bold px-1.5 py-0.5 rounded shrink-0 #{icon_cls}"}><%= pattern.icon %></span>
+                          <span class={"text-xs font-semibold truncate #{text_cls}"}><%= pattern.label %></span>
+                        </div>
+                        <span class="text-[10px] text-gray-500 leading-tight truncate w-full"><%= pattern.description %></span>
+                      </button>
                     <% end %>
                   </div>
-                </div>
-              <% end %>
+                  <button
+                    type="button"
+                    phx-click="toggle_expression_advanced"
+                    class="text-xs text-gray-500 hover:text-gray-700 mt-1"
+                  >
+                    Modo avanzado &rarr;
+                  </button>
 
-              <p class="text-xs text-gray-500">
-                Usa <code class="bg-gray-100 px-1 rounded">{{"{{"}}</code> y <code class="bg-gray-100 px-1 rounded">{{"}}"}}</code> para expresiones. Texto fuera de llaves se muestra literal.
-              </p>
+                <% {:form, pattern_id} -> %>
+                  <% pattern = get_pattern(pattern_id) %>
+                  <%= if pattern do %>
+                    <% {_, text_cls, icon_cls} = pattern_color_classes(pattern.color) %>
+                    <!-- Header -->
+                    <div class="flex items-center gap-2 mb-3">
+                      <button type="button" phx-click="back_to_expression_cards" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                      </button>
+                      <span class={"text-xs font-bold px-1.5 py-0.5 rounded #{icon_cls}"}><%= pattern.icon %></span>
+                      <span class={"text-sm font-semibold #{text_cls}"}><%= pattern.label %></span>
+                    </div>
+
+                    <!-- Formulario contextual -->
+                    <form phx-change="update_expression_builder" class="space-y-3">
+                      <%= case pattern_id do %>
+                        <% p when p in [:uppercase, :lowercase] -> %>
+                          <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
+                            <%= if length(@available_columns) > 0 do %>
+                              <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                <%= for col <- @available_columns do %>
+                                  <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
+                                <% end %>
+                              </select>
+                            <% else %>
+                              <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
+                            <% end %>
+                          </div>
+
+                        <% :today -> %>
+                          <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Formato</label>
+                            <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                              <%= for fmt <- ["DD/MM/AAAA", "AAAA-MM-DD", "MM/DD/AAAA", "DD-MM-AAAA"] do %>
+                                <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
+                              <% end %>
+                            </select>
+                          </div>
+
+                        <% :counter -> %>
+                          <div class="grid grid-cols-2 gap-2">
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Inicio</label>
+                              <input type="number" name="start" min="0" value={Map.get(@expression_builder, "start", "1")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                            </div>
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Digitos</label>
+                              <input type="number" name="digits" min="1" max="10" value={Map.get(@expression_builder, "digits", "4")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                            </div>
+                          </div>
+
+                        <% :batch -> %>
+                          <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Formato de lote</label>
+                            <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                              <%= for fmt <- ["AAMM-####", "AAAAMMDD-####", "AAAA-####", "####"] do %>
+                                <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
+                              <% end %>
+                            </select>
+                          </div>
+
+                        <% :expiry -> %>
+                          <div class="space-y-2">
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Dias a futuro</label>
+                              <input type="number" name="days" min="1" value={Map.get(@expression_builder, "days", "30")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                            </div>
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Formato</label>
+                              <select name="format" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                <%= for fmt <- ["DD/MM/AAAA", "AAAA-MM-DD", "MM/DD/AAAA", "DD-MM-AAAA"] do %>
+                                  <option value={fmt} selected={Map.get(@expression_builder, "format") == fmt}><%= fmt %></option>
+                                <% end %>
+                              </select>
+                            </div>
+                          </div>
+
+                        <% :conditional -> %>
+                          <div class="space-y-2">
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
+                              <%= if length(@available_columns) > 0 do %>
+                                <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                  <%= for col <- @available_columns do %>
+                                    <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
+                                  <% end %>
+                                </select>
+                              <% else %>
+                                <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
+                              <% end %>
+                            </div>
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Texto si vacio</label>
+                              <input type="text" name="alt_text" value={Map.get(@expression_builder, "alt_text", "N/A")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                            </div>
+                          </div>
+
+                        <% :format_number -> %>
+                          <div class="space-y-2">
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
+                              <%= if length(@available_columns) > 0 do %>
+                                <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                  <%= for col <- @available_columns do %>
+                                    <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
+                                  <% end %>
+                                </select>
+                              <% else %>
+                                <p class="text-xs text-amber-600">Carga un archivo de datos primero.</p>
+                              <% end %>
+                            </div>
+                            <div>
+                              <label class="block text-xs font-medium text-gray-600 mb-1">Decimales</label>
+                              <input type="number" name="decimals" min="0" max="10" value={Map.get(@expression_builder, "decimals", "2")} class="block w-full rounded-md border-gray-300 shadow-sm text-sm" />
+                            </div>
+                          </div>
+
+                        <% _ -> %>
+                          <p class="text-xs text-gray-500">Sin opciones adicionales.</p>
+                      <% end %>
+                    </form>
+
+                    <!-- Vista previa -->
+                    <% {expr, result} = preview_expression(pattern_id, @expression_builder, @preview_data) %>
+                    <div class="bg-gray-50 rounded-lg p-2.5 space-y-1 border border-gray-200">
+                      <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Vista previa</p>
+                      <p class="text-xs font-mono text-gray-600 break-all"><%= expr %></p>
+                      <p class="text-sm font-semibold text-gray-900"><%= result %></p>
+                    </div>
+
+                    <!-- Botón aplicar -->
+                    <button
+                      type="button"
+                      phx-click="apply_expression_pattern"
+                      class="w-full bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                    >
+                      Aplicar
+                    </button>
+                  <% end %>
+
+                <% :advanced -> %>
+                  <!-- Modo avanzado: textarea + quick-insert (el original) -->
+                  <form phx-change="update_element">
+                    <input type="hidden" name="field" value="binding" />
+                    <textarea
+                      name="value"
+                      rows="3"
+                      phx-debounce="500"
+                      placeholder={"Ej: Lote: {{lote}} - {{HOY()}}"}
+                      class="block w-full rounded-md border-gray-300 shadow-sm text-sm font-mono"
+                    ><%= Map.get(@element, :binding) || "" %></textarea>
+                  </form>
+
+                  <!-- Quick-insert function buttons -->
+                  <div class="space-y-2">
+                    <p class="text-xs font-medium text-gray-500">Insertar funcion:</p>
+                    <div class="flex flex-wrap gap-1">
+                      <span class="text-xs text-gray-400 w-full">Texto</span>
+                      <%= for {label, tmpl} <- [{"MAYUS", "MAYUS(valor)"}, {"MINUS", "MINUS(valor)"}, {"CONCAT", "CONCAT(v1, v2)"}, {"RECORTAR", "RECORTAR(valor, largo)"}] do %>
+                        <button
+                          type="button"
+                          phx-click="insert_expression_function"
+                          phx-value-template={"{{#{tmpl}}}"}
+                          class="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100"
+                        ><%= label %></button>
+                      <% end %>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <span class="text-xs text-gray-400 w-full">Fechas</span>
+                      <%= for {label, tmpl} <- [{"HOY", "HOY()"}, {"AHORA", "AHORA()"}, {"+DIAS", "SUMAR_DIAS(HOY(), 30)"}, {"+MESES", "SUMAR_MESES(HOY(), 6)"}] do %>
+                        <button
+                          type="button"
+                          phx-click="insert_expression_function"
+                          phx-value-template={"{{#{tmpl}}}"}
+                          class="px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 rounded border border-emerald-200 hover:bg-emerald-100"
+                        ><%= label %></button>
+                      <% end %>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <span class="text-xs text-gray-400 w-full">Contadores</span>
+                      <%= for {label, tmpl} <- [{"CONTADOR", "CONTADOR(1, 1, 4)"}, {"LOTE", "LOTE(AAMM-####)"}, {"#NUM", "FORMATO_NUM(valor, 2)"}] do %>
+                        <button
+                          type="button"
+                          phx-click="insert_expression_function"
+                          phx-value-template={"{{#{tmpl}}}"}
+                          class="px-2 py-0.5 text-xs bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100"
+                        ><%= label %></button>
+                      <% end %>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <span class="text-xs text-gray-400 w-full">Condicionales</span>
+                      <%= for {label, tmpl} <- [{"SI", "SI(valor == X, si, no)"}, {"VACIO", "VACIO(valor)"}, {"DEFECTO", "POR_DEFECTO(valor, alt)"}] do %>
+                        <button
+                          type="button"
+                          phx-click="insert_expression_function"
+                          phx-value-template={"{{#{tmpl}}}"}
+                          class="px-2 py-0.5 text-xs bg-violet-50 text-violet-700 rounded border border-violet-200 hover:bg-violet-100"
+                        ><%= label %></button>
+                      <% end %>
+                    </div>
+                  </div>
+
+                  <!-- Column references -->
+                  <%= if length(@available_columns) > 0 do %>
+                    <div class="space-y-1">
+                      <p class="text-xs font-medium text-gray-500">Insertar columna:</p>
+                      <div class="flex flex-wrap gap-1">
+                        <%= for col <- @available_columns do %>
+                          <button
+                            type="button"
+                            phx-click="insert_expression_function"
+                            phx-value-template={"{{#{col}}}"}
+                            class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
+                          ><%= col %></button>
+                        <% end %>
+                      </div>
+                    </div>
+                  <% end %>
+
+                  <button
+                    type="button"
+                    phx-click="toggle_expression_advanced"
+                    class="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    &larr; Volver al constructor visual
+                  </button>
+
+                <% _ -> %>
+                  <!-- Fallback -->
+                  <p class="text-xs text-gray-500">Modo no reconocido.</p>
+              <% end %>
           <% end %>
         </div>
       <% end %>
@@ -2905,6 +3213,40 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </select>
               </form>
             </div>
+            <div class="col-span-2 border-t pt-3 mt-1">
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <form phx-change="update_element" class="flex items-center gap-2">
+                  <input type="hidden" name="field" value="text_auto_fit" />
+                  <input type="hidden" name="value" value="false" />
+                  <input
+                    type="checkbox"
+                    name="value"
+                    value="true"
+                    checked={Map.get(@element, :text_auto_fit, true) == true}
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span class="font-medium">Ajustar al área</span>
+                </form>
+              </label>
+              <p class="text-xs text-gray-400 mt-0.5 ml-6">Reduce la fuente para que el texto quepa</p>
+              <%= if Map.get(@element, :text_auto_fit, true) == true do %>
+                <div class="mt-2 ml-6">
+                  <label class="block text-xs text-gray-500">Tamaño mínimo (pt)</label>
+                  <form phx-change="update_element" class="mt-0.5">
+                    <input type="hidden" name="field" value="text_min_font_size" />
+                    <input
+                      type="number"
+                      name="value"
+                      value={Map.get(@element, :text_min_font_size, 6.0)}
+                      min="4"
+                      max={Map.get(@element, :font_size, 10)}
+                      step="0.5"
+                      class="block w-20 rounded-md border-gray-300 shadow-sm text-sm"
+                    />
+                  </form>
+                </div>
+              <% end %>
+            </div>
           </div>
 
         <% "image" -> %>
@@ -3224,4 +3566,79 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp get_fixed_text_placeholder("barcode"), do: "Completar"
   defp get_fixed_text_placeholder("text"), do: "Completar"
   defp get_fixed_text_placeholder(_), do: "Completar"
+
+  # --- Expression visual builder helpers ---
+
+  defp expression_patterns, do: @expression_patterns
+
+  defp get_pattern(id) do
+    Enum.find(@expression_patterns, fn p -> p.id == id end)
+  end
+
+  defp default_builder_config(pattern_id, column) do
+    base = if column, do: %{"column" => column}, else: %{}
+
+    case pattern_id do
+      :uppercase -> base
+      :lowercase -> base
+      :today -> Map.put(base, "format", "DD/MM/AAAA")
+      :counter -> Map.merge(base, %{"start" => "1", "digits" => "4"})
+      :batch -> Map.put(base, "format", "AAMM-####")
+      :expiry -> Map.merge(base, %{"days" => "30", "format" => "DD/MM/AAAA"})
+      :conditional -> Map.merge(base, %{"alt_text" => "N/A"})
+      :format_number -> Map.put(base, "decimals", "2")
+      _ -> base
+    end
+  end
+
+  defp build_expression_from_pattern(pattern_id, config) do
+    col = Map.get(config, "column", "valor")
+
+    case pattern_id do
+      :uppercase -> "{{MAYUS(#{col})}}"
+      :lowercase -> "{{MINUS(#{col})}}"
+      :today ->
+        fmt = Map.get(config, "format", "DD/MM/AAAA")
+        "{{FORMATO_FECHA(HOY(), #{fmt})}}"
+      :counter ->
+        start = Map.get(config, "start", "1")
+        digits = Map.get(config, "digits", "4")
+        "{{CONTADOR(#{start}, 1, #{digits})}}"
+      :batch ->
+        fmt = Map.get(config, "format", "AAMM-####")
+        "{{LOTE(#{fmt})}}"
+      :expiry ->
+        days = Map.get(config, "days", "30")
+        fmt = Map.get(config, "format", "DD/MM/AAAA")
+        "{{FORMATO_FECHA(SUMAR_DIAS(HOY(), #{days}), #{fmt})}}"
+      :conditional ->
+        alt = Map.get(config, "alt_text", "N/A")
+        "{{SI(VACIO(#{col}), #{alt}, #{col})}}"
+      :format_number ->
+        decimals = Map.get(config, "decimals", "2")
+        "{{FORMATO_NUM(#{col}, #{decimals})}}"
+      _ -> ""
+    end
+  end
+
+  defp preview_expression(pattern_id, config, preview_data) do
+    expr = build_expression_from_pattern(pattern_id, config)
+    if expr == "" do
+      ""
+    else
+      context = %{row_index: 0, batch_size: 100, now: DateTime.utc_now()}
+      result = ExpressionEvaluator.evaluate(expr, preview_data, context)
+      {expr, result}
+    end
+  end
+
+  defp pattern_color_classes(color) do
+    case color do
+      "blue" -> {"bg-blue-50 border-blue-200 hover:bg-blue-100", "text-blue-700", "bg-blue-100 text-blue-600"}
+      "emerald" -> {"bg-emerald-50 border-emerald-200 hover:bg-emerald-100", "text-emerald-700", "bg-emerald-100 text-emerald-600"}
+      "amber" -> {"bg-amber-50 border-amber-200 hover:bg-amber-100", "text-amber-700", "bg-amber-100 text-amber-600"}
+      "violet" -> {"bg-violet-50 border-violet-200 hover:bg-violet-100", "text-violet-700", "bg-violet-100 text-violet-600"}
+      _ -> {"bg-gray-50 border-gray-200 hover:bg-gray-100", "text-gray-700", "bg-gray-100 text-gray-600"}
+    end
+  end
 end
