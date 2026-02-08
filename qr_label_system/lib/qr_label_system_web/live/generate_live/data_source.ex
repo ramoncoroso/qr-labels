@@ -11,21 +11,31 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
   @impl true
   def mount(%{"design_id" => design_id}, _session, socket) do
     design = Designs.get_design!(design_id)
-    data_sources = DataSources.list_user_data_sources(socket.assigns.current_user.id)
+    user_id = socket.assigns.current_user.id
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Seleccionar Datos")
-     |> assign(:design, design)
-     |> assign(:data_sources, data_sources)
-     |> assign(:upload_data, nil)
-     |> assign(:upload_columns, [])
-     |> assign(:upload_error, nil)
-     |> allow_upload(:excel_file,
-       accept: ~w(.xlsx .xls .csv),
-       max_entries: 1,
-       max_file_size: @max_file_size
-     )}
+    # Security: Verify user owns this design
+    if design.user_id != user_id do
+      {:ok,
+       socket
+       |> put_flash(:error, "No tienes permiso para acceder a este diseño")
+       |> push_navigate(to: ~p"/designs")}
+    else
+      data_sources = DataSources.list_user_data_sources(user_id)
+
+      {:ok,
+       socket
+       |> assign(:page_title, "Seleccionar Datos")
+       |> assign(:design, design)
+       |> assign(:data_sources, data_sources)
+       |> assign(:upload_data, nil)
+       |> assign(:upload_columns, [])
+       |> assign(:upload_error, nil)
+       |> allow_upload(:excel_file,
+         accept: ~w(.xlsx .xls .csv),
+         max_entries: 1,
+         max_file_size: @max_file_size
+       )}
+    end
   end
 
   @impl true
@@ -53,11 +63,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
         # Parse the file and clean up after
         result = QrLabelSystem.DataSources.ExcelParser.parse_file(file_path)
 
-        # Schedule cleanup of temp file
-        Task.start(fn ->
-          Process.sleep(60_000)  # Keep for 1 minute
-          File.rm(file_path)
-        end)
+        # Cleanup temp file immediately after parsing
+        File.rm(file_path)
 
         case result do
           {:ok, %{headers: headers, rows: rows}} ->

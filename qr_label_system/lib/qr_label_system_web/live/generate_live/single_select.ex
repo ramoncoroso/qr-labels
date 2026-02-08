@@ -58,7 +58,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
 
   @impl true
   def handle_event("toggle_tag_filter", %{"id" => tag_id}, socket) do
-    tag_id = String.to_integer(tag_id)
+    {tag_id, ""} = Integer.parse(tag_id)
     active = socket.assigns.active_tag_ids
 
     active =

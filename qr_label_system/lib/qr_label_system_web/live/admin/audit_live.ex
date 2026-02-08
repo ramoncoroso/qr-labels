@@ -24,7 +24,7 @@ defmodule QrLabelSystemWeb.Admin.AuditLive do
 
   @impl true
   def handle_params(params, _uri, socket) do
-    page = String.to_integer(Map.get(params, "page", "1"))
+    page = parse_integer(Map.get(params, "page")) || 1
 
     filters = %{
       from: parse_date(Map.get(params, "from")),

@@ -25,8 +25,10 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
 
   @impl true
   def handle_event("update_quantity", %{"quantity" => quantity}, socket) do
-    qty = String.to_integer(quantity)
-    qty = max(1, min(qty, 100))
+    qty = case Integer.parse(quantity) do
+      {n, ""} -> max(1, min(n, 100))
+      _ -> socket.assigns.quantity
+    end
     {:noreply, assign(socket, :quantity, qty)}
   end
 

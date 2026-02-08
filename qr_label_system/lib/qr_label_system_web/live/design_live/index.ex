@@ -100,7 +100,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("start_rename", %{"id" => id, "name" => name}, socket) do
-    design = find_design(socket.assigns.all_designs, String.to_integer(id))
+    {id_int, ""} = Integer.parse(id)
+    design = find_design(socket.assigns.all_designs, id_int)
     {:noreply,
      socket
      |> assign(:renaming_id, id)
@@ -111,7 +112,10 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   @impl true
   def handle_event("cancel_rename", _params, socket) do
     old_id = socket.assigns.renaming_id
-    design = if old_id, do: find_design(socket.assigns.all_designs, String.to_integer(old_id))
+    design = if old_id do
+      {id_int, ""} = Integer.parse(old_id)
+      find_design(socket.assigns.all_designs, id_int)
+    end
     socket = socket
      |> assign(:renaming_id, nil)
      |> assign(:rename_value, "")
@@ -183,7 +187,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("toggle_import_selection", %{"index" => index_str}, socket) do
-    index = String.to_integer(index_str)
+    {index, ""} = Integer.parse(index_str)
     selected = socket.assigns.import_selected_ids
 
     new_selected =
@@ -333,7 +337,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("toggle_tag_filter", %{"id" => tag_id_str}, socket) do
-    tag_id = String.to_integer(tag_id_str)
+    {tag_id, ""} = Integer.parse(tag_id_str)
     active = socket.assigns.active_tag_ids
 
     new_active =
@@ -367,7 +371,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("open_tag_input", %{"id" => design_id}, socket) do
-    design = find_design(socket.assigns.all_designs, String.to_integer(design_id))
+    {id_int, ""} = Integer.parse(design_id)
+    design = find_design(socket.assigns.all_designs, id_int)
 
     {:noreply,
      socket
@@ -388,7 +393,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     # Re-render the previously open design to show the button again
     socket =
       if prev_id do
-        design = find_design(socket.assigns.all_designs, String.to_integer(prev_id))
+        {id_int, ""} = Integer.parse(prev_id)
+        design = find_design(socket.assigns.all_designs, id_int)
         stream_insert(socket, :designs, design)
       else
         socket
@@ -428,8 +434,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("select_tag_suggestion", %{"id" => tag_id_str, "design-id" => design_id_str}, socket) do
-    tag = Designs.get_tag!(String.to_integer(tag_id_str))
-    design_id = String.to_integer(design_id_str)
+    {tag_id_int, ""} = Integer.parse(tag_id_str)
+    {design_id, ""} = Integer.parse(design_id_str)
+    tag = Designs.get_tag!(tag_id_int)
     design = find_design(socket.assigns.all_designs, design_id)
 
     case Designs.add_tag_to_design(design, tag) do
@@ -443,8 +450,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("remove_tag_from_design", %{"design-id" => design_id_str, "tag-id" => tag_id_str}, socket) do
-    design_id = String.to_integer(design_id_str)
-    tag_id = String.to_integer(tag_id_str)
+    {design_id, ""} = Integer.parse(design_id_str)
+    {tag_id, ""} = Integer.parse(tag_id_str)
     design = find_design(socket.assigns.all_designs, design_id)
 
     case Designs.remove_tag_from_design(design, tag_id) do
@@ -519,7 +526,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   defp do_add_tag(socket, design_id_str, tag_name) do
     user_id = socket.assigns.current_user.id
-    design_id = String.to_integer(design_id_str)
+    {design_id, ""} = Integer.parse(design_id_str)
     design = find_design(socket.assigns.all_designs, design_id)
 
     case Designs.find_or_create_tag(user_id, tag_name) do
