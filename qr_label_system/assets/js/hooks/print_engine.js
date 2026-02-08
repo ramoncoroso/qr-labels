@@ -303,168 +303,27 @@ const PrintEngine = {
     return div
   },
 
-  printLabels() {
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) {
-      alert('Por favor permite las ventanas emergentes para imprimir')
-      return
-    }
-
-    const html = this.generatePrintHTML()
-    printWindow.document.write(html)
-    printWindow.document.close()
-
-    // Use setTimeout to ensure the document is fully rendered before printing
-    setTimeout(() => {
-      printWindow.focus()
-      printWindow.print()
-      printWindow.onafterprint = () => {
-        this.pushEvent("print_recorded", {count: this.labels.length})
-      }
-    }, 500)
-  },
-
-  generatePrintHTML() {
+  async printLabels() {
     const design = this.design
     const w = design.width_mm
     const h = design.height_mm
 
-    let labelsHTML = ''
-    for (const label of this.labels) {
-      labelsHTML += `<div class="page">${this.labelToHTML(label)}</div>`
+    const pdf = new jsPDF({
+      orientation: w > h ? 'l' : 'p',
+      unit: 'mm',
+      format: [w, h]
+    })
+
+    for (let i = 0; i < this.labels.length; i++) {
+      if (i > 0) {
+        pdf.addPage([w, h], w > h ? 'l' : 'p')
+      }
+      await this.renderLabelToPDF(pdf, this.labels[i], 0, 0)
     }
 
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Imprimir Etiquetas</title>
-        <style>
-          @page {
-            size: ${w}mm ${h}mm;
-            margin: 0;
-          }
-
-          * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-          }
-
-          body {
-            font-family: Arial, sans-serif;
-          }
-
-          .page {
-            width: ${w}mm;
-            height: ${h}mm;
-            page-break-after: always;
-          }
-
-          .page:last-child {
-            page-break-after: auto;
-          }
-
-          .label {
-            width: ${w}mm;
-            height: ${h}mm;
-            background-color: ${design.background_color || '#FFFFFF'};
-            border: ${design.border_width || 0}mm solid ${design.border_color || '#000000'};
-            border-radius: ${design.border_radius || 0}mm;
-            position: relative;
-            overflow: hidden;
-          }
-
-          .element {
-            position: absolute;
-          }
-
-          img {
-            display: block;
-          }
-
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-        </style>
-      </head>
-      <body>
-        ${labelsHTML}
-      </body>
-      </html>
-    `
-  },
-
-  labelToHTML(label) {
-    const design = this.design
-
-    let elementsHTML = ''
-    for (const element of design.elements || []) {
-      elementsHTML += this.elementToHTML(element, label)
-    }
-
-    return `
-      <div class="label">
-        ${elementsHTML}
-      </div>
-    `
-  },
-
-  elementToHTML(element, label) {
-    let style = `left: ${element.x}mm; top: ${element.y}mm;`
-
-    if (element.rotation) {
-      style += ` transform: rotate(${element.rotation}deg);`
-    }
-
-    switch (element.type) {
-      case 'qr':
-      case 'barcode':
-        const codeImg = label.codes[element.id]
-        if (codeImg) {
-          return `<div class="element" style="${style}">
-            <img src="${codeImg}" style="width: ${element.width}mm; height: ${element.height}mm;">
-          </div>`
-        }
-        return ''
-
-      case 'text':
-        let textContent = element.text_content || ''
-        if (label.rowData) {
-          const columnName = this.columnMapping[element.id]
-          if (columnName && label.rowData[columnName] != null) {
-            textContent = String(label.rowData[columnName])
-          } else if (element.binding && label.rowData[element.binding] != null) {
-            textContent = String(label.rowData[element.binding])
-          }
-        }
-
-        return `<div class="element" style="${style} width: ${element.width}mm; font-size: ${(element.font_size || 12) / PX_PER_MM}mm; font-family: ${element.font_family || 'Arial'}; font-weight: ${element.font_weight || 'normal'}; color: ${element.color || '#000000'}; text-align: ${element.text_align || 'left'}; overflow: visible; white-space: normal; word-break: break-word;">
-          ${this.escapeHtml(textContent)}
-        </div>`
-
-      case 'line':
-        return `<div class="element" style="${style} width: ${element.width}mm; height: ${Math.max(element.height, 0.3)}mm; background-color: ${element.color || '#000000'};"></div>`
-
-      case 'rectangle':
-        return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'};"></div>`
-
-      case 'circle':
-        // border_radius: 0 = rectangle, 100 = full ellipse
-        const htmlRoundness = (element.border_radius ?? 100) / 100
-        const htmlMaxRadius = Math.min(element.width, element.height) / 2
-        const htmlRadius = htmlRoundness * htmlMaxRadius
-        return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'}; border-radius: ${htmlRadius}mm;"></div>`
-
-      default:
-        return ''
-    }
-  },
-
-  escapeHtml(text) {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
+    pdf.autoPrint()
+    window.open(pdf.output('bloburl'), '_blank')
+  }
   },
 
   async exportPDF(filename) {

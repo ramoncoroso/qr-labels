@@ -3,8 +3,7 @@
  * Handles printing single labels (static content) without data binding
  */
 
-import QRCode from 'qrcode'
-import JsBarcode from 'jsbarcode'
+import { generateQR, generateBarcode } from './barcode_generator'
 import { jsPDF } from 'jspdf'
 
 const MM_TO_PX = 3.78
@@ -50,245 +49,51 @@ const SingleLabelPrint = {
   },
 
   async generateQR(content, config) {
-    try {
-      return await QRCode.toDataURL(String(content), {
-        width: Math.round((config.width || 20) * MM_TO_PX),
-        margin: 0,
-        errorCorrectionLevel: config.qr_error_level || 'M'
-      })
-    } catch (err) {
-      console.error('Error generating QR:', err)
-      return null
-    }
+    return generateQR(content, config)
   },
 
   generateBarcode(content, config) {
-    try {
-      const canvas = document.createElement('canvas')
-      JsBarcode(canvas, String(content), {
-        format: config.barcode_format || 'CODE128',
-        width: 2,
-        height: Math.round((config.height || 15) * MM_TO_PX),
-        displayValue: config.barcode_show_text !== false,
-        margin: 0
-      })
-      return canvas.toDataURL('image/png')
-    } catch (err) {
-      console.error('Error generating barcode:', err)
-      return null
-    }
+    return generateBarcode(content, config)
   },
 
   async printLabels(design, quantity) {
     const codes = await this.generateCodes(design)
+    const w = design.width_mm
+    const h = design.height_mm
 
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) {
-      alert('Por favor permite las ventanas emergentes para imprimir')
-      return
-    }
+    const pdf = new jsPDF({
+      orientation: w > h ? 'l' : 'p',
+      unit: 'mm',
+      format: [w, h]
+    })
 
-    const html = this.generatePrintHTML(design, codes, quantity)
-    printWindow.document.write(html)
-    printWindow.document.close()
-    printWindow.onload = () => {
-      printWindow.print()
-    }
-  },
-
-  generatePrintHTML(design, codes, quantity) {
-    // Default to A4 portrait
-    const pageSize = { width: 210, height: 297 }
-    const margin = 10
-
-    // Calculate how many labels fit per row/page
-    const labelsPerRow = Math.floor((pageSize.width - margin * 2 + 5) / (design.width_mm + 5))
-    const labelsPerCol = Math.floor((pageSize.height - margin * 2 + 5) / (design.height_mm + 5))
-    const labelsPerPage = labelsPerRow * labelsPerCol
-
-    const pages = []
-    for (let i = 0; i < quantity; i += labelsPerPage) {
-      const pageLabels = Math.min(labelsPerPage, quantity - i)
-      pages.push(pageLabels)
-    }
-
-    let pagesHTML = ''
-    for (const labelCount of pages) {
-      pagesHTML += '<div class="page"><div class="grid">'
-      for (let i = 0; i < labelCount; i++) {
-        pagesHTML += this.labelToHTML(design, codes)
+    for (let i = 0; i < quantity; i++) {
+      if (i > 0) {
+        pdf.addPage([w, h], w > h ? 'l' : 'p')
       }
-      pagesHTML += '</div></div>'
+      await this.renderLabelToPDF(pdf, design, codes, 0, 0)
     }
 
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Imprimir Etiquetas</title>
-        <style>
-          @page {
-            size: ${pageSize.width}mm ${pageSize.height}mm;
-            margin: 0;
-          }
-
-          * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-          }
-
-          body {
-            font-family: Arial, sans-serif;
-          }
-
-          .page {
-            width: ${pageSize.width}mm;
-            height: ${pageSize.height}mm;
-            padding: ${margin}mm;
-            page-break-after: always;
-          }
-
-          .page:last-child {
-            page-break-after: auto;
-          }
-
-          .grid {
-            display: grid;
-            grid-template-columns: repeat(${labelsPerRow}, ${design.width_mm}mm);
-            gap: 5mm;
-          }
-
-          .label {
-            width: ${design.width_mm}mm;
-            height: ${design.height_mm}mm;
-            background-color: ${design.background_color || '#FFFFFF'};
-            border: ${design.border_width || 0}mm solid ${design.border_color || '#000000'};
-            border-radius: ${design.border_radius || 0}mm;
-            position: relative;
-            overflow: hidden;
-          }
-
-          .element {
-            position: absolute;
-          }
-
-          img {
-            display: block;
-          }
-
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-        </style>
-      </head>
-      <body>
-        ${pagesHTML}
-      </body>
-      </html>
-    `
-  },
-
-  labelToHTML(design, codes) {
-    let elementsHTML = ''
-    for (const element of design.elements || []) {
-      elementsHTML += this.elementToHTML(element, codes)
-    }
-
-    return `
-      <div class="label">
-        ${elementsHTML}
-      </div>
-    `
-  },
-
-  elementToHTML(element, codes) {
-    let style = `left: ${element.x}mm; top: ${element.y}mm;`
-
-    if (element.rotation) {
-      style += ` transform: rotate(${element.rotation}deg);`
-    }
-
-    switch (element.type) {
-      case 'qr':
-      case 'barcode':
-        const codeImg = codes[element.id]
-        if (codeImg) {
-          return `<div class="element" style="${style}">
-            <img src="${codeImg}" style="width: ${element.width}mm; height: ${element.height}mm;">
-          </div>`
-        }
-        return ''
-
-      case 'text':
-        const textContent = element.text_content || ''
-        return `<div class="element" style="${style} width: ${element.width}mm; font-size: ${element.font_size || 12}pt; font-family: ${element.font_family || 'Arial'}; font-weight: ${element.font_weight || 'normal'}; color: ${element.color || '#000000'}; text-align: ${element.text_align || 'left'}; overflow: hidden; white-space: nowrap;">
-          ${this.escapeHtml(textContent)}
-        </div>`
-
-      case 'line':
-        return `<div class="element" style="${style} width: ${element.width}mm; height: ${Math.max(element.height, 0.3)}mm; background-color: ${element.color || '#000000'};"></div>`
-
-      case 'rectangle':
-        return `<div class="element" style="${style} width: ${element.width}mm; height: ${element.height}mm; background-color: ${element.background_color || 'transparent'}; border: ${element.border_width || 0.5}mm solid ${element.border_color || '#000000'};"></div>`
-
-      case 'image':
-        if (element.image_data) {
-          return `<div class="element" style="${style}">
-            <img src="${element.image_data}" style="width: ${element.width}mm; height: ${element.height}mm; object-fit: contain;">
-          </div>`
-        }
-        return ''
-
-      default:
-        return ''
-    }
-  },
-
-  escapeHtml(text) {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
+    pdf.autoPrint()
+    window.open(pdf.output('bloburl'), '_blank')
   },
 
   async exportPDF(design, quantity) {
     const codes = await this.generateCodes(design)
-
-    // Default to A4 portrait
-    const pageSize = [210, 297]
-    const margin = 10
-    const gap = 5
+    const w = design.width_mm
+    const h = design.height_mm
 
     const pdf = new jsPDF({
-      orientation: 'p',
+      orientation: w > h ? 'l' : 'p',
       unit: 'mm',
-      format: pageSize
+      format: [w, h]
     })
 
-    // Calculate how many labels fit per row/page
-    const labelsPerRow = Math.floor((pageSize[0] - margin * 2 + gap) / (design.width_mm + gap))
-    const labelsPerCol = Math.floor((pageSize[1] - margin * 2 + gap) / (design.height_mm + gap))
-    const labelsPerPage = labelsPerRow * labelsPerCol
-
-    let currentLabel = 0
-    let pageNum = 0
-
-    while (currentLabel < quantity) {
-      if (pageNum > 0) {
-        pdf.addPage()
+    for (let i = 0; i < quantity; i++) {
+      if (i > 0) {
+        pdf.addPage([w, h], w > h ? 'l' : 'p')
       }
-
-      for (let row = 0; row < labelsPerCol && currentLabel < quantity; row++) {
-        for (let col = 0; col < labelsPerRow && currentLabel < quantity; col++) {
-          const x = margin + col * (design.width_mm + gap)
-          const y = margin + row * (design.height_mm + gap)
-
-          await this.renderLabelToPDF(pdf, design, codes, x, y)
-          currentLabel++
-        }
-      }
-
-      pageNum++
+      await this.renderLabelToPDF(pdf, design, codes, 0, 0)
     }
 
     pdf.save(`etiquetas-${design.name || 'label'}.pdf`)
