@@ -191,6 +191,7 @@ defmodule QrLabelSystemWeb.Router do
       live "/dashboard", Admin.DashboardLive, :index
       live "/users", Admin.UsersLive, :index
       live "/audit", Admin.AuditLive, :index
+      live "/approvals", Admin.ApprovalsLive, :index
     end
   end
 end

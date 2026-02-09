@@ -288,6 +288,7 @@ const CanvasDesigner = {
     this._baseCanvasHeight = totalHeight
 
     this.elements = new Map()
+    this.groups = new Map()  // group_id -> {id, name, locked, visible, collapsed}
 
     // Final verification - ensure canvas is interactive
     this.verifyCanvasInteractive()
@@ -507,30 +508,43 @@ const CanvasDesigner = {
   },
 
   setupEventListeners() {
-    // Element selection - support multi-selection
+    // Element selection — notify server with expanded group IDs.
+    // Visual expansion to group members happens in mouse:up (not here)
+    // to avoid disrupting Fabric.js drag state.
     this.canvas.on('selection:created', (e) => {
+      const isCtrlClick = e.e && (e.e.ctrlKey || e.e.metaKey)
       const selected = e.selected || []
-      if (selected.length === 1 && selected[0]?.elementId) {
-        this.pushEvent("element_selected", { id: selected[0].elementId })
-      } else if (selected.length > 1) {
-        const ids = selected.filter(obj => obj.elementId).map(obj => obj.elementId)
+
+      // Notify server of expanded group IDs
+      const expanded = this.expandSelectionToGroups(selected, isCtrlClick)
+      this._pendingGroupExpansion = expanded.length > selected.length ? expanded : null
+
+      if (expanded.length === 1 && expanded[0]?.elementId) {
+        this.pushEvent("element_selected", { id: expanded[0].elementId })
+      } else if (expanded.length > 1) {
+        const ids = expanded.filter(obj => obj.elementId).map(obj => obj.elementId)
         this.pushEvent("elements_selected", { ids })
       }
     })
 
     this.canvas.on('selection:updated', (e) => {
+      const isCtrlClick = e.e && (e.e.ctrlKey || e.e.metaKey)
       const selected = e.selected || []
-      if (selected.length === 1 && selected[0]?.elementId) {
-        this.pushEvent("element_selected", { id: selected[0].elementId })
-      } else if (selected.length > 1) {
-        const ids = selected.filter(obj => obj.elementId).map(obj => obj.elementId)
+
+      const expanded = this.expandSelectionToGroups(selected, isCtrlClick)
+      this._pendingGroupExpansion = expanded.length > selected.length ? expanded : null
+
+      if (expanded.length === 1 && expanded[0]?.elementId) {
+        this.pushEvent("element_selected", { id: expanded[0].elementId })
+      } else if (expanded.length > 1) {
+        const ids = expanded.filter(obj => obj.elementId).map(obj => obj.elementId)
         this.pushEvent("elements_selected", { ids })
       }
     })
 
     this.canvas.on('selection:cleared', () => {
-      // Don't send deselection event if we're in the middle of recreating an element
-      if (!this._isRecreatingElement) {
+      // Don't send deselection event during element recreation or save
+      if (!this._isRecreatingElement && !this._isSavingElements) {
         this.pushEvent("element_deselected", {})
       }
     })
@@ -557,6 +571,14 @@ const CanvasDesigner = {
             const newW = obj.width * sx
             const newH = obj.height * sy
             obj.set({ width: newW, height: newH, scaleX: 1, scaleY: 1 })
+            // Recalculate rx/ry for shapes with border_radius after drag-resize
+            if ((obj.elementType === 'circle' || obj.elementType === 'rectangle') && obj.type === 'rect') {
+              const data = obj.elementData || {}
+              const defaultRadius = obj.elementType === 'circle' ? 100 : 0
+              const roundness = (data.border_radius ?? defaultRadius) / 100
+              const maxRadius = Math.min(newW, newH) / 2
+              obj.set({ rx: roundness * maxRadius, ry: roundness * maxRadius })
+            }
             obj.setCoords()
             if (obj.elementData) {
               obj.elementData.width = Math.round((newW / PX_PER_MM) * 100) / 100
@@ -571,18 +593,91 @@ const CanvasDesigner = {
       this.saveElementsImmediate()
     })
 
-    // Snap while moving + sync format badge + update depth overlays
-    this.canvas.on('object:moving', (e) => {
-      if (this.snapEnabled) {
-        this.handleSnap(e.target)
+    // Capture start positions BEFORE Fabric.js starts moving — essential for group movement
+    this.canvas.on('mouse:down', (e) => {
+      const target = e.target
+      if (target && target.elementData && target.elementData.group_id) {
+        const gid = target.elementData.group_id
+        // Capture current (pre-move) positions of ALL group members
+        this.getGroupMembers(gid).forEach(member => {
+          member._groupStartLeft = member.left
+          member._groupStartTop = member.top
+        })
       }
-      this.updateFormatBadgePosition(e.target)
+    })
+
+    // Snap while moving + sync format badge + group movement
+    this.canvas.on('object:moving', (e) => {
+      const obj = e.target
+      obj._isDragging = true
+
+      const isGroupMember = obj && obj.elementData && obj.elementData.group_id && !obj._isGroupMoving
+      const gid = isGroupMember ? obj.elementData.group_id : null
+
+      // Snap: skip siblings of the same group to avoid feedback loop
+      if (this.snapEnabled) {
+        this._snapExcludeGroupId = gid
+        this.handleSnap(obj)
+        this._snapExcludeGroupId = null
+      }
+      this.updateFormatBadgePosition(obj)
+
+      // Group movement: when moving a single element that belongs to a group,
+      // move all other group members by the same delta
+      if (isGroupMember) {
+        // Positions were captured in mouse:down; if missing, fallback to current
+        if (obj._groupStartLeft === undefined) {
+          obj._groupStartLeft = obj.left
+          obj._groupStartTop = obj.top
+        }
+
+        const dx = obj.left - obj._groupStartLeft
+        const dy = obj.top - obj._groupStartTop
+
+        // Move siblings
+        this.getGroupMembers(gid).forEach(member => {
+          if (member !== obj && member._groupStartLeft !== undefined) {
+            member._isGroupMoving = true
+            member.set({
+              left: member._groupStartLeft + dx,
+              top: member._groupStartTop + dy
+            })
+            member.setCoords()
+            member._isGroupMoving = false
+          }
+        })
+        this.canvas.requestRenderAll()
+      }
       this.updateDepthOverlays()
     })
 
-    // Clear alignment lines when done moving
+    // Clear alignment lines + group start positions + drag flag when done moving
+    // Also expand visual selection to group members if user clicked without dragging
     this.canvas.on('mouse:up', () => {
       this.clearAlignmentLines()
+
+      // Check if we have a pending group expansion and the user didn't drag
+      const didDrag = Array.from(this.elements.values()).some(obj => obj._isDragging)
+      if (!didDrag && this._pendingGroupExpansion) {
+        const expanded = this._pendingGroupExpansion
+        this._pendingGroupExpansion = null
+        this.canvas.discardActiveObject()
+        if (expanded.length === 1) {
+          this.canvas.setActiveObject(expanded[0])
+        } else {
+          const sel = new fabric.ActiveSelection(expanded, { canvas: this.canvas })
+          this.canvas.setActiveObject(sel)
+        }
+        this.canvas.renderAll()
+      }
+      this._pendingGroupExpansion = null
+
+      // Clear group movement start positions and drag flag
+      this.elements.forEach((obj) => {
+        delete obj._groupStartLeft
+        delete obj._groupStartTop
+        delete obj._isDragging
+      })
     })
 
     // Text editing: clear placeholder on enter, restore on exit
@@ -794,6 +889,41 @@ const CanvasDesigner = {
       }
     })
 
+    // Group management
+    this.handleEvent("create_group", ({ group_id, name, element_ids }) => {
+      if (!this._isDestroyed) {
+        this.createGroup(group_id, name, element_ids)
+      }
+    })
+
+    this.handleEvent("ungroup", ({ group_id }) => {
+      if (!this._isDestroyed) {
+        this.ungroupElements(group_id)
+      }
+    })
+
+    this.handleEvent("toggle_group_visibility", ({ group_id }) => {
+      if (!this._isDestroyed) {
+        this.toggleGroupVisibility(group_id)
+      }
+    })
+
+    this.handleEvent("toggle_group_lock", ({ group_id }) => {
+      if (!this._isDestroyed) {
+        this.toggleGroupLock(group_id)
+      }
+    })
+
+    this.handleEvent("rename_group", ({ group_id, name }) => {
+      if (!this._isDestroyed) {
+        const group = this.groups.get(group_id)
+        if (group) {
+          group.name = name
+          this.saveElements()
+        }
+      }
+    })
+
     // Snap settings
     this.handleEvent("update_snap_settings", ({ snap_enabled }) => {
       if (!this._isDestroyed) {
@@ -878,6 +1008,14 @@ const CanvasDesigner = {
     this.clearDepthOverlays()
     this.elements.forEach((obj) => this.canvas.remove(obj))
     this.elements.clear()
+
+    // Load groups
+    this.groups.clear()
+    if (design.groups) {
+      design.groups.forEach(g => {
+        this.groups.set(g.id, { ...g })
+      })
+    }
 
     // Add elements from design (skip overlays during bulk load)
     this._isBulkLoading = true
@@ -1568,7 +1706,7 @@ const CanvasDesigner = {
       height: height,
       rx: radius,
       ry: radius,
-      fill: element.background_color || '#ffffff',
+      fill: element.background_color || 'transparent',
       stroke: element.border_color || '#000000',
       strokeWidth: (element.border_width || 0.5) * PX_PER_MM,
       angle: element.rotation || 0
@@ -2185,6 +2323,7 @@ const CanvasDesigner = {
       this.removeFormatBadge(obj)
       this.canvas.remove(obj)
       this.elements.delete(id)
+      this.cleanupEmptyGroups()
       this.updateDepthOverlays()
       this.canvas.renderAll()
       this.saveElements()
@@ -2206,6 +2345,9 @@ const CanvasDesigner = {
         this.elements.delete(id)
       }
     })
+
+    // Auto-dissolve groups that now have fewer than 2 members
+    this.cleanupEmptyGroups()
 
     this.canvas.renderAll()
     this.saveElements()
@@ -2330,6 +2472,20 @@ const CanvasDesigner = {
       return
     }
 
+    // CRITICAL: If objects are inside an ActiveSelection, their left/top are RELATIVE
+    // to the selection center — not absolute canvas coords. Temporarily discard the
+    // selection so all positions become absolute, then restore it after collecting data.
+    const activeObj = this.canvas.getActiveObject()
+    const wasActiveSelection = activeObj && activeObj.type === 'activeSelection'
+    let selectedObjects = null
+    if (wasActiveSelection) {
+      selectedObjects = activeObj.getObjects().slice()
+      // Suppress selection events during save to avoid server-side flickering
+      this._isSavingElements = true
+      this.canvas.discardActiveObject()
+      this._isSavingElements = false
+    }
+
     const elements = []
 
     this.elements.forEach((obj, id) => {
@@ -2337,7 +2493,7 @@ const CanvasDesigner = {
 
       const data = obj.elementData || {}
 
-      // Calculate position from canvas coordinates
+      // Calculate position from canvas coordinates (always absolute now)
       const currentX = Math.round(((obj.left - this.labelBounds.left) / PX_PER_MM) * 100) / 100
       const currentY = Math.round(((obj.top - this.labelBounds.top) / PX_PER_MM) * 100) / 100
 
@@ -2448,7 +2604,8 @@ const CanvasDesigner = {
         visible: obj.visible !== false,
         locked: obj.lockMovementX === true,
         z_index: data.z_index || 0,
-        name: data.name
+        name: data.name,
+        group_id: data.group_id || null
       }
 
       // CRITICAL: Explicitly include image data for image elements
@@ -2461,9 +2618,22 @@ const CanvasDesigner = {
       elements.push(elementObj)
     })
 
+    // Build groups array from the groups Map
+    const groups = []
+    this.groups.forEach((g, id) => {
+      groups.push({ id: g.id, name: g.name, locked: !!g.locked, visible: g.visible !== false, collapsed: !!g.collapsed })
+    })
+
+    // Restore ActiveSelection if we discarded it
+    if (wasActiveSelection && selectedObjects && selectedObjects.length > 0) {
+      const sel = new fabric.ActiveSelection(selectedObjects, { canvas: this.canvas })
+      this.canvas.setActiveObject(sel)
+      this.canvas.requestRenderAll()
+    }
+
     // Record save time to prevent load_design from reverting changes
     this._lastSaveTime = Date.now()
-    this.pushEvent("element_modified", { elements })
+    this.pushEvent("element_modified", { elements, groups })
 
     // After saving, recreate any QR/barcode marked for recreation (regenerate at new size)
     this.elements.forEach((obj, id) => {
@@ -2623,6 +2793,139 @@ const CanvasDesigner = {
   },
 
   // ============================================================================
+  // Group Methods
+  // ============================================================================
+
+  createGroup(groupId, name, elementIds) {
+    // Register the group
+    this.groups.set(groupId, { id: groupId, name, locked: false, visible: true, collapsed: false })
+
+    // Assign group_id to each element
+    elementIds.forEach(elId => {
+      const obj = this.elements.get(elId)
+      if (obj && obj.elementData) {
+        obj.elementData.group_id = groupId
+      }
+    })
+
+    this.saveElementsImmediate()
+  },
+
+  ungroupElements(groupId) {
+    // Remove group_id from all members
+    this.elements.forEach((obj) => {
+      if (obj.elementData && obj.elementData.group_id === groupId) {
+        obj.elementData.group_id = null
+      }
+    })
+
+    // Delete the group
+    this.groups.delete(groupId)
+    this.saveElementsImmediate()
+  },
+
+  toggleGroupVisibility(groupId) {
+    const group = this.groups.get(groupId)
+    if (!group) return
+
+    const newVisible = !group.visible
+    group.visible = newVisible
+
+    // Toggle visibility on all members
+    this.elements.forEach((obj) => {
+      if (obj.elementData && obj.elementData.group_id === groupId) {
+        obj.set('visible', newVisible)
+      }
+    })
+
+    this.canvas.renderAll()
+    this.saveElementsImmediate()
+  },
+
+  toggleGroupLock(groupId) {
+    const group = this.groups.get(groupId)
+    if (!group) return
+
+    const newLocked = !group.locked
+    group.locked = newLocked
+
+    // Toggle lock on all members
+    this.elements.forEach((obj) => {
+      if (obj.elementData && obj.elementData.group_id === groupId) {
+        obj.set({
+          lockMovementX: newLocked,
+          lockMovementY: newLocked,
+          lockRotation: newLocked,
+          lockScalingX: newLocked,
+          lockScalingY: newLocked,
+          selectable: !newLocked,
+          evented: !newLocked
+        })
+      }
+    })
+
+    this.canvas.renderAll()
+    this.saveElementsImmediate()
+  },
+
+  // Get all fabric objects belonging to a group
+  getGroupMembers(groupId) {
+    const members = []
+    this.elements.forEach((obj) => {
+      if (obj.elementData && obj.elementData.group_id === groupId) {
+        members.push(obj)
+      }
+    })
+    return members
+  },
+
+  // Auto-dissolve groups with fewer than 2 members
+  cleanupEmptyGroups() {
+    const groupCounts = new Map()
+    this.elements.forEach((obj) => {
+      const gid = obj.elementData && obj.elementData.group_id
+      if (gid) {
+        groupCounts.set(gid, (groupCounts.get(gid) || 0) + 1)
+      }
+    })
+
+    // Remove groups with <2 members
+    this.groups.forEach((group, gid) => {
+      const count = groupCounts.get(gid) || 0
+      if (count < 2) {
+        // Unassign remaining members
+        this.elements.forEach((obj) => {
+          if (obj.elementData && obj.elementData.group_id === gid) {
+            obj.elementData.group_id = null
+          }
+        })
+        this.groups.delete(gid)
+      }
+    })
+  },
+
+  // Expand selection to include all group members (unless Ctrl-click)
+  expandSelectionToGroups(selected, isCtrlClick) {
+    if (isCtrlClick || !selected || selected.length === 0) return selected
+
+    const groupIds = new Set()
+    selected.forEach(obj => {
+      const gid = obj.elementData && obj.elementData.group_id
+      if (gid) groupIds.add(gid)
+    })
+
+    if (groupIds.size === 0) return selected
+
+    // Add all members of the same groups
+    const expanded = new Set(selected)
+    groupIds.forEach(gid => {
+      this.getGroupMembers(gid).forEach(obj => expanded.add(obj))
+    })
+
+    return Array.from(expanded)
+  },
+
+  // ============================================================================
   // Multi-selection Methods
   // ============================================================================
 
@@ -2656,14 +2959,33 @@ const CanvasDesigner = {
 
   pasteElements(elements, offset) {
     const newElements = []
+    // Map old group_id → new group_id to preserve groups in pasted elements
+    const groupIdMap = new Map()
 
     elements.forEach(el => {
+      let newGroupId = null
+      if (el.group_id) {
+        if (!groupIdMap.has(el.group_id)) {
+          const newGid = 'grp_' + Math.random().toString(36).substr(2, 9)
+          groupIdMap.set(el.group_id, newGid)
+          // Clone the group with new id
+          const oldGroup = this.groups.get(el.group_id)
+          if (oldGroup) {
+            this.groups.set(newGid, { ...oldGroup, id: newGid, name: oldGroup.name + ' (copia)' })
+          } else {
+            this.groups.set(newGid, { id: newGid, name: 'Grupo (copia)', locked: false, visible: true, collapsed: false })
+          }
+        }
+        newGroupId = groupIdMap.get(el.group_id)
+      }
+
       const newElement = {
         ...el,
         id: this.generateId(),
         x: (el.x || 0) + offset,
         y: (el.y || 0) + offset,
-        name: el.name ? `${el.name} (copia)` : undefined
+        name: el.name ? `${el.name} (copia)` : undefined,
+        group_id: newGroupId
       }
       this.addElement(newElement, false)
       newElements.push(this.elements.get(newElement.id))
@@ -2872,52 +3194,62 @@ const CanvasDesigner = {
         id,
         obj,
         zIndex: obj.elementData?.z_index || 0,
-        bounds: obj.getBoundingRect(true) // true = absolute coordinates
+        bounds: obj.getBoundingRect(true, true) // absolute + force recalculate
       })
     })
     items.sort((a, b) => a.zIndex - b.zIndex)
 
-    // For each pair where upper overlaps lower, create a dim overlay
+    // Find lower elements that have at least one OPAQUE higher element overlapping them.
+    // Skip transparent upper elements — the user should see through them.
+    const dimmedSet = new Set()
     for (let i = 0; i < items.length; i++) {
+      if (dimmedSet.has(items[i].id)) continue // already marked
       const lower = items[i]
       for (let j = i + 1; j < items.length; j++) {
         const upper = items[j]
         if (upper.zIndex <= lower.zIndex) continue
 
-        const inter = this.getIntersectionRect(lower.bounds, upper.bounds)
-        if (!inter) continue
+        // Skip if upper element has transparent/no fill
+        const upperFill = upper.obj.fill
+        if (!upperFill || upperFill === 'transparent' || upperFill === 'rgba(0,0,0,0)') continue
 
-        // Create semi-transparent overlay at the intersection
-        const overlay = new fabric.Rect({
-          left: inter.left,
-          top: inter.top,
-          width: inter.width,
-          height: inter.height,
-          fill: 'rgba(255,255,255,0.75)',
-          selectable: false,
-          evented: false,
-          excludeFromExport: true,
-          _isDepthOverlay: true,
-          // Place just above the lower element visually
-          _depthLowerZ: lower.zIndex,
-          _depthUpperZ: upper.zIndex
-        })
-        this.canvas.add(overlay)
+        const inter = this.getIntersectionRect(lower.bounds, upper.bounds)
+        if (inter) {
+          dimmedSet.add(lower.id)
+          break // one overlap is enough to dim this element
+        }
       }
     }
 
-    // Position overlays between upper and lower elements in canvas z-order
-    // Re-apply full z-ordering: elements interleaved with their overlays
-    // Strategy: bring elements to front in z_index order, placing overlays just before the upper element
-    const allOverlays = this.canvas.getObjects().filter(o => o._isDepthOverlay)
+    // Create overlays covering the full bounds of each dimmed element
+    dimmedSet.forEach(lowerId => {
+      const item = items.find(it => it.id === lowerId)
+      if (!item) return
 
+      const overlay = new fabric.Rect({
+        left: item.bounds.left,
+        top: item.bounds.top,
+        width: item.bounds.width,
+        height: item.bounds.height,
+        fill: 'rgba(255,255,255,0.45)',
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+        _isDepthOverlay: true,
+        _depthForZ: item.zIndex
+      })
+      this.canvas.add(overlay)
+    })
+
+    // Re-apply z-ordering: element → overlay (dim) → next element → ...
+    // Overlays sit just above their element, below everything else
+    const overlays = this.canvas.getObjects().filter(o => o._isDepthOverlay)
     items.forEach(item => {
-      // Before bringing this element to front, bring overlays that sit just below it
-      allOverlays
-        .filter(ov => ov._depthUpperZ === item.zIndex)
-        .forEach(ov => this.canvas.bringToFront(ov))
-
       this.canvas.bringToFront(item.obj)
+      if (dimmedSet.has(item.id)) {
+        const ov = overlays.find(o => o._depthForZ === item.zIndex)
+        if (ov) this.canvas.bringToFront(ov)
+      }
     })
   },
 
@@ -2927,7 +3259,7 @@ const CanvasDesigner = {
     if (!obj || !obj.elementId || !obj.elementData) return
 
     const myZ = obj.elementData.z_index || 0
-    const myBounds = obj.getBoundingRect(true)
+    const myBounds = obj.getBoundingRect(true, true)
 
     // Check if any visible element with higher z_index overlaps this one
     let maxZ = myZ
@@ -2936,7 +3268,7 @@ const CanvasDesigner = {
       const otherZ = other.elementData?.z_index || 0
       if (otherZ <= myZ) return
 
-      const otherBounds = other.getBoundingRect(true)
+      const otherBounds = other.getBoundingRect(true, true)
       const inter = this.getIntersectionRect(myBounds, otherBounds)
       if (inter) {
         if (otherZ > maxZ) maxZ = otherZ
@@ -3123,9 +3455,11 @@ const CanvasDesigner = {
     if (this.snapEnabled) {
       const updatedBounds = movingBounds
 
-      // Snap to other elements
+      // Snap to other elements (skip group siblings to avoid feedback loop)
+      const excludeGid = this._snapExcludeGroupId
       this.elements.forEach((obj, id) => {
         if (obj === movingObj || !obj.visible) return
+        if (excludeGid && obj.elementData && obj.elementData.group_id === excludeGid) return
 
         const targetBounds = this.getObjectBounds(obj)
 

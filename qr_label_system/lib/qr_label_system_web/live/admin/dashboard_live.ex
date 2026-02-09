@@ -202,6 +202,10 @@ defmodule QrLabelSystemWeb.Admin.DashboardLive do
             <.icon name="hero-document-text" class="w-4 h-4 mr-2" />
             <%= gettext("View Audit Log") %>
           </.link>
+          <.link navigate={~p"/admin/approvals"} class="btn-secondary">
+            <.icon name="hero-clipboard-document-check" class="w-4 h-4 mr-2" />
+            <%= gettext("Approvals") %>
+          </.link>
           <.link href={~p"/api/health"} target="_blank" class="btn-secondary">
             <.icon name="hero-heart" class="w-4 h-4 mr-2" />
             <%= gettext("API Health") %>

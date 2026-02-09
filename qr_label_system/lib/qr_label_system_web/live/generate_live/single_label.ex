@@ -3,6 +3,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
 
   alias QrLabelSystem.Designs
   alias QrLabelSystem.Designs.Design
+  alias QrLabelSystem.Settings
 
   @impl true
   def mount(%{"design_id" => design_id}, _session, socket) do
@@ -21,6 +22,7 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
        |> assign(:quantity, 1)
        |> assign(:printing, false)
        |> assign(:zpl_dpi, 203)
+       |> assign(:approval_required, Settings.approval_required?())
        |> push_event("update_preview", %{
          design: Design.to_json_light(design),
          row: %{},
@@ -54,13 +56,17 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
 
   @impl true
   def handle_event("print", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:printing, true)
-     |> push_event("print_single_labels", %{
-       design: Design.to_json(socket.assigns.design),
-       quantity: socket.assigns.quantity
-     })}
+    if print_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, "Este diseno requiere aprobacion antes de imprimir")}
+    else
+      {:noreply,
+       socket
+       |> assign(:printing, true)
+       |> push_event("print_single_labels", %{
+         design: Design.to_json(socket.assigns.design),
+         quantity: socket.assigns.quantity
+       })}
+    end
   end
 
   @impl true
@@ -73,11 +79,15 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
 
   @impl true
   def handle_event("download_pdf", _params, socket) do
-    {:noreply,
-     push_event(socket, "download_single_pdf", %{
-       design: Design.to_json(socket.assigns.design),
-       quantity: socket.assigns.quantity
-     })}
+    if print_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, "Este diseno requiere aprobacion antes de descargar")}
+    else
+      {:noreply,
+       push_event(socket, "download_single_pdf", %{
+         design: Design.to_json(socket.assigns.design),
+         quantity: socket.assigns.quantity
+       })}
+    end
   end
 
   @impl true
@@ -91,20 +101,28 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
 
   @impl true
   def handle_event("download_zpl", _params, socket) do
-    design = socket.assigns.design
-    dpi = socket.assigns.zpl_dpi
-    quantity = socket.assigns.quantity
+    if print_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, "Este diseno requiere aprobacion antes de descargar")}
+    else
+      design = socket.assigns.design
+      dpi = socket.assigns.zpl_dpi
+      quantity = socket.assigns.quantity
 
-    rows = List.duplicate(%{}, quantity)
-    zpl_content = QrLabelSystem.Export.ZplGenerator.generate_batch(design, rows, dpi: dpi)
-    filename = "#{design.name || "etiqueta"}-#{dpi}dpi.zpl"
+      rows = List.duplicate(%{}, quantity)
+      zpl_content = QrLabelSystem.Export.ZplGenerator.generate_batch(design, rows, dpi: dpi)
+      filename = "#{design.name || "etiqueta"}-#{dpi}dpi.zpl"
 
-    {:noreply,
-     push_event(socket, "download_file", %{
-       content: zpl_content,
-       filename: filename,
-       mime_type: "application/x-zpl"
-     })}
+      {:noreply,
+       push_event(socket, "download_file", %{
+         content: zpl_content,
+         filename: filename,
+         mime_type: "application/x-zpl"
+       })}
+    end
+  end
+
+  defp print_blocked?(socket) do
+    socket.assigns.approval_required && socket.assigns.design.status != "approved"
   end
 
   @impl true
@@ -248,17 +266,18 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
                 <% end %>
               </button>
 
-              <div class="flex items-center justify-center gap-4 text-sm">
-                <button phx-click="download_pdf" class="text-gray-500 hover:text-indigo-600 transition flex items-center gap-1.5">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <div class="flex items-center justify-center gap-3">
+                <button phx-click="download_pdf" class="flex-1 py-3 rounded-xl font-medium transition flex items-center justify-center gap-2 border-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Descargar PDF
+                  <span>PDF</span>
                 </button>
-                <span class="text-gray-300">|</span>
-                <button phx-click="download_zpl" class="text-gray-500 hover:text-violet-600 transition flex items-center gap-1.5">
-                  <span class="font-bold text-xs leading-none">ZPL</span>
-                  <span class="text-gray-400 text-xs"><%= @zpl_dpi %> dpi</span>
+                <button phx-click="download_zpl" class="flex-1 py-3 rounded-xl font-medium transition flex items-center justify-center gap-2 border-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>ZPL <span class="text-gray-400 text-sm"><%= @zpl_dpi %> dpi</span></span>
                 </button>
               </div>
 

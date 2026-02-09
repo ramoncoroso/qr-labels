@@ -95,6 +95,20 @@ const KeyboardShortcuts = {
       return
     }
 
+    // Ctrl+G: Group selected elements
+    if (isCtrl && !isShift && e.key === 'g') {
+      e.preventDefault()
+      this.pushEvent('group_elements', {})
+      return
+    }
+
+    // Ctrl+Shift+G: Ungroup selected elements
+    if (isCtrl && isShift && e.key === 'G') {
+      e.preventDefault()
+      this.pushEvent('ungroup_elements', {})
+      return
+    }
+
     // Delete or Backspace: Delete selected element
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()

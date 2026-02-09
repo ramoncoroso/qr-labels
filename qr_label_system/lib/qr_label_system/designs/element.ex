@@ -71,6 +71,7 @@ defmodule QrLabelSystem.Designs.Element do
     field :visible, :boolean, default: true
     field :locked, :boolean, default: false
     field :name, :string  # Friendly name for layer panel
+    field :group_id, :string  # Group membership (nil = ungrouped)
   end
 
   @max_image_size 2_000_000  # 2MB limit for image data
@@ -86,7 +87,7 @@ defmodule QrLabelSystem.Designs.Element do
       :text_auto_fit, :text_min_font_size,
       :color, :background_color, :border_width, :border_color, :border_radius,
       :image_url, :image_data, :image_filename,
-      :z_index, :visible, :locked, :name
+      :z_index, :visible, :locked, :name, :group_id
     ])
     |> generate_id_if_missing()
     |> generate_name_if_missing()

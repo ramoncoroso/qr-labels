@@ -13,6 +13,7 @@ defmodule QrLabelSystem.Designs.Design do
   use Ecto.Schema
   import Ecto.Changeset
   alias QrLabelSystem.Designs.Element
+  alias QrLabelSystem.Designs.ElementGroup
   alias QrLabelSystem.Designs.Tag
 
   schema "label_designs" do
@@ -39,13 +40,18 @@ defmodule QrLabelSystem.Designs.Design do
     # Label type: "single" for static labels, "multiple" for data-bound labels
     field :label_type, :string, default: "single"
 
+    # Approval workflow status
+    field :status, :string, default: "draft"
+
     # Elements on the label
     # IMPORTANT: Using :delete means elements not in the new data will be removed
     # This requires the client to ALWAYS send ALL elements, even unchanged ones
     embeds_many :elements, Element, on_replace: :delete
+    embeds_many :groups, ElementGroup, on_replace: :delete
 
     belongs_to :user, QrLabelSystem.Accounts.User
     has_many :versions, QrLabelSystem.Designs.DesignVersion
+    has_many :approvals, QrLabelSystem.Designs.DesignApproval
     many_to_many :tags, Tag, join_through: "design_tag_assignments"
 
     timestamps(type: :utc_datetime)
@@ -54,17 +60,22 @@ defmodule QrLabelSystem.Designs.Design do
   @doc """
   Changeset for creating/updating a design.
   """
+  @valid_statuses ~w(draft pending_review approved archived)
+
   def changeset(design, attrs) do
     design
     |> cast(attrs, [
       :name, :description,
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
-      :is_template, :template_source, :template_category, :label_type, :user_id
+      :is_template, :template_source, :template_category, :label_type, :user_id,
+      :status
     ])
     |> validate_inclusion(:template_source, ~w(system user), message: "must be system or user")
     |> validate_inclusion(:template_category, ~w(alimentacion farmaceutica logistica manufactura retail), message: "must be a valid category")
+    |> validate_inclusion(:status, @valid_statuses, message: "must be draft, pending_review, approved, or archived")
     |> cast_embed(:elements, with: &Element.changeset/2)
+    |> cast_embed(:groups, with: &ElementGroup.changeset/2)
     |> validate_required([:name, :width_mm, :height_mm])
     |> validate_number(:width_mm, greater_than: 0, less_than_or_equal_to: 500)
     |> validate_number(:height_mm, greater_than: 0, less_than_or_equal_to: 500)
@@ -92,6 +103,7 @@ defmodule QrLabelSystem.Designs.Design do
     |> put_change(:template_category, nil)
     |> put_change(:label_type, design.label_type)
     |> put_embed(:elements, design.elements)
+    |> put_embed(:groups, design.groups || [])
     |> validate_required([:name, :width_mm, :height_mm])
   end
 
@@ -122,7 +134,8 @@ defmodule QrLabelSystem.Designs.Design do
       label_type: design.label_type,
       template_source: design.template_source,
       template_category: design.template_category,
-      elements: Enum.map(design.elements || [], &element_to_json/1)
+      elements: Enum.map(design.elements || [], &element_to_json/1),
+      groups: Enum.map(design.groups || [], &group_to_json/1)
     }
   end
 
@@ -144,7 +157,8 @@ defmodule QrLabelSystem.Designs.Design do
       label_type: design.label_type,
       template_source: design.template_source,
       template_category: design.template_category,
-      elements: Enum.map(design.elements || [], &element_to_json_light/1)
+      elements: Enum.map(design.elements || [], &element_to_json_light/1),
+      groups: Enum.map(design.groups || [], &group_to_json/1)
     }
   end
 
@@ -154,6 +168,22 @@ defmodule QrLabelSystem.Designs.Design do
     |> Map.put(:image_data, nil)
     |> Map.put(:qr_logo_data, nil)
   end
+
+  def status_changeset(design, status) when status in @valid_statuses do
+    design
+    |> cast(%{status: status}, [:status])
+    |> validate_inclusion(:status, @valid_statuses)
+  end
+
+  def approved?(%__MODULE__{status: "approved"}), do: true
+  def approved?(_), do: false
+
+  def editable?(%__MODULE__{status: status}) when status in ~w(draft pending_review), do: true
+  def editable?(_), do: false
+
+  def printable?(%__MODULE__{status: "approved"}), do: true
+  def printable?(%__MODULE__{status: "draft"}), do: true
+  def printable?(_), do: false
 
   defp element_to_json(element) do
     %{
@@ -190,7 +220,19 @@ defmodule QrLabelSystem.Designs.Design do
       name: element.name,
       # Image data fields
       image_data: element.image_data,
-      image_filename: element.image_filename
+      image_filename: element.image_filename,
+      # Group membership
+      group_id: element.group_id
+    }
+  end
+
+  defp group_to_json(group) do
+    %{
+      id: group.id,
+      name: group.name,
+      locked: group.locked,
+      visible: group.visible,
+      collapsed: group.collapsed
     }
   end
 end

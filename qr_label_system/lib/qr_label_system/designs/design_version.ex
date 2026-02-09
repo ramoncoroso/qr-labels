@@ -21,6 +21,7 @@ defmodule QrLabelSystem.Designs.DesignVersion do
     field :border_radius, :float
     field :label_type, :string
     field :elements, {:array, :map}, default: []
+    field :groups, {:array, :map}, default: []
     field :change_message, :string
     field :element_count, :integer, default: 0
     field :snapshot_hash, :string
@@ -40,7 +41,7 @@ defmodule QrLabelSystem.Designs.DesignVersion do
       :design_id, :version_number, :user_id,
       :name, :description, :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
-      :label_type, :elements,
+      :label_type, :elements, :groups,
       :change_message, :element_count, :snapshot_hash
     ])
     |> validate_required([:design_id, :version_number, :name, :width_mm, :height_mm])

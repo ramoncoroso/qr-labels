@@ -30,7 +30,8 @@ defmodule QrLabelSystem.Designs.Versioning do
   """
   def create_snapshot(%Design{} = design, user_id, opts \\ []) do
     elements_json = serialize_elements(design.elements)
-    hash = compute_hash(design, elements_json, opts)
+    groups_json = serialize_groups(design.groups)
+    hash = compute_hash(design, elements_json, groups_json, opts)
 
     # Check for duplicate (same hash as most recent version)
     if duplicate_hash?(design.id, hash) do
@@ -52,6 +53,7 @@ defmodule QrLabelSystem.Designs.Versioning do
         border_radius: design.border_radius,
         label_type: design.label_type,
         elements: elements_json,
+        groups: groups_json,
         element_count: length(design.elements || []),
         snapshot_hash: hash,
         change_message: Keyword.get(opts, :change_message)
@@ -145,7 +147,8 @@ defmodule QrLabelSystem.Designs.Versioning do
           border_color: version.border_color,
           border_radius: version.border_radius,
           label_type: version.label_type,
-          elements: version.elements
+          elements: version.elements,
+          groups: version.groups || []
         }
 
         Repo.transaction(fn ->
@@ -211,8 +214,17 @@ defmodule QrLabelSystem.Designs.Versioning do
 
   defp serialize_elements(_), do: []
 
-  defp compute_hash(design, elements_json, opts) do
-    # Hash includes elements + key design fields to detect any change
+  defp serialize_groups(groups) when is_list(groups) do
+    Enum.map(groups, fn
+      %{__struct__: _} = g -> Map.from_struct(g) |> Map.drop([:__meta__])
+      g when is_map(g) -> g
+    end)
+  end
+
+  defp serialize_groups(_), do: []
+
+  defp compute_hash(design, elements_json, groups_json, opts) do
+    # Hash includes elements + groups + key design fields to detect any change
     # change_message is included so restores always create a new version
     data = Jason.encode!(%{
       name: design.name,
@@ -223,6 +235,7 @@ defmodule QrLabelSystem.Designs.Versioning do
       border_color: design.border_color,
       border_radius: design.border_radius,
       elements: elements_json,
+      groups: groups_json,
       change_message: Keyword.get(opts, :change_message)
     })
 

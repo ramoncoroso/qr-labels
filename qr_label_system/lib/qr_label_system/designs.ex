@@ -10,7 +10,9 @@ defmodule QrLabelSystem.Designs do
   alias QrLabelSystem.Repo
   alias QrLabelSystem.Cache
   alias QrLabelSystem.Designs.Design
+  alias QrLabelSystem.Designs.DesignApproval
   alias QrLabelSystem.Designs.Tag
+  alias QrLabelSystem.Accounts.User
 
   @cache_ttl 30_000  # 30 seconds - reduced to prevent stale data issues
 
@@ -194,6 +196,16 @@ defmodule QrLabelSystem.Designs do
   - `:user_id` — if provided, creates a version snapshot asynchronously
   """
   def update_design(%Design{} = design, attrs, opts \\ []) do
+    # Auto-revert approved/pending designs to draft when content is edited
+    # Skip revert on auto-saves (revert_status: false) — only revert on explicit user saves
+    revert? = Keyword.get(opts, :revert_status, true)
+
+    attrs = if revert? && design.status in ["approved", "pending_review"] && content_changed?(attrs) do
+      Map.put(attrs, :status, "draft")
+    else
+      attrs
+    end
+
     result = design
     |> Design.changeset(attrs)
     |> Repo.update()
@@ -216,6 +228,18 @@ defmodule QrLabelSystem.Designs do
       error ->
         error
     end
+  end
+
+  defp content_changed?(attrs) do
+    content_keys = ~w(elements groups name description width_mm height_mm
+      background_color border_width border_color border_radius)a
+
+    atom_keys = Map.keys(attrs) |> Enum.filter(&is_atom/1)
+    string_keys = Map.keys(attrs) |> Enum.filter(&is_binary/1)
+
+    Enum.any?(content_keys, fn key ->
+      Map.has_key?(attrs, key) || Map.has_key?(attrs, to_string(key))
+    end) && (atom_keys != [:status] && string_keys != ["status"])
   end
 
   @doc """
@@ -279,6 +303,184 @@ defmodule QrLabelSystem.Designs do
   end
 
   # ==========================================
+  # APPROVAL WORKFLOW
+  # ==========================================
+
+  @valid_transitions %{
+    {"draft", "pending_review"} => :owner,
+    {"pending_review", "approved"} => :admin,
+    {"pending_review", "draft"} => :admin,
+    {"approved", "draft"} => :any,
+    {"approved", "archived"} => :any,
+    {"archived", "draft"} => :any
+  }
+
+  @doc """
+  Validates and performs a status transition on a design.
+  Returns {:ok, design} or {:error, reason}.
+  """
+  def update_design_status(%Design{} = design, new_status, %User{} = user) do
+    case valid_transition?(design.status, new_status, user) do
+      :ok ->
+        result =
+          design
+          |> Design.status_changeset(new_status)
+          |> Repo.update()
+
+        case result do
+          {:ok, updated} ->
+            Cache.delete(:designs, {:design, design.id})
+            Cache.put(:designs, {:design, updated.id}, updated, ttl: @cache_ttl)
+            {:ok, updated}
+
+          error ->
+            error
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp valid_transition?(from, to, user) do
+    case Map.get(@valid_transitions, {from, to}) do
+      nil -> {:error, "Transicion no permitida de #{from} a #{to}"}
+      :any -> :ok
+      :owner -> :ok
+      :admin ->
+        if User.admin?(user),
+          do: :ok,
+          else: {:error, "Solo administradores pueden realizar esta accion"}
+    end
+  end
+
+  @doc """
+  Owner submits design for review: draft → pending_review
+  """
+  def request_review(%Design{} = design, %User{} = user) do
+    if design.user_id != user.id do
+      {:error, "Solo el propietario puede enviar a revision"}
+    else
+      with {:ok, updated} <- update_design_status(design, "pending_review", user) do
+        create_approval_record(design.id, user.id, "request_review", nil)
+        QrLabelSystem.Audit.log_async("request_review", "design", design.id, user_id: user.id)
+        {:ok, updated}
+      end
+    end
+  end
+
+  @doc """
+  Admin approves design: pending_review → approved
+  """
+  def approve_design(%Design{} = design, %User{} = admin, comment \\ nil) do
+    unless User.admin?(admin) do
+      {:error, "Solo administradores pueden aprobar disenos"}
+    else
+      with {:ok, updated} <- update_design_status(design, "approved", admin) do
+        create_approval_record(design.id, admin.id, "approve", comment)
+        QrLabelSystem.Audit.log_async("approve_design", "design", design.id,
+          user_id: admin.id, metadata: %{comment: comment})
+        {:ok, updated}
+      end
+    end
+  end
+
+  @doc """
+  Admin rejects design: pending_review → draft
+  """
+  def reject_design(%Design{} = design, %User{} = admin, comment \\ nil) do
+    unless User.admin?(admin) do
+      {:error, "Solo administradores pueden rechazar disenos"}
+    else
+      with {:ok, updated} <- update_design_status(design, "draft", admin) do
+        create_approval_record(design.id, admin.id, "reject", comment)
+        QrLabelSystem.Audit.log_async("reject_design", "design", design.id,
+          user_id: admin.id, metadata: %{comment: comment})
+        {:ok, updated}
+      end
+    end
+  end
+
+  @doc """
+  Archive an approved design.
+  """
+  def archive_design(%Design{} = design, %User{} = user) do
+    update_design_status(design, "archived", user)
+  end
+
+  @doc """
+  Reactivate an archived design back to draft.
+  """
+  def reactivate_design(%Design{} = design, %User{} = user) do
+    update_design_status(design, "draft", user)
+  end
+
+  @doc """
+  Lists designs pending approval (for admin panel).
+  Returns light designs without heavy element data.
+  """
+  def list_pending_approvals do
+    Repo.all(
+      from d in Design,
+        where: d.status == "pending_review",
+        order_by: [asc: d.updated_at],
+        preload: [:user]
+    )
+    |> Enum.map(&strip_heavy_element_data/1)
+  end
+
+  @doc """
+  Returns the count of designs pending approval.
+  """
+  def count_pending_approvals do
+    Repo.one(from d in Design, where: d.status == "pending_review", select: count(d.id))
+  end
+
+  @doc """
+  Returns approval history for a design, most recent first.
+  """
+  def get_approval_history(design_id) do
+    Repo.all(
+      from a in DesignApproval,
+        where: a.design_id == ^design_id,
+        order_by: [desc: a.inserted_at],
+        preload: [user: ^from(u in User, select: %{id: u.id, email: u.email, role: u.role})]
+    )
+  end
+
+  defp create_approval_record(design_id, user_id, action, comment) do
+    %DesignApproval{}
+    |> DesignApproval.changeset(%{
+      design_id: design_id,
+      user_id: user_id,
+      action: action,
+      comment: sanitize_comment(comment)
+    })
+    |> Repo.insert()
+  end
+
+  defp sanitize_comment(nil), do: nil
+  defp sanitize_comment(comment) when is_binary(comment) do
+    comment
+    |> String.trim()
+    |> String.slice(0, 1000)
+    |> Phoenix.HTML.html_escape()
+    |> Phoenix.HTML.safe_to_string()
+  end
+
+  @doc """
+  Lists designs for a user filtered by status.
+  """
+  def list_user_designs_by_status(user_id, status) do
+    Repo.all(
+      from d in Design,
+        where: d.user_id == ^user_id and d.status == ^status,
+        order_by: [desc: d.updated_at]
+    )
+    |> Enum.map(&strip_heavy_element_data/1)
+  end
+
+  # ==========================================
   # EXPORT / IMPORT FUNCTIONALITY
   # ==========================================
 
@@ -299,7 +501,8 @@ defmodule QrLabelSystem.Designs do
         border_width: design.border_width,
         border_color: design.border_color,
         border_radius: design.border_radius,
-        elements: Enum.map(design.elements || [], &export_element/1)
+        elements: Enum.map(design.elements || [], &export_element/1),
+        groups: Enum.map(design.groups || [], &export_group/1)
       }
     }
   end
@@ -325,7 +528,18 @@ defmodule QrLabelSystem.Designs do
       background_color: element.background_color,
       border_width: element.border_width,
       border_color: element.border_color,
-      image_url: element.image_url
+      image_url: element.image_url,
+      group_id: element.group_id
+    }
+  end
+
+  defp export_group(group) do
+    %{
+      id: group.id,
+      name: group.name,
+      locked: group.locked,
+      visible: group.visible,
+      collapsed: group.collapsed
     }
   end
 
@@ -370,6 +584,10 @@ defmodule QrLabelSystem.Designs do
       (design_data["elements"] || [])
       |> Enum.map(&import_element/1)
 
+    groups =
+      (design_data["groups"] || [])
+      |> Enum.map(&import_group/1)
+
     attrs = %{
       name: design_data["name"] || "Imported Design",
       description: design_data["description"],
@@ -380,7 +598,8 @@ defmodule QrLabelSystem.Designs do
       border_color: design_data["border_color"] || "#000000",
       border_radius: design_data["border_radius"] || 0,
       user_id: user_id,
-      elements: elements
+      elements: elements,
+      groups: groups
     }
 
     create_design(attrs)
@@ -408,7 +627,18 @@ defmodule QrLabelSystem.Designs do
       background_color: element_data["background_color"],
       border_width: element_data["border_width"] || 0,
       border_color: element_data["border_color"] || "#000000",
-      image_url: element_data["image_url"]
+      image_url: element_data["image_url"],
+      group_id: element_data["group_id"]
+    }
+  end
+
+  defp import_group(group_data) do
+    %{
+      id: group_data["id"] || "grp_#{:erlang.unique_integer([:positive])}",
+      name: group_data["name"] || "Grupo",
+      locked: group_data["locked"] || false,
+      visible: group_data["visible"] != false,
+      collapsed: group_data["collapsed"] || false
     }
   end
 

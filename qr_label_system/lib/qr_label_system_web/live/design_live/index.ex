@@ -4,6 +4,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   import QrLabelSystemWeb.DesignComponents
 
   alias QrLabelSystem.Designs
+  alias QrLabelSystem.Settings
+  alias QrLabelSystem.Accounts.User
   alias QrLabelSystem.UploadDataStore
 
   @max_file_size 5 * 1024 * 1024
@@ -27,6 +29,10 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:show_data_modal, false)
      |> assign(:pending_edit_design, nil)
      |> assign(:filter, "all")
+     |> assign(:status_filter, "all")
+     |> assign(:approval_required, Settings.approval_required?())
+     |> assign(:is_admin, User.admin?(socket.assigns.current_user))
+     |> assign(:pending_count, if(User.admin?(socket.assigns.current_user), do: Designs.count_pending_approvals(), else: 0))
      # Tag state
      |> assign(:tags, tags)
      |> assign(:active_tag_ids, [])
@@ -396,13 +402,59 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     filtered_designs = apply_filters(
       socket.assigns.all_designs,
       filter_type,
-      socket.assigns.active_tag_ids
+      socket.assigns.active_tag_ids,
+      socket.assigns.status_filter
     )
 
     {:noreply,
      socket
      |> assign(:filter, filter_type)
      |> stream(:designs, filtered_designs, reset: true)}
+  end
+
+  @impl true
+  def handle_event("status_filter", %{"status" => status}, socket) do
+    filtered_designs = apply_filters(
+      socket.assigns.all_designs,
+      socket.assigns.filter,
+      socket.assigns.active_tag_ids,
+      status
+    )
+
+    {:noreply,
+     socket
+     |> assign(:status_filter, status)
+     |> stream(:designs, filtered_designs, reset: true)}
+  end
+
+  @impl true
+  def handle_event("request_review", %{"id" => id_str}, socket) do
+    case Integer.parse(id_str) do
+      {id, _} ->
+        design = Designs.get_design(id)
+        user = socket.assigns.current_user
+
+        if design && design.user_id == user.id do
+          case Designs.request_review(design, user) do
+            {:ok, updated} ->
+              designs = update_design_in_list(socket.assigns.all_designs, updated)
+              {:noreply,
+               socket
+               |> assign(:all_designs, designs)
+               |> stream_insert(:designs, updated)
+               |> assign(:pending_count, if(socket.assigns.is_admin, do: Designs.count_pending_approvals(), else: 0))
+               |> put_flash(:info, "Diseno enviado a revision")}
+
+            {:error, reason} ->
+              {:noreply, put_flash(socket, :error, reason)}
+          end
+        else
+          {:noreply, put_flash(socket, :error, "No tienes permiso")}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   # ==========================================
@@ -421,7 +473,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         [tag_id | active]
       end
 
-    filtered = apply_filters(socket.assigns.all_designs, socket.assigns.filter, new_active)
+    filtered = apply_filters(socket.assigns.all_designs, socket.assigns.filter, new_active, socket.assigns.status_filter)
 
     {:noreply,
      socket
@@ -431,7 +483,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("clear_tag_filters", _params, socket) do
-    filtered = apply_filters(socket.assigns.all_designs, socket.assigns.filter, [])
+    filtered = apply_filters(socket.assigns.all_designs, socket.assigns.filter, [], socket.assigns.status_filter)
 
     {:noreply,
      socket
@@ -535,7 +587,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
         end)
 
         tags = Designs.list_user_tags(socket.assigns.current_user.id)
-        filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids)
+        filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids, socket.assigns.status_filter)
 
         {:noreply,
          socket
@@ -624,7 +676,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     end)
 
     tags = Designs.list_user_tags(socket.assigns.current_user.id)
-    filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids)
+    filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids, socket.assigns.status_filter)
 
     socket
     |> assign(:all_designs, updated_all)
@@ -639,10 +691,11 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     Enum.find(all_designs, fn d -> d.id == design_id end)
   end
 
-  defp apply_filters(designs, type_filter, active_tag_ids) do
+  defp apply_filters(designs, type_filter, active_tag_ids, status_filter) do
     designs
     |> filter_designs(type_filter)
     |> filter_by_tags(active_tag_ids)
+    |> filter_by_status(status_filter)
   end
 
   defp filter_designs(designs, "all"), do: designs
@@ -657,12 +710,25 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
     end)
   end
 
+  defp filter_by_status(designs, "all"), do: designs
+  defp filter_by_status(designs, status), do: Enum.filter(designs, &(&1.status == status))
+
   defp count_by_type(designs, type) do
     Enum.count(designs, &(&1.label_type == type))
   end
 
+  defp count_by_status(designs, status) do
+    Enum.count(designs, &(&1.status == status))
+  end
+
   defp should_show_design?(_design, "all"), do: true
   defp should_show_design?(design, filter), do: design.label_type == filter
+
+  defp update_design_in_list(designs, updated) do
+    Enum.map(designs, fn d ->
+      if d.id == updated.id, do: updated, else: d
+    end)
+  end
 
   @impl true
   def render(assigns) do
@@ -791,6 +857,33 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
           </div>
         </div>
 
+        <!-- Status filter pills (only when approval is required) -->
+        <div :if={@approval_required && @has_designs} class="mb-4 flex items-center gap-2 flex-wrap">
+          <%= for {status, label} <- [{"all", "Todos"}, {"draft", "Borrador"}, {"pending_review", "En revision"}, {"approved", "Aprobados"}, {"archived", "Archivados"}] do %>
+            <button
+              phx-click="status_filter"
+              phx-value-status={status}
+              class={"px-3 py-1 rounded-full text-xs font-medium border transition " <>
+                if(@status_filter == status,
+                  do: "bg-blue-600 text-white border-blue-600",
+                  else: "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                )}
+            >
+              <%= label %>
+              <span class={"ml-1 " <> if(@status_filter == status, do: "text-blue-200", else: "text-gray-400")}>
+                <%= if status == "all", do: length(@all_designs), else: count_by_status(@all_designs, status) %>
+              </span>
+            </button>
+          <% end %>
+          <!-- Admin: pending count badge -->
+          <.link :if={@is_admin && @pending_count > 0} navigate={~p"/admin/approvals"} class="ml-2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 transition">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <%= @pending_count %> pendientes de aprobacion
+          </.link>
+        </div>
+
         <div id="designs" phx-update="stream" class="space-y-4 pb-4">
           <div :for={{dom_id, design} <- @streams.designs} id={dom_id} class="group/card relative bg-white rounded-xl shadow-sm border border-gray-200/80 p-4 hover:shadow-md hover:border-gray-300 transition-all duration-200">
             <div class="flex gap-4">
@@ -904,6 +997,25 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                         </span>
                         <span class="text-gray-300">·</span>
                         <span><%= if design.label_type == "single", do: "Única", else: "Múltiple" %></span>
+                        <%= if @approval_required do %>
+                          <span class="text-gray-300">·</span>
+                          <span class={"inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium " <>
+                            case design.status do
+                              "draft" -> "bg-gray-100 text-gray-600"
+                              "pending_review" -> "bg-amber-100 text-amber-700"
+                              "approved" -> "bg-green-100 text-green-700"
+                              "archived" -> "bg-red-100 text-red-700"
+                              _ -> "bg-gray-100 text-gray-600"
+                            end}>
+                            <%= case design.status do
+                              "draft" -> "Borrador"
+                              "pending_review" -> "En revision"
+                              "approved" -> "Aprobado"
+                              "archived" -> "Archivado"
+                              _ -> design.status
+                            end %>
+                          </span>
+                        <% end %>
                         <%= if design.is_template do %>
                           <span class="text-gray-300">·</span>
                           <span>Plantilla</span>
@@ -978,6 +1090,18 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
                   </div>
 
                   <div class="relative z-10 flex items-center gap-2">
+                    <!-- Send to Review Button (when approval required and design is draft) -->
+                    <button
+                      :if={@approval_required && design.status == "draft"}
+                      phx-click="request_review"
+                      phx-value-id={design.id}
+                      class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 hover:border-amber-300 text-amber-700 hover:text-amber-800 text-sm font-medium transition-all duration-200"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Enviar a revision
+                    </button>
                     <!-- Duplicate Button -->
                     <button
                       phx-click="duplicate"

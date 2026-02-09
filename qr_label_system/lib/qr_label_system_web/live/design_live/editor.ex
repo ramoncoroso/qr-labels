@@ -8,6 +8,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   alias QrLabelSystem.Designs.Versioning
   alias QrLabelSystem.Export.ExpressionEvaluator
   alias QrLabelSystem.Security.FileSanitizer
+  alias QrLabelSystem.Settings
+  alias QrLabelSystem.Accounts.User
 
   # Expression pattern definitions for visual builder
   @expression_patterns [
@@ -35,7 +37,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     barcode_format barcode_show_text font_size font_family font_weight
     text_align text_content text_auto_fit text_min_font_size
     color background_color border_width border_color border_radius
-    z_index visible locked name image_data image_filename)
+    z_index visible locked name image_data image_filename group_id)
 
   @impl true
   def mount(%{"id" => id} = params, _session, socket) do
@@ -101,7 +103,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:preview_data, preview_data)
        |> assign(:preview_row_index, 0)
        |> assign(:image_cache, extract_image_cache(design.elements || [], %{}))
-       |> assign(:history, [strip_binary_data(design.elements || [])])
+       |> assign(:history, [%{elements: strip_binary_data(design.elements || []), groups: design.groups || []}])
        |> assign(:history_index, 0)
        |> assign(:has_unsaved_changes, false)
        |> assign(:pending_save_flash, false)
@@ -117,6 +119,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:expression_builder, %{})
        |> assign(:expression_applied, false)
        |> assign(:collapsed_sections, MapSet.new())
+       |> assign(:collapsed_groups, MapSet.new())
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
        |> assign(:zpl_dpi, 203)
@@ -124,6 +127,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:versions, [])
        |> assign(:selected_version, nil)
        |> assign(:version_diff, nil)
+       |> assign(:approval_required, Settings.approval_required?())
+       |> assign(:is_admin, User.admin?(socket.assigns.current_user))
+       |> assign(:show_approval_history, false)
+       |> assign(:approval_history, [])
+       |> assign(:approval_comment, "")
+       |> assign(:skip_next_status_revert, false)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -304,7 +313,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
-  def handle_event("element_modified", %{"elements" => elements_json}, socket) do
+  def handle_event("element_modified", params, socket) do
+    elements_json = Map.get(params, "elements", [])
+    groups_json = Map.get(params, "groups")
     design = socket.assigns.design
     current_elements = design.elements || []
     current_element_count = length(current_elements)
@@ -350,7 +361,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       # Normal operation - save the elements and clear pending deletes
       true ->
-        do_save_elements(socket, design, elements_json)
+        do_save_elements(socket, design, elements_json, groups_json)
     end
   end
 
@@ -977,10 +988,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("elements_selected", %{"ids" => ids}, socket) when is_list(ids) do
     elements = Enum.filter(socket.assigns.design.elements || [], &(&1.id in ids))
-    {:noreply,
-     socket
-     |> assign(:selected_elements, elements)
-     |> assign(:selected_element, List.first(elements))}
+    socket = socket
+      |> assign(:selected_elements, elements)
+      |> assign(:selected_element, List.first(elements))
+    # Auto-switch to layers panel when multiple elements are selected
+    socket = if length(elements) > 1, do: assign(socket, :sidebar_tab, "layers"), else: socket
+    {:noreply, socket}
   end
 
   @impl true
@@ -1053,13 +1066,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, assign(socket, :sidebar_tab, tab)}
   end
 
-  @impl true
-  def handle_event("reorder_layers", %{"ordered_ids" => ordered_ids}, socket) when is_list(ordered_ids) do
-    # Update z_index based on new order
-    {:noreply, push_event(socket, "reorder_layers", %{ordered_ids: ordered_ids})}
-  end
 
-  def handle_event("reorder_layers", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("toggle_element_visibility", %{"id" => id}, socket) do
@@ -1120,6 +1127,64 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("rename_layer", %{"id" => id, "name" => name}, socket) do
     {:noreply, push_event(socket, "rename_element", %{id: id, name: name})}
+  end
+
+  # ============================================================================
+  # Group Handlers
+  # ============================================================================
+
+  @impl true
+  def handle_event("group_elements", _params, socket) do
+    selected = socket.assigns.selected_elements
+    if length(selected) >= 2 do
+      ids = Enum.map(selected, fn el -> Map.get(el, :id) || Map.get(el, "id") end)
+      group_id = "grp_#{:erlang.unique_integer([:positive])}"
+      group_name = "Grupo #{length(socket.assigns.design.groups || []) + 1}"
+      {:noreply, push_event(socket, "create_group", %{group_id: group_id, name: group_name, element_ids: ids})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("ungroup_elements", _params, socket) do
+    selected = socket.assigns.selected_elements
+    # Find the group_id from any selected element
+    group_id = Enum.find_value(selected, fn el ->
+      Map.get(el, :group_id) || Map.get(el, "group_id")
+    end)
+
+    if group_id do
+      {:noreply, push_event(socket, "ungroup", %{group_id: group_id})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_group_visibility", %{"group-id" => group_id}, socket) do
+    {:noreply, push_event(socket, "toggle_group_visibility", %{group_id: group_id})}
+  end
+
+  @impl true
+  def handle_event("toggle_group_lock", %{"group-id" => group_id}, socket) do
+    {:noreply, push_event(socket, "toggle_group_lock", %{group_id: group_id})}
+  end
+
+  @impl true
+  def handle_event("toggle_group_collapsed", %{"group-id" => group_id}, socket) do
+    collapsed = socket.assigns.collapsed_groups
+    new_collapsed = if MapSet.member?(collapsed, group_id) do
+      MapSet.delete(collapsed, group_id)
+    else
+      MapSet.put(collapsed, group_id)
+    end
+    {:noreply, assign(socket, :collapsed_groups, new_collapsed)}
+  end
+
+  @impl true
+  def handle_event("rename_group", %{"group-id" => group_id, "name" => name}, socket) do
+    {:noreply, push_event(socket, "rename_group", %{group_id: group_id, name: name})}
   end
 
   # ============================================================================
@@ -1232,18 +1297,111 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("generate_and_print", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:pending_print_action, :print)
-     |> push_generate_batch()}
+    if print_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, "Este diseno requiere aprobacion antes de imprimir. Envíalo a revision.")}
+    else
+      {:noreply,
+       socket
+       |> assign(:pending_print_action, :print)
+       |> push_generate_batch()}
+    end
   end
 
   @impl true
   def handle_event("generate_and_download_pdf", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:pending_print_action, :pdf)
-     |> push_generate_batch()}
+    if print_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, "Este diseno requiere aprobacion antes de imprimir. Envíalo a revision.")}
+    else
+      {:noreply,
+       socket
+       |> assign(:pending_print_action, :pdf)
+       |> push_generate_batch()}
+    end
+  end
+
+  # Approval workflow handlers
+
+  @impl true
+  def handle_event("request_review", _params, socket) do
+    design = socket.assigns.design
+    user = socket.assigns.current_user
+
+    case Designs.request_review(design, user) do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> assign(:design, updated)
+         |> assign(:skip_next_status_revert, true)
+         |> put_flash(:info, "Diseno enviado a revision")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  @impl true
+  def handle_event("approve_design", _params, socket) do
+    design = socket.assigns.design
+    admin = socket.assigns.current_user
+    comment = socket.assigns.approval_comment
+
+    case Designs.approve_design(design, admin, comment) do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> assign(:design, updated)
+         |> assign(:approval_comment, "")
+         |> assign(:skip_next_status_revert, true)
+         |> put_flash(:info, "Diseno aprobado")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  @impl true
+  def handle_event("reject_design", _params, socket) do
+    design = socket.assigns.design
+    admin = socket.assigns.current_user
+    comment = socket.assigns.approval_comment
+
+    if comment == "" do
+      {:noreply, put_flash(socket, :error, "Debes agregar un comentario al rechazar")}
+    else
+      case Designs.reject_design(design, admin, comment) do
+        {:ok, updated} ->
+          {:noreply,
+           socket
+           |> assign(:design, updated)
+           |> assign(:approval_comment, "")
+           |> assign(:skip_next_status_revert, true)
+           |> put_flash(:info, "Diseno rechazado y devuelto a borrador")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, reason)}
+      end
+    end
+  end
+
+  @impl true
+  def handle_event("update_approval_comment", %{"value" => value}, socket) do
+    {:noreply, assign(socket, :approval_comment, value)}
+  end
+
+  @impl true
+  def handle_event("toggle_approval_history", _params, socket) do
+    show = !socket.assigns.show_approval_history
+
+    socket = if show do
+      history = Designs.get_approval_history(socket.assigns.design.id)
+      socket
+      |> assign(:show_approval_history, true)
+      |> assign(:approval_history, history)
+    else
+      assign(socket, :show_approval_history, false)
+    end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -1283,6 +1441,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("download_zpl", _params, socket) do
+    if print_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, "Este diseno requiere aprobacion antes de generar ZPL.")}
+    else
     design = socket.assigns.design
     user_id = socket.assigns.current_user.id
     dpi = socket.assigns.zpl_dpi
@@ -1296,12 +1457,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        design_id: design.id,
        mapping: build_auto_mapping(design.elements || [], socket.assigns.preview_data)
      })}
+    end
   end
 
   # Called by JS when ZPL download completes (for UI feedback)
   @impl true
   def handle_event("zpl_download_complete", _params, socket) do
     {:noreply, socket}
+  end
+
+  defp print_blocked?(socket) do
+    socket.assigns.approval_required && socket.assigns.design.status != "approved"
   end
 
   defp push_generate_batch(socket) do
@@ -1341,15 +1507,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # Helper Functions
   # ============================================================================
 
-  defp do_save_elements(socket, design, elements_json) do
+  defp do_save_elements(socket, design, elements_json, groups_json) do
     # Debug: Log what we're about to save
     current_count = length(design.elements || [])
     new_count = length(elements_json || [])
     new_ids = Enum.map(elements_json || [], fn el -> Map.get(el, "id") end)
     Logger.info("do_save_elements - Design #{design.id}: #{current_count} -> #{new_count} elements. New IDs: #{inspect(new_ids)}")
 
-    case Designs.update_design(design, %{elements: elements_json},
-           user_id: socket.assigns.current_user.id) do
+    # Include groups in update if provided by the client
+    attrs = %{elements: elements_json}
+    attrs = if groups_json, do: Map.put(attrs, :groups, groups_json), else: attrs
+
+    # Skip status revert if design was just approved/rejected (no real content change yet)
+    skip_revert = Map.get(socket.assigns, :skip_next_status_revert, false)
+
+    case Designs.update_design(design, attrs,
+           user_id: socket.assigns.current_user.id,
+           revert_status: !skip_revert) do
       {:ok, updated_design} ->
         # Get the ID of the element that should remain selected
         # Priority: pending_selection_id > current selected_element
@@ -1379,6 +1553,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           |> assign(:pending_selection_id, nil)  # Clear pending selection after sync
           |> assign(:pending_save_flash, false)
           |> assign(:pending_deletes, MapSet.new())  # Clear pending deletes after successful save
+          |> assign(:skip_next_status_revert, false)  # Clear one-time revert guard
+
+        # Warn if design was auto-reverted from approved/pending_review to draft
+        was_non_draft = design.status in ["approved", "pending_review"]
+        now_draft = updated_design.status == "draft"
+
+        socket = if was_non_draft && now_draft do
+          put_flash(socket, :warning, "El diseno ha vuelto a borrador al editarlo. Necesitara nueva aprobacion.")
+        else
+          socket
+        end
 
         socket = if show_flash do
           socket
@@ -1510,7 +1695,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           width: 15.0,
           height: 15.0,
           binding: nil,
-          background_color: "#ffffff",
+          background_color: "transparent",
           border_width: 0.5,
           border_color: "#000000",
           border_radius: 100,
@@ -1724,7 +1909,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     history = Enum.take(history, index + 1)
 
     # Add current state to history (without heavy binary data)
-    new_history = history ++ [light_elements]
+    entry = %{elements: light_elements, groups: design.groups || []}
+    new_history = history ++ [entry]
 
     # Limit history size
     new_history = if length(new_history) > @max_history_size do
@@ -1739,18 +1925,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     |> assign(:history_index, length(new_history) - 1)
   end
 
+  # Extract elements and groups from a history entry (handles both old list format and new map format)
+  defp history_entry(entry) when is_map(entry) and is_map_key(entry, :elements),
+    do: {entry.elements, Map.get(entry, :groups, [])}
+  defp history_entry(entry) when is_list(entry),
+    do: {entry, []}
+  defp history_entry(_), do: {[], []}
+
   defp undo(socket) do
     index = socket.assigns.history_index
 
     if index > 0 do
       new_index = index - 1
-      previous_elements = Enum.at(socket.assigns.history, new_index)
+      {previous_elements, previous_groups} = history_entry(Enum.at(socket.assigns.history, new_index))
       # Re-inject images from cache into elements for the design struct
       restored = restore_images(previous_elements, socket.assigns.image_cache)
 
       # Update design in memory without saving to DB (save happens on explicit save)
       design = socket.assigns.design
-      updated_design = %{design | elements: restored}
+      updated_design = %{design | elements: restored, groups: previous_groups}
 
       socket =
        socket
@@ -1772,13 +1965,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     if index < length(history) - 1 do
       new_index = index + 1
-      next_elements = Enum.at(history, new_index)
+      {next_elements, next_groups} = history_entry(Enum.at(history, new_index))
       # Re-inject images from cache into elements for the design struct
       restored = restore_images(next_elements, socket.assigns.image_cache)
 
       # Update design in memory without saving to DB
       design = socket.assigns.design
-      updated_design = %{design | elements: restored}
+      updated_design = %{design | elements: restored, groups: next_groups}
 
       socket =
        socket
@@ -1796,6 +1989,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp can_undo?(assigns), do: assigns.history_index > 0
   defp can_redo?(assigns), do: assigns.history_index < length(assigns.history) - 1
+
+  defp status_badge(assigns) do
+    {label, classes} = case assigns.status do
+      "draft" -> {"Borrador", "bg-gray-100 text-gray-600"}
+      "pending_review" -> {"En revision", "bg-amber-100 text-amber-700"}
+      "approved" -> {"Aprobado", "bg-green-100 text-green-700"}
+      "archived" -> {"Archivado", "bg-red-100 text-red-700"}
+      _ -> {"Desconocido", "bg-gray-100 text-gray-600"}
+    end
+
+    assigns = assign(assigns, :label, label)
+    assigns = assign(assigns, :classes, classes)
+
+    ~H"""
+    <span class={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium #{@classes}"}>
+      <%= @label %>
+    </span>
+    """
+  end
 
   # Extract image_data and qr_logo_data from elements into a cache keyed by element id
   defp extract_image_cache(elements, existing_cache) do
@@ -1941,6 +2153,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                   </svg>
                 </button>
+                <.status_badge status={@design.status} />
               </div>
             <% end %>
           </div>
@@ -2077,6 +2290,70 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
 
+          <!-- Approval buttons -->
+          <%= if @approval_required do %>
+            <div class="w-px h-6 bg-gray-300"></div>
+            <%= cond do %>
+              <% @design.status == "draft" && @design.user_id == @current_user.id -> %>
+                <button
+                  phx-click="request_review"
+                  class="flex items-center space-x-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition text-sm font-medium"
+                  title="Enviar a revision"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Enviar a revision</span>
+                </button>
+              <% @design.status == "pending_review" && @is_admin -> %>
+                <div class="flex items-center space-x-1">
+                  <input
+                    type="text"
+                    placeholder="Comentario..."
+                    value={@approval_comment}
+                    phx-change="update_approval_comment"
+                    phx-debounce="300"
+                    name="value"
+                    class="w-40 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    phx-click="approve_design"
+                    class="flex items-center space-x-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition text-sm font-medium"
+                    title="Aprobar"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Aprobar</span>
+                  </button>
+                  <button
+                    phx-click="reject_design"
+                    class="flex items-center space-x-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm font-medium"
+                    title="Rechazar"
+                  >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span>Rechazar</span>
+                  </button>
+                </div>
+              <% @design.status == "pending_review" -> %>
+                <span class="flex items-center px-3 py-2 text-sm text-amber-700 bg-amber-50 rounded-lg border border-amber-200">
+                  En espera de aprobacion
+                </span>
+              <% true -> %>
+            <% end %>
+            <button
+              phx-click="toggle_approval_history"
+              class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition"
+              title="Historial de aprobaciones"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+          <% end %>
+
           <div class="w-px h-6 bg-gray-300"></div>
 
           <!-- Print split button (hover dropdown, pure CSS) -->
@@ -2101,12 +2378,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                 <button
                   phx-click="toggle_preview"
-                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-emerald-50 transition text-left"
                 >
-                  <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
+                  <div class="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
                   <div>
                     <p class="text-sm font-medium text-gray-900">Vista previa</p>
                     <p class="text-xs text-gray-500">Ver etiquetas antes de imprimir</p>
@@ -2114,11 +2393,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </button>
                 <button
                   phx-click="generate_and_print"
-                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-emerald-50 transition text-left border-t border-gray-100"
                 >
-                  <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                  </svg>
+                  <div class="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                  </div>
                   <div>
                     <p class="text-sm font-medium text-gray-900">Imprimir</p>
                     <p class="text-xs text-gray-500">Enviar al navegador</p>
@@ -2126,20 +2407,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </button>
                 <button
                   phx-click="generate_and_download_pdf"
-                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
+                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-red-50 transition text-left border-t border-gray-100"
                 >
-                  <svg class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
                   <div>
                     <p class="text-sm font-medium text-gray-900">Descargar PDF</p>
                     <p class="text-xs text-gray-500">Archivo listo para imprimir</p>
                   </div>
                 </button>
-                <div class="border-t border-gray-100 px-4 py-3">
+                <div class="border-t border-gray-100 px-4 py-3 hover:bg-violet-50 transition">
                   <div class="flex items-center space-x-3 mb-2">
-                    <span class="text-sm font-bold text-violet-600 leading-none">ZPL</span>
-                    <p class="text-xs text-gray-500">Impresora termica Zebra</p>
+                    <div class="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center">
+                      <span class="text-sm font-bold text-violet-600 leading-none">ZPL</span>
+                    </div>
+                    <div>
+                      <p class="text-sm font-medium text-gray-900">Descargar ZPL</p>
+                      <p class="text-xs text-gray-500">Impresora termica Zebra</p>
+                    </div>
                   </div>
                   <div class="flex items-center gap-2">
                     <div class="flex gap-1 flex-1">
@@ -2148,17 +2436,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                           type="button"
                           phx-click="set_zpl_dpi"
                           phx-value-dpi={dpi}
-                          class={"flex-1 px-2 py-1 text-xs rounded border transition #{if @zpl_dpi == dpi, do: "bg-violet-600 text-white border-violet-600", else: "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}"}
+                          class={"flex-1 px-2 py-1.5 text-xs font-medium rounded border transition #{if @zpl_dpi == dpi, do: "bg-violet-600 text-white border-violet-600", else: "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}"}
                         >
-                          <%= dpi %>
+                          <%= dpi %> dpi
                         </button>
                       <% end %>
                     </div>
                     <button
                       phx-click="download_zpl"
-                      class="px-3 py-1 text-xs font-medium bg-violet-600 text-white rounded hover:bg-violet-700 transition"
+                      class="px-4 py-1.5 text-xs font-medium bg-violet-600 text-white rounded hover:bg-violet-700 transition"
                     >
-                      .zpl
+                      Descargar .zpl
                     </button>
                   </div>
                 </div>
@@ -2286,6 +2574,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </button>
               <button :if={length(@selected_elements) > 2} phx-click="distribute_elements" phx-value-direction="vertical" class="p-1.5 rounded hover:bg-gray-100" title="Distribuir vertical">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16M6 12h12M4 20h16" /></svg>
+              </button>
+              <div class="w-px h-4 bg-gray-300 mx-1"></div>
+              <button phx-click="group_elements" class="p-1.5 rounded hover:bg-gray-100" title="Agrupar (Ctrl+G)">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
               </button>
           </div>
 
@@ -2425,90 +2717,87 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
           <!-- Layers tab content -->
           <div :if={@sidebar_tab == "layers"} class="flex-1 flex flex-col overflow-hidden">
-            <!-- Layer order controls -->
-            <div :if={@selected_element} class="px-3 py-2 border-b border-gray-100 flex items-center justify-center space-x-1 flex-shrink-0">
-              <button phx-click="bring_to_front" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Traer al frente">
+            <!-- Layer order + group controls -->
+            <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-center space-x-1 flex-shrink-0">
+              <button :if={@selected_element} phx-click="bring_to_front" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Traer al frente">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7" /></svg>
               </button>
-              <button phx-click="move_layer_up" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Subir una capa">
+              <button :if={@selected_element} phx-click="move_layer_up" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Subir una capa">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
               </button>
-              <button phx-click="move_layer_down" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bajar una capa">
+              <button :if={@selected_element} phx-click="move_layer_down" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bajar una capa">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
               </button>
-              <button phx-click="send_to_back" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Enviar atras">
+              <button :if={@selected_element} phx-click="send_to_back" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Enviar atras">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
+              </button>
+              <div :if={@selected_element && length(@selected_elements) >= 2} class="w-px h-4 bg-gray-300 mx-1"></div>
+              <button :if={length(@selected_elements) >= 2} phx-click="group_elements" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Agrupar (Ctrl+G)">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              </button>
+              <button :if={@selected_element && (@selected_element.group_id != nil)} phx-click="ungroup_elements" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Desagrupar (Ctrl+Shift+G)">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2m4 0h2a2 2 0 012 2m0 0v2m0 4v2a2 2 0 01-2 2m-4 0H6a2 2 0 01-2-2m0-4V6" /></svg>
               </button>
             </div>
 
-            <!-- Layer list -->
-            <div class="flex-1 overflow-y-auto" id="layers-list" phx-hook="SortableLayers">
-              <%= for element <- Enum.sort_by(@design.elements || [], fn el -> Map.get(el, :z_index, 0) end, :desc) do %>
-                <div
-                  class={"flex items-center px-3 py-2 border-b border-gray-50 cursor-pointer transition #{if @selected_element && @selected_element.id == element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
-                  phx-click="select_layer"
-                  phx-value-id={element.id}
-                  data-id={element.id}
-                >
-                  <!-- Visibility toggle -->
-                  <button
-                    phx-click="toggle_element_visibility"
-                    phx-value-id={element.id}
-                    class={"p-1 rounded transition #{if Map.get(element, :visible, true), do: "text-gray-600 hover:text-gray-800", else: "text-gray-300 hover:text-gray-500"}"}
-                    title={if Map.get(element, :visible, true), do: "Ocultar", else: "Mostrar"}
-                  >
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <%= if Map.get(element, :visible, true) do %>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      <% else %>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+            <!-- Layer list (hierarchical with groups) -->
+            <div class="flex-1 overflow-y-auto" id="layers-list">
+              <%= for item <- organized_layers(@design) do %>
+                <%= case item.type do %>
+                  <% :group -> %>
+                    <!-- Group header -->
+                    <div class="flex items-center px-3 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer">
+                      <button phx-click="toggle_group_collapsed" phx-value-group-id={item.group.id} class="p-0.5 rounded hover:bg-gray-200 text-gray-500 mr-1" title="Colapsar/Expandir">
+                        <svg class={"w-3 h-3 transition-transform #{if MapSet.member?(@collapsed_groups, item.group.id), do: "-rotate-90"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      <button
+                        phx-click="toggle_group_visibility"
+                        phx-value-group-id={item.group.id}
+                        class={"p-1 rounded transition #{if Map.get(item.group, :visible, true), do: "text-gray-600 hover:text-gray-800", else: "text-gray-300 hover:text-gray-500"}"}
+                        title={if Map.get(item.group, :visible, true), do: "Ocultar grupo", else: "Mostrar grupo"}
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <%= if Map.get(item.group, :visible, true) do %>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          <% else %>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          <% end %>
+                        </svg>
+                      </button>
+                      <button
+                        phx-click="toggle_group_lock"
+                        phx-value-group-id={item.group.id}
+                        class={"p-1 rounded transition #{if Map.get(item.group, :locked, false), do: "text-yellow-600 hover:text-yellow-700", else: "text-gray-400 hover:text-gray-600"}"}
+                        title={if Map.get(item.group, :locked, false), do: "Desbloquear grupo", else: "Bloquear grupo"}
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <%= if Map.get(item.group, :locked, false) do %>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          <% else %>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                          <% end %>
+                        </svg>
+                      </button>
+                      <div class="flex-1 ml-1 flex items-center min-w-0">
+                        <svg class="w-3.5 h-3.5 text-indigo-500 mr-1.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        <span class="text-xs font-medium text-gray-700 truncate"><%= item.group.name %></span>
+                        <span class="ml-1 text-xs text-gray-400"><%= length(item.children) %></span>
+                      </div>
+                    </div>
+                    <!-- Group children (collapsible) -->
+                    <%= unless MapSet.member?(@collapsed_groups, item.group.id) do %>
+                      <%= for element <- item.children do %>
+                        <.layer_row element={element} selected_element={@selected_element} indent={true} />
                       <% end %>
-                    </svg>
-                  </button>
-
-                  <!-- Lock toggle -->
-                  <button
-                    phx-click="toggle_element_lock"
-                    phx-value-id={element.id}
-                    class={"p-1 rounded transition #{if Map.get(element, :locked, false), do: "text-yellow-600 hover:text-yellow-700", else: "text-gray-400 hover:text-gray-600"}"}
-                    title={if Map.get(element, :locked, false), do: "Desbloquear", else: "Bloquear"}
-                  >
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <%= if Map.get(element, :locked, false) do %>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      <% else %>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                      <% end %>
-                    </svg>
-                  </button>
-
-                  <!-- Layer name and type icon -->
-                  <div class="flex-1 ml-2 flex items-center min-w-0">
-                    <span class={"text-xs mr-2 #{if Map.get(element, :visible, true), do: "text-gray-500", else: "text-gray-300"}"}>
-                      <%= case element.type do %>
-                        <% "qr" -> %>QR
-                        <% "barcode" -> %>BC
-                        <% "text" -> %>T
-                        <% "line" -> %>—
-                        <% "rectangle" -> %>□
-                        <% "circle" -> %>○
-                        <% "image" -> %>IMG
-                        <% _ -> %>?
-                      <% end %>
-                    </span>
-                    <span class={"text-sm truncate #{if Map.get(element, :visible, true), do: "text-gray-700", else: "text-gray-400"}"}>
-                      <%= Map.get(element, :name) || element.type %>
-                    </span>
-                  </div>
-
-                  <!-- Drag handle -->
-                  <div class="text-gray-300 cursor-move drag-handle">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
-                    </svg>
-                  </div>
-                </div>
+                    <% end %>
+                  <% :element -> %>
+                    <.layer_row element={item.element} selected_element={@selected_element} indent={false} />
+                <% end %>
               <% end %>
             </div>
 
@@ -2670,6 +2959,55 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <% end %>
         </div>
 
+        <!-- Approval History Panel (overlay) -->
+        <div :if={@show_approval_history} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+            <h3 class="font-semibold text-gray-900">Historial de aprobaciones</h3>
+            <button phx-click="toggle_approval_history" class="text-gray-400 hover:text-gray-600">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            <%= if @approval_history == [] do %>
+              <div class="p-4 text-center text-sm text-gray-500">
+                <p>No hay historial de aprobaciones.</p>
+              </div>
+            <% else %>
+              <div class="divide-y divide-gray-200">
+                <%= for approval <- @approval_history do %>
+                  <div class="px-4 py-3">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class={"text-xs font-medium px-2 py-0.5 rounded-full " <>
+                        case approval.action do
+                          "request_review" -> "bg-amber-100 text-amber-700"
+                          "approve" -> "bg-green-100 text-green-700"
+                          "reject" -> "bg-red-100 text-red-700"
+                          _ -> "bg-gray-100 text-gray-600"
+                        end}>
+                        <%= case approval.action do
+                          "request_review" -> "Enviado a revision"
+                          "approve" -> "Aprobado"
+                          "reject" -> "Rechazado"
+                          _ -> approval.action
+                        end %>
+                      </span>
+                      <span class="text-xs text-gray-400">
+                        <%= Calendar.strftime(approval.inserted_at, "%d/%m/%Y %H:%M") %>
+                      </span>
+                    </div>
+                    <p class="text-xs text-gray-500"><%= approval.user.email %></p>
+                    <%= if approval.comment do %>
+                      <p class="text-xs text-gray-700 mt-1 italic bg-gray-100 rounded p-2"><%= approval.comment %></p>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
         <!-- Preview Panel (overlay) -->
         <div :if={@show_preview} class="absolute right-72 top-16 bottom-0 w-96 bg-gray-50 border-l border-gray-200 overflow-auto p-4 shadow-lg z-20">
           <div class="flex items-center justify-between mb-4">
@@ -2763,17 +3101,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
               <span>Imprimir <%= if @upload_total_rows > 0, do: "#{@upload_total_rows} etiquetas", else: "etiqueta" %></span>
             </button>
-            <div class="flex items-center justify-center gap-3 mt-2 text-xs">
-              <button phx-click="generate_and_download_pdf" class="text-gray-500 hover:text-indigo-600 transition flex items-center gap-1">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <div class="flex items-center gap-2 mt-2">
+              <button phx-click="generate_and_download_pdf" class="flex-1 py-2 rounded-lg text-sm font-medium transition flex items-center justify-center gap-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400">
+                <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 PDF
               </button>
-              <span class="text-gray-300">|</span>
-              <button phx-click="download_zpl" class="text-gray-500 hover:text-violet-600 transition flex items-center gap-1">
-                <span class="font-bold leading-none">ZPL</span>
-                <span class="text-gray-400"><%= @zpl_dpi %></span>
+              <button phx-click="download_zpl" class="flex-1 py-2 rounded-lg text-sm font-medium transition flex items-center justify-center gap-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400">
+                <span class="font-bold text-violet-600">ZPL</span>
+                <span class="text-gray-400 text-xs"><%= @zpl_dpi %></span>
               </button>
             </div>
           </div>
@@ -2797,6 +3134,99 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     """
   end
 
+  defp layer_row(assigns) do
+    ~H"""
+    <div
+      class={"flex items-center py-2 border-b border-gray-50 cursor-pointer transition #{if @indent, do: "pl-8 pr-3", else: "px-3"} #{if @selected_element && @selected_element.id == @element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
+      phx-click="select_layer"
+      phx-value-id={@element.id}
+      data-id={@element.id}
+    >
+      <button
+        phx-click="toggle_element_visibility"
+        phx-value-id={@element.id}
+        class={"p-1 rounded transition #{if Map.get(@element, :visible, true), do: "text-gray-600 hover:text-gray-800", else: "text-gray-300 hover:text-gray-500"}"}
+        title={if Map.get(@element, :visible, true), do: "Ocultar", else: "Mostrar"}
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <%= if Map.get(@element, :visible, true) do %>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          <% else %>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+          <% end %>
+        </svg>
+      </button>
+      <button
+        phx-click="toggle_element_lock"
+        phx-value-id={@element.id}
+        class={"p-1 rounded transition #{if Map.get(@element, :locked, false), do: "text-yellow-600 hover:text-yellow-700", else: "text-gray-400 hover:text-gray-600"}"}
+        title={if Map.get(@element, :locked, false), do: "Desbloquear", else: "Bloquear"}
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <%= if Map.get(@element, :locked, false) do %>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          <% else %>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+          <% end %>
+        </svg>
+      </button>
+      <div class="flex-1 ml-2 flex items-center min-w-0">
+        <span class={"text-xs mr-2 #{if Map.get(@element, :visible, true), do: "text-gray-500", else: "text-gray-300"}"}>
+          <%= case @element.type do %>
+            <% "qr" -> %>QR
+            <% "barcode" -> %>BC
+            <% "text" -> %>T
+            <% "line" -> %>&#8212;
+            <% "rectangle" -> %>&#9633;
+            <% "circle" -> %>&#9675;
+            <% "image" -> %>IMG
+            <% _ -> %>?
+          <% end %>
+        </span>
+        <span class={"text-sm truncate #{if Map.get(@element, :visible, true), do: "text-gray-700", else: "text-gray-400"}"}>
+          <%= Map.get(@element, :name) || @element.type %>
+        </span>
+      </div>
+    </div>
+    """
+  end
+
+  # Organize elements into a hierarchical list of groups and ungrouped elements
+  defp organized_layers(design) do
+    elements = design.elements || []
+    groups = design.groups || []
+    sorted_elements = Enum.sort_by(elements, fn el -> Map.get(el, :z_index, 0) end, :desc)
+
+    # Build group lookup
+    group_map = Map.new(groups, fn g -> {g.id, g} end)
+
+    # Partition elements by group membership
+    {grouped, ungrouped} = Enum.split_with(sorted_elements, fn el ->
+      gid = Map.get(el, :group_id)
+      gid != nil and Map.has_key?(group_map, gid)
+    end)
+
+    # Group elements by their group_id
+    by_group = Enum.group_by(grouped, fn el -> Map.get(el, :group_id) end)
+
+    # Build list: for each group, compute max z_index of its members for ordering
+    group_items = Enum.map(by_group, fn {gid, members} ->
+      group = Map.get(group_map, gid)
+      max_z = Enum.max_by(members, fn el -> Map.get(el, :z_index, 0) end) |> Map.get(:z_index, 0)
+      %{type: :group, group: group, children: members, max_z: max_z}
+    end)
+
+    # Build ungrouped element items
+    ungrouped_items = Enum.map(ungrouped, fn el ->
+      %{type: :element, element: el, max_z: Map.get(el, :z_index, 0)}
+    end)
+
+    # Merge and sort by max_z descending
+    (group_items ++ ungrouped_items)
+    |> Enum.sort_by(& &1.max_z, :desc)
+  end
+
   defp element_properties(assigns) do
     ~H"""
     <div class="space-y-1" id="property-fields" phx-hook="PropertyFields">
@@ -2816,9 +3246,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
             />
           </div>
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-3 gap-2">
             <div>
-              <label class="block text-xs font-medium text-gray-500">X</label>
+              <label class="block text-xs font-medium text-gray-500">X (mm)</label>
               <input
                 type="number"
                 name="value"
@@ -2831,7 +3261,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500">Y</label>
+              <label class="block text-xs font-medium text-gray-500">Y (mm)</label>
               <input
                 type="number"
                 name="value"
@@ -2843,9 +3273,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
               />
             </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500">Rotacion</label>
+              <input
+                type="number"
+                name="value"
+                step="1"
+                placeholder="&deg;"
+                value={@element.rotation || 0}
+                phx-blur="update_element"
+                phx-value-field="rotation"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+            </div>
           </div>
           <%= if @element.type != "text" do %>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-2 gap-2">
               <div>
                 <label class="block text-xs font-medium text-gray-500">Ancho</label>
                 <input
@@ -2869,35 +3312,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   value={@element.height}
                   phx-blur="update_element"
                   phx-value-field="height"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-gray-500">Rotacion</label>
-                <input
-                  type="number"
-                  name="value"
-                  step="1"
-                  placeholder="&deg;"
-                  value={@element.rotation || 0}
-                  phx-blur="update_element"
-                  phx-value-field="rotation"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
-                />
-              </div>
-            </div>
-          <% else %>
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block text-xs font-medium text-gray-500">Rotacion</label>
-                <input
-                  type="number"
-                  name="value"
-                  step="1"
-                  placeholder="&deg;"
-                  value={@element.rotation || 0}
-                  phx-blur="update_element"
-                  phx-value-field="rotation"
                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 />
               </div>
@@ -3803,14 +4217,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <% "rectangle" -> %>
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
-                  <input
-                    type="color"
-                    name="value"
-                    value={Map.get(@element, :background_color) || "#ffffff"}
-                    phx-change="update_element"
-                    phx-value-field="background_color"
-                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
-                  />
+                  <div class="flex items-center gap-2 mt-1">
+                    <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={Map.get(@element, :background_color) in [nil, "transparent"]}
+                        phx-click="update_element"
+                        phx-value-field="background_color"
+                        phx-value-value={if Map.get(@element, :background_color) in [nil, "transparent"], do: "#ffffff", else: "transparent"}
+                        class="rounded border-gray-300 text-blue-600 h-3.5 w-3.5"
+                      /> Sin fondo
+                    </label>
+                    <%= if Map.get(@element, :background_color) not in [nil, "transparent"] do %>
+                      <input
+                        type="color"
+                        name="value"
+                        value={Map.get(@element, :background_color)}
+                        phx-change="update_element"
+                        phx-value-field="background_color"
+                        class="block flex-1 h-9 rounded-md border-gray-300"
+                      />
+                    <% end %>
+                  </div>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Color de borde</label>
@@ -3880,14 +4308,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Color de fondo</label>
-                  <input
-                    type="color"
-                    name="value"
-                    value={Map.get(@element, :background_color) || "#ffffff"}
-                    phx-change="update_element"
-                    phx-value-field="background_color"
-                    class="mt-1 block w-full h-9 rounded-md border-gray-300"
-                  />
+                  <div class="flex items-center gap-2 mt-1">
+                    <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={Map.get(@element, :background_color) in [nil, "transparent"]}
+                        phx-click="update_element"
+                        phx-value-field="background_color"
+                        phx-value-value={if Map.get(@element, :background_color) in [nil, "transparent"], do: "#ffffff", else: "transparent"}
+                        class="rounded border-gray-300 text-blue-600 h-3.5 w-3.5"
+                      /> Sin fondo
+                    </label>
+                    <%= if Map.get(@element, :background_color) not in [nil, "transparent"] do %>
+                      <input
+                        type="color"
+                        name="value"
+                        value={Map.get(@element, :background_color)}
+                        phx-change="update_element"
+                        phx-value-field="background_color"
+                        class="block flex-1 h-9 rounded-md border-gray-300"
+                      />
+                    <% end %>
+                  </div>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Color de borde</label>

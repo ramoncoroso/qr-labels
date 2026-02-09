@@ -4,7 +4,7 @@ import DataFileReader from "./data_file_reader"
 import PrintEngine from "./print_engine"
 import LabelPreview from "./label_preview"
 import KeyboardShortcuts from "./keyboard_shortcuts"
-import SortableLayers from "./sortable_layers"
+
 import SingleLabelPrint from "./single_label_print"
 import DraggableElements from "./draggable_elements"
 import DesignListCleanup from "./design_list_cleanup"
@@ -22,7 +22,7 @@ const Hooks = {
   PrintEngine,
   LabelPreview,
   KeyboardShortcuts,
-  SortableLayers,
+
   SingleLabelPrint,
   DraggableElements,
   DesignListCleanup,
