@@ -67,6 +67,12 @@ topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
+// Focus and select text in inputs (used by inline rename)
+window.addEventListener("focus-and-select", (e) => {
+  e.target.focus()
+  e.target.select()
+})
+
 // Handle file download events
 window.addEventListener("phx:download_file", (e) => {
   const {content, filename, mime_type} = e.detail

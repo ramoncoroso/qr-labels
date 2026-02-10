@@ -121,6 +121,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:expression_applied, false)
        |> assign(:collapsed_sections, MapSet.new())
        |> assign(:collapsed_groups, MapSet.new())
+       |> assign(:editing_group_id, nil)
        |> assign(:pending_deletes, MapSet.new())
        |> assign(:pending_print_action, nil)
        |> assign(:zpl_dpi, 203)
@@ -1196,6 +1197,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   @impl true
   def handle_event("rename_group", %{"group-id" => group_id, "name" => name}, socket) do
     {:noreply, push_event(socket, "rename_group", %{group_id: group_id, name: name})}
+  end
+
+  @impl true
+  def handle_event("start_rename_group", %{"group-id" => group_id}, socket) do
+    {:noreply, assign(socket, :editing_group_id, group_id)}
+  end
+
+  @impl true
+  def handle_event("confirm_rename_group", %{"group-id" => group_id, "name" => name}, socket) do
+    name = String.trim(name)
+    socket = assign(socket, :editing_group_id, nil)
+
+    if name != "" do
+      {:noreply, push_event(socket, "rename_group", %{group_id: group_id, name: name})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_rename_group", _params, socket) do
+    {:noreply, assign(socket, :editing_group_id, nil)}
   end
 
   # ============================================================================
@@ -2937,7 +2960,31 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                         <svg class="w-3.5 h-3.5 text-indigo-500 mr-1.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                         </svg>
-                        <span class="text-xs font-medium text-gray-700 truncate"><%= item.group.name %></span>
+                        <%= if @editing_group_id == item.group.id do %>
+                          <form phx-submit="confirm_rename_group" phx-click-away="cancel_rename_group" class="flex-1 min-w-0">
+                            <input
+                              type="hidden"
+                              name="group-id"
+                              value={item.group.id}
+                            />
+                            <input
+                              type="text"
+                              name="name"
+                              value={item.group.name}
+                              class="w-full text-xs font-medium text-gray-700 border border-blue-400 rounded px-1 py-0 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                              phx-mounted={Phoenix.LiveView.JS.dispatch("focus-and-select", to: "#rename-group-input")}
+                              id="rename-group-input"
+                              autofocus
+                            />
+                          </form>
+                        <% else %>
+                          <span
+                            class="text-xs font-medium text-gray-700 truncate cursor-text"
+                            phx-click="start_rename_group"
+                            phx-value-group-id={item.group.id}
+                            title="Clic para renombrar"
+                          ><%= item.group.name %></span>
+                        <% end %>
                         <span class="ml-1 text-xs text-gray-400"><%= length(item.children) %></span>
                       </div>
                     </div>
