@@ -43,6 +43,9 @@ defmodule QrLabelSystem.Designs.Design do
     # Approval workflow status
     field :status, :string, default: "draft"
 
+    # Regulatory compliance standard (nil = no compliance check)
+    field :compliance_standard, :string
+
     # Elements on the label
     # IMPORTANT: Using :delete means elements not in the new data will be removed
     # This requires the client to ALWAYS send ALL elements, even unchanged ones
@@ -61,6 +64,7 @@ defmodule QrLabelSystem.Designs.Design do
   Changeset for creating/updating a design.
   """
   @valid_statuses ~w(draft pending_review approved archived)
+  @valid_compliance_standards ~w(gs1 eu1169 fmd)
 
   def changeset(design, attrs) do
     design
@@ -69,11 +73,12 @@ defmodule QrLabelSystem.Designs.Design do
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
       :is_template, :template_source, :template_category, :label_type, :user_id,
-      :status
+      :status, :compliance_standard
     ])
     |> validate_inclusion(:template_source, ~w(system user), message: "must be system or user")
     |> validate_inclusion(:template_category, ~w(alimentacion farmaceutica logistica manufactura retail), message: "must be a valid category")
     |> validate_inclusion(:status, @valid_statuses, message: "must be draft, pending_review, approved, or archived")
+    |> validate_compliance_standard()
     |> cast_embed(:elements, with: &Element.changeset/2)
     |> cast_embed(:groups, with: &ElementGroup.changeset/2)
     |> validate_required([:name, :width_mm, :height_mm])
@@ -102,9 +107,20 @@ defmodule QrLabelSystem.Designs.Design do
     |> put_change(:template_source, nil)
     |> put_change(:template_category, nil)
     |> put_change(:label_type, design.label_type)
+    |> put_change(:compliance_standard, design.compliance_standard)
     |> put_embed(:elements, design.elements)
     |> put_embed(:groups, design.groups || [])
     |> validate_required([:name, :width_mm, :height_mm])
+  end
+
+  defp validate_compliance_standard(changeset) do
+    value = get_field(changeset, :compliance_standard)
+
+    if value && value not in @valid_compliance_standards do
+      add_error(changeset, :compliance_standard, "must be one of: #{Enum.join(@valid_compliance_standards, ", ")}")
+    else
+      changeset
+    end
   end
 
   defp validate_color(changeset, field) do
@@ -134,6 +150,7 @@ defmodule QrLabelSystem.Designs.Design do
       label_type: design.label_type,
       template_source: design.template_source,
       template_category: design.template_category,
+      compliance_standard: design.compliance_standard,
       elements: Enum.map(design.elements || [], &element_to_json/1),
       groups: Enum.map(design.groups || [], &group_to_json/1)
     }
@@ -157,6 +174,7 @@ defmodule QrLabelSystem.Designs.Design do
       label_type: design.label_type,
       template_source: design.template_source,
       template_category: design.template_category,
+      compliance_standard: design.compliance_standard,
       elements: Enum.map(design.elements || [], &element_to_json_light/1),
       groups: Enum.map(design.groups || [], &group_to_json/1)
     }

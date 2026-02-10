@@ -155,9 +155,12 @@ const CanvasDesigner = {
       this.canvas = null
     }
 
-    // Clear element references
+    // Clear element and group references
     if (this.elements) {
       this.elements.clear()
+    }
+    if (this.groups) {
+      this.groups.clear()
     }
   },
 
@@ -1732,15 +1735,14 @@ const CanvasDesigner = {
         const obj = this.elements.get(element.id)
         if (!obj || !obj._imageLoading) return
 
-        // Calculate scale to fit the target dimensions
-        const scaleX = w / img.width
-        const scaleY = h / img.height
+        // Uniform scale to preserve aspect ratio (fit within the area)
+        const uniformScale = Math.min(w / img.width, h / img.height)
 
         img.set({
           left: x,
           top: y,
-          scaleX: scaleX,
-          scaleY: scaleY,
+          scaleX: uniformScale,
+          scaleY: uniformScale,
           angle: element.rotation || 0
         })
 
@@ -2535,10 +2537,22 @@ const CanvasDesigner = {
       } else if (obj._explicitSizeUpdate) {
         // Size was set explicitly from properties panel
         delete obj._explicitSizeUpdate
-        // Use data values directly, reset scale for images
-        if (obj.type === 'image') {
-          obj.set({ scaleX: 1, scaleY: 1 })
+        // For images: recalculate scale to match the new data dimensions
+        if (obj.type === 'image' && obj.width > 0 && obj.height > 0) {
+          obj.set({
+            scaleX: (data.width * PX_PER_MM) / obj.width,
+            scaleY: (data.height * PX_PER_MM) / obj.height
+          })
           obj.setCoords()
+        }
+      } else if (obj.elementType === 'image' && obj.type === 'image') {
+        // Images use scale for rendering — read visual size directly, never reset scale
+        width = Math.round((obj.getScaledWidth() / PX_PER_MM) * 100) / 100
+        height = Math.round((obj.getScaledHeight() / PX_PER_MM) * 100) / 100
+        if (data.width !== width || data.height !== height) {
+          data.width = width
+          data.height = height
+          obj.elementData = data
         }
       } else if (obj.type === 'textbox') {
         // Textbox: Fabric.js modifies width directly (not via scale)
@@ -2756,14 +2770,14 @@ const CanvasDesigner = {
         return
       }
 
-      const scaleX = w / img.width
-      const scaleY = h / img.height
+      // Uniform scale to preserve aspect ratio (fit within the area)
+      const uniformScale = Math.min(w / img.width, h / img.height)
 
       img.set({
         left: x,
         top: y,
-        scaleX: scaleX,
-        scaleY: scaleY,
+        scaleX: uniformScale,
+        scaleY: uniformScale,
         angle: angle,
         cornerColor: '#3b82f6',
         cornerStyle: 'circle',

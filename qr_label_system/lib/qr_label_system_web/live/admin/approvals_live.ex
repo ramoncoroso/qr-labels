@@ -67,7 +67,7 @@ defmodule QrLabelSystemWeb.Admin.ApprovalsLive do
     admin = socket.assigns.current_user
     comment = socket.assigns.comment
 
-    if comment == "" do
+    if String.trim(comment) == "" do
       {:noreply, put_flash(socket, :error, "Debes agregar un comentario al rechazar")}
     else
       case Designs.reject_design(design, admin, comment) do
@@ -94,13 +94,17 @@ defmodule QrLabelSystemWeb.Admin.ApprovalsLive do
 
   @impl true
   def handle_event("toggle_approval_required", _params, socket) do
-    new_value = if socket.assigns.approval_required, do: "false", else: "true"
-    Settings.set_setting("approval_required", new_value)
+    unless socket.assigns.current_user.role == "admin" do
+      {:noreply, put_flash(socket, :error, "Solo administradores pueden cambiar esta configuracion")}
+    else
+      new_value = if socket.assigns.approval_required, do: "false", else: "true"
+      Settings.set_setting("approval_required", new_value)
 
-    {:noreply,
-     socket
-     |> assign(:approval_required, new_value == "true")
-     |> put_flash(:info, if(new_value == "true", do: "Aprobacion activada", else: "Aprobacion desactivada"))}
+      {:noreply,
+       socket
+       |> assign(:approval_required, new_value == "true")
+       |> put_flash(:info, if(new_value == "true", do: "Aprobacion activada", else: "Aprobacion desactivada"))}
+    end
   end
 
   @impl true

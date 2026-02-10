@@ -1331,7 +1331,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         {:noreply,
          socket
          |> assign(:design, updated)
-         |> assign(:skip_next_status_revert, true)
          |> put_flash(:info, "Diseno enviado a revision")}
 
       {:error, reason} ->
@@ -2576,8 +2575,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16M6 12h12M4 20h16" /></svg>
               </button>
               <div class="w-px h-4 bg-gray-300 mx-1"></div>
-              <button phx-click="group_elements" class="p-1.5 rounded hover:bg-gray-100" title="Agrupar (Ctrl+G)">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              <button phx-click="group_elements" class="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600" title="Agrupar (Ctrl+G)">
+                Agrupar
               </button>
           </div>
 
@@ -2732,11 +2731,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
               </button>
               <div :if={@selected_element && length(@selected_elements) >= 2} class="w-px h-4 bg-gray-300 mx-1"></div>
-              <button :if={length(@selected_elements) >= 2} phx-click="group_elements" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Agrupar (Ctrl+G)">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              <button :if={length(@selected_elements) >= 2} phx-click="group_elements" class="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600" title="Agrupar (Ctrl+G)">
+                Agrupar
               </button>
-              <button :if={@selected_element && (@selected_element.group_id != nil)} phx-click="ungroup_elements" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Desagrupar (Ctrl+Shift+G)">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2m4 0h2a2 2 0 012 2m0 0v2m0 4v2a2 2 0 01-2 2m-4 0H6a2 2 0 01-2-2m0-4V6" /></svg>
+              <button :if={@selected_element && (@selected_element.group_id != nil)} phx-click="ungroup_elements" class="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600" title="Desagrupar (Ctrl+Shift+G)">
+                Desagrupar
               </button>
             </div>
 

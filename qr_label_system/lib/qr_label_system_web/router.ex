@@ -187,7 +187,10 @@ defmodule QrLabelSystemWeb.Router do
     pipe_through [:browser, :require_authenticated_user, :admin_only]
 
     live_session :admin_dashboard,
-      on_mount: [{QrLabelSystemWeb.UserAuth, :ensure_authenticated}] do
+      on_mount: [
+        {QrLabelSystemWeb.UserAuth, :ensure_authenticated},
+        {QrLabelSystemWeb.Plugs.RBAC, :require_admin}
+      ] do
       live "/dashboard", Admin.DashboardLive, :index
       live "/users", Admin.UsersLive, :index
       live "/audit", Admin.AuditLive, :index

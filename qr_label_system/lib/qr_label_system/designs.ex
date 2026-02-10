@@ -310,9 +310,9 @@ defmodule QrLabelSystem.Designs do
     {"draft", "pending_review"} => :owner,
     {"pending_review", "approved"} => :admin,
     {"pending_review", "draft"} => :admin,
-    {"approved", "draft"} => :any,
-    {"approved", "archived"} => :any,
-    {"archived", "draft"} => :any
+    {"approved", "draft"} => :owner_or_admin,
+    {"approved", "archived"} => :owner_or_admin,
+    {"archived", "draft"} => :owner_or_admin
   }
 
   @doc """
@@ -320,7 +320,7 @@ defmodule QrLabelSystem.Designs do
   Returns {:ok, design} or {:error, reason}.
   """
   def update_design_status(%Design{} = design, new_status, %User{} = user) do
-    case valid_transition?(design.status, new_status, user) do
+    case valid_transition?(design, new_status, user) do
       :ok ->
         result =
           design
@@ -342,15 +342,18 @@ defmodule QrLabelSystem.Designs do
     end
   end
 
-  defp valid_transition?(from, to, user) do
-    case Map.get(@valid_transitions, {from, to}) do
-      nil -> {:error, "Transicion no permitida de #{from} a #{to}"}
-      :any -> :ok
+  defp valid_transition?(%Design{} = design, to, user) do
+    case Map.get(@valid_transitions, {design.status, to}) do
+      nil -> {:error, "Transicion no permitida de #{design.status} a #{to}"}
       :owner -> :ok
       :admin ->
         if User.admin?(user),
           do: :ok,
           else: {:error, "Solo administradores pueden realizar esta accion"}
+      :owner_or_admin ->
+        if User.admin?(user) || design.user_id == user.id,
+          do: :ok,
+          else: {:error, "Solo el propietario o administradores pueden realizar esta accion"}
     end
   end
 
@@ -464,8 +467,6 @@ defmodule QrLabelSystem.Designs do
     comment
     |> String.trim()
     |> String.slice(0, 1000)
-    |> Phoenix.HTML.html_escape()
-    |> Phoenix.HTML.safe_to_string()
   end
 
   @doc """

@@ -30,18 +30,66 @@ defmodule QrLabelSystem.Settings do
 
   @doc """
   Get a setting value by key. Returns cached value if available.
+  On cache miss, fetches from DB via GenServer (which owns the ETS table).
   """
   def get_setting(key) do
     case lookup_cache(key) do
       {:ok, value} -> value
-      :miss -> fetch_and_cache(key)
+      :miss -> GenServer.call(__MODULE__, {:fetch_setting, key})
     end
   end
 
   @doc """
   Set a setting value. Updates DB and invalidates cache.
+  Serialized through GenServer to prevent race conditions.
   """
   def set_setting(key, value) do
+    GenServer.call(__MODULE__, {:set_setting, key, value})
+  end
+
+  @doc """
+  Returns true if approval workflow is required.
+  """
+  def approval_required? do
+    get_setting("approval_required") == "true"
+  end
+
+  @doc """
+  Clears the ETS cache. Used in tests to avoid stale cache.
+  Routed through GenServer since ETS table is :protected.
+  """
+  def clear_cache do
+    GenServer.call(__MODULE__, :clear_cache)
+  rescue
+    _ -> :ok
+  end
+
+  # GenServer callbacks
+
+  @impl true
+  def init(_) do
+    :ets.new(@table_name, [:named_table, :set, :protected, read_concurrency: true])
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_call(:clear_cache, _from, state) do
+    :ets.delete_all_objects(@table_name)
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_call({:fetch_setting, key}, _from, state) do
+    # Re-check cache (another process may have populated it)
+    result = case lookup_cache(key) do
+      {:ok, value} -> value
+      :miss -> fetch_and_cache(key)
+    end
+    {:reply, result, state}
+  end
+
+  @impl true
+  def handle_call({:set_setting, key, value}, _from, state) do
     result =
       case Repo.one(from s in SystemSetting, where: s.key == ^key) do
         nil ->
@@ -58,35 +106,11 @@ defmodule QrLabelSystem.Settings do
     case result do
       {:ok, setting} ->
         put_cache(key, setting.value)
-        {:ok, setting}
+        {:reply, {:ok, setting}, state}
 
       error ->
-        error
+        {:reply, error, state}
     end
-  end
-
-  @doc """
-  Returns true if approval workflow is required.
-  """
-  def approval_required? do
-    get_setting("approval_required") == "true"
-  end
-
-  @doc """
-  Clears the ETS cache. Used in tests to avoid stale cache.
-  """
-  def clear_cache do
-    :ets.delete_all_objects(@table_name)
-  rescue
-    ArgumentError -> :ok
-  end
-
-  # GenServer callbacks
-
-  @impl true
-  def init(_) do
-    :ets.new(@table_name, [:named_table, :set, :public, read_concurrency: true])
-    {:ok, %{}}
   end
 
   # Private helpers
@@ -97,7 +121,6 @@ defmodule QrLabelSystem.Settings do
         if System.monotonic_time(:millisecond) < expiry do
           {:ok, value}
         else
-          :ets.delete(@table_name, key)
           :miss
         end
 

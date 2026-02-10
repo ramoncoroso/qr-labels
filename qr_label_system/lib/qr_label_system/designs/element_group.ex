@@ -24,6 +24,7 @@ defmodule QrLabelSystem.Designs.ElementGroup do
     |> cast(attrs, [:id, :name, :locked, :visible, :collapsed])
     |> generate_id_if_missing()
     |> validate_required([:id, :name])
+    |> validate_length(:name, max: 100)
   end
 
   defp generate_id_if_missing(changeset) do
