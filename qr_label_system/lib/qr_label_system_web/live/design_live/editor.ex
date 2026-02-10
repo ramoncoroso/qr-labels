@@ -2921,7 +2921,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <%= case item.type do %>
                   <% :group -> %>
                     <!-- Group header -->
-                    <div class={"flex items-center px-3 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer border-l-4 #{item.group_color}"}>
+                    <div class={"group/header flex items-center px-3 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer border-l-4 #{item.group_color}"}>
                       <button phx-click="toggle_group_collapsed" phx-value-group-id={item.group.id} class="p-0.5 rounded hover:bg-gray-200 text-gray-500 mr-1" title="Colapsar/Expandir">
                         <svg class={"w-3 h-3 transition-transform #{if MapSet.member?(@collapsed_groups, item.group.id), do: "-rotate-90"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -2978,12 +2978,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                             />
                           </form>
                         <% else %>
-                          <span
-                            class="text-xs font-medium text-gray-700 truncate cursor-text"
+                          <span class="text-xs font-medium text-gray-700 truncate"><%= item.group.name %></span>
+                          <button
                             phx-click="start_rename_group"
                             phx-value-group-id={item.group.id}
-                            title="Clic para renombrar"
-                          ><%= item.group.name %></span>
+                            class="opacity-0 group-hover/header:opacity-100 p-0.5 rounded text-gray-400 hover:text-blue-500 transition ml-1 flex-shrink-0"
+                            title="Renombrar grupo"
+                          >
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
                         <% end %>
                         <span class="ml-1 text-xs text-gray-400"><%= length(item.children) %></span>
                       </div>
