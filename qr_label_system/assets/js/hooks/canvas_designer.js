@@ -928,6 +928,12 @@ const CanvasDesigner = {
       }
     })
 
+    this.handleEvent("remove_from_group", ({ element_id }) => {
+      if (!this._isDestroyed) {
+        this.removeFromGroup(element_id)
+      }
+    })
+
     // Snap settings
     this.handleEvent("update_snap_settings", ({ snap_enabled }) => {
       if (!this._isDestroyed) {
@@ -2836,6 +2842,16 @@ const CanvasDesigner = {
 
     // Delete the group
     this.groups.delete(groupId)
+    this.saveElementsImmediate()
+  },
+
+  removeFromGroup(elementId) {
+    const obj = this.elements.get(elementId)
+    if (!obj || !obj.elementData || !obj.elementData.group_id) return
+
+    obj.elementData.group_id = null
+    // Auto-cleanup will dissolve groups with <2 members
+    this.cleanupEmptyGroups()
     this.saveElementsImmediate()
   },
 

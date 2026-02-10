@@ -85,6 +85,7 @@ templates = [
     width_mm: 100.0, height_mm: 70.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "alimentacion",
+    compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(1,1), 5.0, 4.0, 90.0, 8.0, b: "nombre", s: 17.0, w: "bold", a: "center", n: "Nombre producto"),
@@ -106,6 +107,7 @@ templates = [
     width_mm: 80.0, height_mm: 120.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "alimentacion",
+    compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(2,1), 4.0, 4.0, 72.0, 7.0, t: "INFORMACIÓN NUTRICIONAL", s: 15.0, w: "bold", a: "center", n: "Título"),
@@ -154,6 +156,7 @@ templates = [
     width_mm: 100.0, height_mm: 130.0,
     background_color: "#FFFFFF", border_width: 0.5, border_color: "#333333", border_radius: 2.0,
     is_template: true, template_source: "system", template_category: "alimentacion",
+    compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(3,1), 5.0, 6.0, 90.0, 10.0, b: "bodega", s: 21.0, w: "bold", a: "center", n: "Bodega"),
@@ -183,6 +186,7 @@ templates = [
     width_mm: 80.0, height_mm: 50.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "alimentacion",
+    compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(4,1), 4.0, 3.0, 72.0, 7.0, b: "nombre", s: 15.0, w: "bold", a: "center", n: "Producto"),
@@ -203,6 +207,7 @@ templates = [
     width_mm: 60.0, height_mm: 40.0,
     background_color: "#FFFFFF", border_width: 0.5, border_color: "#CC0000", border_radius: 1.0,
     is_template: true, template_source: "system", template_category: "alimentacion",
+    compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(5,1), 3.0, 3.0, 54.0, 6.0, t: "CONTIENE", s: 13.0, w: "bold", a: "center", c: "#CC0000", n: "Título"),
@@ -221,6 +226,7 @@ templates = [
     width_mm: 50.0, height_mm: 30.0,
     background_color: "#FFFFFF", border_width: 0.2, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "alimentacion",
+    compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(6,1), 3.0, 2.0, 44.0, 5.0, b: "nombre", s: 12.0, w: "bold", a: "center", n: "Producto"),
@@ -242,6 +248,7 @@ templates = [
     width_mm: 80.0, height_mm: 50.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "farmaceutica",
+    compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(7,1), 4.0, 3.0, 72.0, 7.0, b: "nombre_medicamento", s: 15.0, w: "bold", a: "center", n: "Medicamento"),
@@ -264,6 +271,7 @@ templates = [
     width_mm: 60.0, height_mm: 30.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#0055AA", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "farmaceutica",
+    compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(8,1), 3.0, 2.0, 54.0, 4.5, t: "MUESTRA MÉDICA", s: 11.0, w: "bold", a: "center", c: "#0055AA", n: "Título"),
@@ -284,6 +292,7 @@ templates = [
     width_mm: 100.0, height_mm: 50.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "farmaceutica",
+    compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(9,1), 4.0, 3.0, 92.0, 7.0, b: "nombre_producto", s: 15.0, w: "bold", n: "Producto"),
@@ -305,6 +314,7 @@ templates = [
     width_mm: 70.0, height_mm: 40.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#009900", border_radius: 1.0,
     is_template: true, template_source: "system", template_category: "farmaceutica",
+    compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(10,1), 3.0, 2.0, 64.0, 6.0, b: "nombre_medicamento", s: 13.0, w: "bold", a: "center", n: "Medicamento"),
@@ -326,6 +336,7 @@ templates = [
     width_mm: 80.0, height_mm: 60.0,
     background_color: "#FFFFFF", border_width: 0.5, border_color: "#CC0000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "farmaceutica",
+    compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(11,1), 4.0, 3.0, 72.0, 5.5, t: "HEMODERIVADO", s: 13.0, w: "bold", a: "center", c: "#CC0000", n: "Título"),
@@ -350,6 +361,7 @@ templates = [
     width_mm: 60.0, height_mm: 40.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "farmaceutica",
+    compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(12,1), 3.0, 2.0, 54.0, 6.0, b: "nombre", s: 13.0, w: "bold", a: "center", n: "Nombre"),
@@ -373,6 +385,7 @@ templates = [
     width_mm: 100.0, height_mm: 70.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "logistica",
+    compliance_standard: "gs1",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(13,1), 4.0, 3.0, 92.0, 5.0, t: "DESTINATARIO", s: 12.0, w: "bold", c: "#666666", n: "Label dest."),
@@ -396,6 +409,7 @@ templates = [
     width_mm: 148.0, height_mm: 210.0,
     background_color: "#FFFFFF", border_width: 0.5, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "logistica",
+    compliance_standard: "gs1",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(14,1), 8.0, 8.0, 132.0, 10.0, t: "PALLET", s: 21.0, w: "bold", a: "center", n: "Título"),
@@ -427,6 +441,7 @@ templates = [
     width_mm: 100.0, height_mm: 150.0,
     background_color: "#FFFFFF", border_width: 0.5, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "logistica",
+    compliance_standard: "gs1",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(15,1), 5.0, 5.0, 90.0, 8.0, t: "ENVÍO EXPRESS", s: 17.0, w: "bold", a: "center", n: "Título"),
@@ -458,6 +473,7 @@ templates = [
     width_mm: 100.0, height_mm: 100.0,
     background_color: "#FFFFFF", border_width: 1.0, border_color: "#FF6600", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "logistica",
+    compliance_standard: "gs1",
     label_type: "multiple",
     elements: [
       SeedEl.r(SeedEl.id(16,1), 3.0, 3.0, 94.0, 12.0, bg: "#FF6600", bw: 0.0, n: "Fondo título"),
@@ -486,6 +502,7 @@ templates = [
     width_mm: 100.0, height_mm: 60.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "logistica",
+    compliance_standard: "gs1",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(17,1), 4.0, 3.0, 92.0, 5.5, t: "CROSS-DOCK", s: 13.0, w: "bold", a: "center", n: "Título"),
@@ -511,6 +528,7 @@ templates = [
     width_mm: 60.0, height_mm: 40.0,
     background_color: "#FFFFFF", border_width: 0.3, border_color: "#000000", border_radius: 0.0,
     is_template: true, template_source: "system", template_category: "logistica",
+    compliance_standard: "gs1",
     label_type: "multiple",
     elements: [
       SeedEl.t(SeedEl.id(18,1), 3.0, 2.0, 54.0, 7.0, b: "zona", s: 15.0, w: "bold", a: "center", n: "Zona"),

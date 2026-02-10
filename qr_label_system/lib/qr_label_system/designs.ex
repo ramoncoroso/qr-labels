@@ -13,6 +13,7 @@ defmodule QrLabelSystem.Designs do
   alias QrLabelSystem.Designs.DesignApproval
   alias QrLabelSystem.Designs.Tag
   alias QrLabelSystem.Accounts.User
+  alias QrLabelSystem.Compliance
 
   @cache_ttl 30_000  # 30 seconds - reduced to prevent stale data issues
 
@@ -361,14 +362,21 @@ defmodule QrLabelSystem.Designs do
   Owner submits design for review: draft → pending_review
   """
   def request_review(%Design{} = design, %User{} = user) do
-    if design.user_id != user.id do
-      {:error, "Solo el propietario puede enviar a revision"}
-    else
-      with {:ok, updated} <- update_design_status(design, "pending_review", user) do
-        create_approval_record(design.id, user.id, "request_review", nil)
-        QrLabelSystem.Audit.log_async("request_review", "design", design.id, user_id: user.id)
-        {:ok, updated}
-      end
+    cond do
+      design.user_id != user.id ->
+        {:error, "Solo el propietario puede enviar a revision"}
+
+      compliance_has_errors?(design) ->
+        {_name, issues} = Compliance.validate(design)
+        error_count = Enum.count(issues, &(&1.severity == :error))
+        {:error, "El diseño tiene #{error_count} error#{if error_count != 1, do: "es"} de cumplimiento normativo. Corrija los errores antes de enviar a revisión."}
+
+      true ->
+        with {:ok, updated} <- update_design_status(design, "pending_review", user) do
+          create_approval_record(design.id, user.id, "request_review", nil)
+          QrLabelSystem.Audit.log_async("request_review", "design", design.id, user_id: user.id)
+          {:ok, updated}
+        end
     end
   end
 
@@ -376,15 +384,22 @@ defmodule QrLabelSystem.Designs do
   Admin approves design: pending_review → approved
   """
   def approve_design(%Design{} = design, %User{} = admin, comment \\ nil) do
-    unless User.admin?(admin) do
-      {:error, "Solo administradores pueden aprobar disenos"}
-    else
-      with {:ok, updated} <- update_design_status(design, "approved", admin) do
-        create_approval_record(design.id, admin.id, "approve", comment)
-        QrLabelSystem.Audit.log_async("approve_design", "design", design.id,
-          user_id: admin.id, metadata: %{comment: comment})
-        {:ok, updated}
-      end
+    cond do
+      !User.admin?(admin) ->
+        {:error, "Solo administradores pueden aprobar disenos"}
+
+      compliance_has_errors?(design) ->
+        {_name, issues} = Compliance.validate(design)
+        error_count = Enum.count(issues, &(&1.severity == :error))
+        {:error, "El diseño tiene #{error_count} error#{if error_count != 1, do: "es"} de cumplimiento normativo. No se puede aprobar hasta corregirlos."}
+
+      true ->
+        with {:ok, updated} <- update_design_status(design, "approved", admin) do
+          create_approval_record(design.id, admin.id, "approve", comment)
+          QrLabelSystem.Audit.log_async("approve_design", "design", design.id,
+            user_id: admin.id, metadata: %{comment: comment})
+          {:ok, updated}
+        end
     end
   end
 
@@ -460,6 +475,13 @@ defmodule QrLabelSystem.Designs do
       comment: sanitize_comment(comment)
     })
     |> Repo.insert()
+  end
+
+  defp compliance_has_errors?(%Design{compliance_standard: nil}), do: false
+  defp compliance_has_errors?(%Design{compliance_standard: ""}), do: false
+  defp compliance_has_errors?(%Design{} = design) do
+    {_name, issues} = Compliance.validate(design)
+    Compliance.has_errors?(issues)
   end
 
   defp sanitize_comment(nil), do: nil

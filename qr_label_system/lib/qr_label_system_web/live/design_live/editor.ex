@@ -10,6 +10,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   alias QrLabelSystem.Security.FileSanitizer
   alias QrLabelSystem.Settings
   alias QrLabelSystem.Accounts.User
+  alias QrLabelSystem.Compliance
 
   # Expression pattern definitions for visual builder
   @expression_patterns [
@@ -133,6 +134,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:approval_history, [])
        |> assign(:approval_comment, "")
        |> assign(:skip_next_status_revert, false)
+       |> assign(:compliance_issues, [])
+       |> assign(:compliance_standard_name, nil)
+       |> assign(:compliance_counts, %{errors: 0, warnings: 0, infos: 0})
+       |> assign(:show_compliance_panel, false)
+       |> then(&maybe_run_compliance/1)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
          max_entries: 1,
@@ -1162,6 +1168,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("remove_from_group", %{"id" => element_id}, socket) do
+    {:noreply, push_event(socket, "remove_from_group", %{element_id: element_id})}
+  end
+
+  @impl true
   def handle_event("toggle_group_visibility", %{"group-id" => group_id}, socket) do
     {:noreply, push_event(socket, "toggle_group_visibility", %{group_id: group_id})}
   end
@@ -1403,6 +1414,58 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, socket}
   end
 
+  # ==========================================
+  # COMPLIANCE EVENTS
+  # ==========================================
+
+  @impl true
+  def handle_event("set_compliance_standard", %{"standard" => standard}, socket) do
+    standard = if standard == "", do: nil, else: standard
+    design = socket.assigns.design
+
+    case Designs.update_design(design, %{compliance_standard: standard},
+           revert_status: false) do
+      {:ok, updated} ->
+        socket =
+          socket
+          |> assign(:design, updated)
+          |> maybe_run_compliance()
+
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Error al cambiar norma de cumplimiento")}
+    end
+  end
+
+  @impl true
+  def handle_event("run_compliance_check", _params, socket) do
+    {:noreply, maybe_run_compliance(socket)}
+  end
+
+  @impl true
+  def handle_event("toggle_compliance_panel", _params, socket) do
+    {:noreply, assign(socket, :show_compliance_panel, !socket.assigns.show_compliance_panel)}
+  end
+
+  @impl true
+  def handle_event("focus_compliance_issue", %{"element_id" => element_id}, socket) do
+    # Find the element and select it, then push focus to canvas
+    element = Enum.find(socket.assigns.design.elements || [], fn el ->
+      (Map.get(el, :id) || Map.get(el, "id")) == element_id
+    end)
+
+    socket = if element do
+      socket
+      |> assign(:selected_element, element)
+      |> push_event("select_element", %{id: element_id})
+    else
+      socket
+    end
+
+    {:noreply, socket}
+  end
+
   @impl true
   def handle_event("generation_complete", _params, socket) do
     case socket.assigns[:pending_print_action] do
@@ -1574,6 +1637,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
         # Update preview panel with new design state
         socket = push_preview_update(socket)
+
+        # Re-run compliance validation after save
+        socket = maybe_run_compliance(socket)
 
         {:noreply, socket}
 
@@ -2008,6 +2074,64 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     """
   end
 
+  defp compliance_status_bar(assigns) do
+    standards = Compliance.available_standards()
+    assigns = assign(assigns, :standards, standards)
+
+    ~H"""
+    <div class="mt-2 flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 px-3 h-8 text-sm">
+      <!-- Left: semaphore + standard name + counts -->
+      <div class="flex items-center gap-2">
+        <%= if @standard do %>
+          <%= cond do %>
+            <% @counts.errors > 0 -> %>
+              <span class="w-3 h-3 rounded-full bg-red-500"></span>
+            <% @counts.warnings > 0 -> %>
+              <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+            <% true -> %>
+              <span class="w-3 h-3 rounded-full bg-green-500"></span>
+          <% end %>
+          <button
+            phx-click="toggle_compliance_panel"
+            class="text-gray-700 hover:text-blue-600 font-medium transition"
+          >
+            <%= @standard_name %>
+          </button>
+          <%= if @counts.errors > 0 || @counts.warnings > 0 do %>
+            <span :if={@counts.errors > 0} class="text-xs text-red-600 font-medium"><%= @counts.errors %> error<%= if @counts.errors != 1, do: "es" %></span>
+            <span :if={@counts.warnings > 0} class="text-xs text-amber-600 font-medium"><%= @counts.warnings %> aviso<%= if @counts.warnings != 1, do: "s" %></span>
+            <span :if={@counts.infos > 0} class="text-xs text-blue-500"><%= @counts.infos %> info</span>
+          <% else %>
+            <span class="text-xs text-green-600 font-medium">Cumple</span>
+          <% end %>
+          <button phx-click="run_compliance_check" class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition" title="Re-validar">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        <% else %>
+          <span class="w-3 h-3 rounded-full bg-gray-300"></span>
+          <span class="text-gray-400">Sin norma seleccionada</span>
+        <% end %>
+      </div>
+
+      <!-- Right: standard selector -->
+      <div class="flex items-center gap-1">
+        <select
+          phx-change="set_compliance_standard"
+          name="standard"
+          class="text-xs border-0 bg-transparent text-gray-500 focus:ring-0 py-0 pr-6 pl-1 cursor-pointer"
+        >
+          <option value="">— Ninguna —</option>
+          <%= for {code, name, _desc} <- @standards do %>
+            <option value={code} selected={@standard == code}><%= name %></option>
+          <% end %>
+        </select>
+      </div>
+    </div>
+    """
+  end
+
   # Extract image_data and qr_logo_data from elements into a cache keyed by element id
   defp extract_image_cache(elements, existing_cache) do
     Enum.reduce(elements || [], existing_cache, fn el, cache ->
@@ -2064,6 +2188,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   # Push preview update to the LabelPreview hook via push_event
+  defp maybe_run_compliance(socket) do
+    design = socket.assigns.design
+
+    case Compliance.validate(design) do
+      {nil, []} ->
+        socket
+        |> assign(:compliance_issues, [])
+        |> assign(:compliance_standard_name, nil)
+        |> assign(:compliance_counts, %{errors: 0, warnings: 0, infos: 0})
+
+      {name, issues} ->
+        sorted = Compliance.sort_issues(issues)
+        counts = Compliance.count_by_severity(issues)
+
+        socket
+        |> assign(:compliance_issues, sorted)
+        |> assign(:compliance_standard_name, name)
+        |> assign(:compliance_counts, counts)
+    end
+  end
+
   defp push_preview_update(socket) do
     design = socket.assigns.design
     push_event(socket, "update_preview", %{
@@ -2601,6 +2746,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <!-- Empty State Hint - positioned AFTER canvas to not interfere with mouse events -->
             <!-- Note: This hint is shown only when there are no elements, but the canvas is always interactive -->
           </div>
+
+          <!-- Compliance Status Bar -->
+          <.compliance_status_bar
+            standard={@design.compliance_standard}
+            standard_name={@compliance_standard_name}
+            counts={@compliance_counts}
+            show_panel={@show_compliance_panel}
+          />
         </div>
 
         <!-- Right Sidebar - Properties & Layers Tabs (fixed width, won't shrink) -->
@@ -2745,7 +2898,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <%= case item.type do %>
                   <% :group -> %>
                     <!-- Group header -->
-                    <div class="flex items-center px-3 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer">
+                    <div class={"flex items-center px-3 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer border-l-4 #{item.group_color}"}>
                       <button phx-click="toggle_group_collapsed" phx-value-group-id={item.group.id} class="p-0.5 rounded hover:bg-gray-200 text-gray-500 mr-1" title="Colapsar/Expandir">
                         <svg class={"w-3 h-3 transition-transform #{if MapSet.member?(@collapsed_groups, item.group.id), do: "-rotate-90"}"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -2791,11 +2944,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <!-- Group children (collapsible) -->
                     <%= unless MapSet.member?(@collapsed_groups, item.group.id) do %>
                       <%= for element <- item.children do %>
-                        <.layer_row element={element} selected_element={@selected_element} indent={true} />
+                        <.layer_row element={element} selected_element={@selected_element} indent={true} group_color={item.group_color} />
                       <% end %>
                     <% end %>
                   <% :element -> %>
-                    <.layer_row element={item.element} selected_element={@selected_element} indent={false} />
+                    <.layer_row element={item.element} selected_element={@selected_element} indent={false} group_color={nil} />
                 <% end %>
               <% end %>
             </div>
@@ -3007,6 +3160,61 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </div>
         </div>
 
+        <!-- Compliance Detail Panel (overlay) -->
+        <div :if={@show_compliance_panel && @design.compliance_standard} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+            <h3 class="font-semibold text-gray-900">Cumplimiento: <%= @compliance_standard_name %></h3>
+            <button phx-click="toggle_compliance_panel" class="text-gray-400 hover:text-gray-600">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            <%= if @compliance_issues == [] do %>
+              <div class="p-6 text-center">
+                <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+                  <svg class="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p class="text-sm font-medium text-green-700">Cumple con <%= @compliance_standard_name %></p>
+                <p class="text-xs text-gray-500 mt-1">No se encontraron problemas.</p>
+              </div>
+            <% else %>
+              <div class="divide-y divide-gray-200">
+                <%= for issue <- @compliance_issues do %>
+                  <div
+                    class={"px-4 py-3 hover:bg-gray-100 transition" <> if(issue.element_id, do: " cursor-pointer", else: "")}
+                    phx-click={if issue.element_id, do: "focus_compliance_issue"}
+                    phx-value-element_id={issue.element_id}
+                  >
+                    <div class="flex items-start gap-2">
+                      <span class={"flex-shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold " <>
+                        case issue.severity do
+                          :error -> "bg-red-100 text-red-600"
+                          :warning -> "bg-amber-100 text-amber-600"
+                          :info -> "bg-blue-100 text-blue-600"
+                        end}>
+                        <%= case issue.severity do
+                          :error -> "!"
+                          :warning -> "?"
+                          :info -> "i"
+                        end %>
+                      </span>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-900"><%= issue.message %></p>
+                        <p :if={issue.fix_hint} class="text-xs text-gray-500 mt-0.5"><%= issue.fix_hint %></p>
+                        <p class="text-xs text-gray-400 mt-0.5 font-mono"><%= issue.code %></p>
+                      </div>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
         <!-- Preview Panel (overlay) -->
         <div :if={@show_preview} class="absolute right-72 top-16 bottom-0 w-96 bg-gray-50 border-l border-gray-200 overflow-auto p-4 shadow-lg z-20">
           <div class="flex items-center justify-between mb-4">
@@ -3136,7 +3344,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp layer_row(assigns) do
     ~H"""
     <div
-      class={"flex items-center py-2 border-b border-gray-50 cursor-pointer transition #{if @indent, do: "pl-8 pr-3", else: "px-3"} #{if @selected_element && @selected_element.id == @element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
+      class={"group/row flex items-center py-2 border-b border-gray-50 cursor-pointer transition #{if @indent, do: "pl-8 pr-3 border-l-4 #{@group_color}", else: "px-3"} #{if @selected_element && @selected_element.id == @element.id, do: "bg-blue-50", else: "hover:bg-gray-50"}"}
       phx-click="select_layer"
       phx-value-id={@element.id}
       data-id={@element.id}
@@ -3187,11 +3395,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <%= Map.get(@element, :name) || @element.type %>
         </span>
       </div>
+      <%= if @indent do %>
+        <button
+          phx-click="remove_from_group"
+          phx-value-id={@element.id}
+          class="opacity-0 group-hover/row:opacity-100 p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+          title="Sacar del grupo"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      <% end %>
     </div>
     """
   end
 
   # Organize elements into a hierarchical list of groups and ungrouped elements
+  @group_colors ~w(border-l-blue-400 border-l-violet-400 border-l-orange-400 border-l-emerald-400 border-l-rose-400 border-l-cyan-400 border-l-amber-400 border-l-fuchsia-400)
+
   defp organized_layers(design) do
     elements = design.elements || []
     groups = design.groups || []
@@ -3199,6 +3421,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     # Build group lookup
     group_map = Map.new(groups, fn g -> {g.id, g} end)
+
+    # Assign a stable color to each group based on its position in the groups list
+    group_color_map = groups
+    |> Enum.with_index()
+    |> Map.new(fn {g, idx} -> {g.id, Enum.at(@group_colors, rem(idx, length(@group_colors)))} end)
 
     # Partition elements by group membership
     {grouped, ungrouped} = Enum.split_with(sorted_elements, fn el ->
@@ -3213,7 +3440,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     group_items = Enum.map(by_group, fn {gid, members} ->
       group = Map.get(group_map, gid)
       max_z = Enum.max_by(members, fn el -> Map.get(el, :z_index, 0) end) |> Map.get(:z_index, 0)
-      %{type: :group, group: group, children: members, max_z: max_z}
+      %{type: :group, group: group, children: members, max_z: max_z, group_color: Map.get(group_color_map, gid)}
     end)
 
     # Build ungrouped element items
