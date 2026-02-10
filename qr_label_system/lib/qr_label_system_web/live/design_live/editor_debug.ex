@@ -6,8 +6,19 @@ defmodule QrLabelSystemWeb.DesignLive.EditorDebug do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    design = Designs.get_design!(id)
+    case Designs.get_design(id) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Diseño no encontrado")
+         |> redirect(to: "/")}
 
+      design ->
+        mount_with_design(design, socket)
+    end
+  end
+
+  defp mount_with_design(design, socket) do
     # Create a fake user for debug purposes
     fake_user = %{id: 0, email: "debug@test.com", role: :admin}
 

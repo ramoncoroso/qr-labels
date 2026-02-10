@@ -27,18 +27,24 @@ defmodule QrLabelSystemWeb.DesignController do
   Deletes a design.
   """
   def delete(conn, %{"id" => id}) do
-    design = Designs.get_design!(id)
+    case Designs.get_design(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Diseño no encontrado")
+        |> redirect(to: ~p"/designs")
 
-    if design.user_id == conn.assigns.current_user.id do
-      {:ok, _} = Designs.delete_design(design)
+      design ->
+        if design.user_id == conn.assigns.current_user.id do
+          {:ok, _} = Designs.delete_design(design)
 
-      conn
-      |> put_flash(:info, "Diseño eliminado exitosamente")
-      |> redirect(to: ~p"/designs")
-    else
-      conn
-      |> put_flash(:error, "No tienes permiso para eliminar este diseño")
-      |> redirect(to: ~p"/designs")
+          conn
+          |> put_flash(:info, "Diseño eliminado exitosamente")
+          |> redirect(to: ~p"/designs")
+        else
+          conn
+          |> put_flash(:error, "No tienes permiso para eliminar este diseño")
+          |> redirect(to: ~p"/designs")
+        end
     end
   end
 end

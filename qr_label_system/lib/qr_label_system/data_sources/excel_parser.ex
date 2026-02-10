@@ -207,8 +207,10 @@ defmodule QrLabelSystem.DataSources.ExcelParser do
         # Shared string index
         case Regex.run(~r/<v>(.*?)<\/v>/, content) do
           [_, idx_str] ->
-            idx = String.to_integer(idx_str)
-            Enum.at(shared_strings, idx, nil)
+            case Integer.parse(idx_str) do
+              {idx, _} -> Enum.at(shared_strings, idx, nil)
+              :error -> nil
+            end
           _ -> nil
         end
 

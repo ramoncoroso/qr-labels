@@ -80,12 +80,22 @@ defmodule QrLabelSystem.UploadDataStore do
   end
 
   defp ensure_integer(id) when is_integer(id), do: id
-  defp ensure_integer(id) when is_binary(id), do: String.to_integer(id)
+  defp ensure_integer(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, _} -> int
+      :error -> 0
+    end
+  end
   defp ensure_integer(nil), do: 0
 
   defp normalize_design_id(nil), do: nil
   defp normalize_design_id(id) when is_integer(id), do: id
-  defp normalize_design_id(id) when is_binary(id), do: String.to_integer(id)
+  defp normalize_design_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, _} -> int
+      :error -> nil
+    end
+  end
 
   # Server callbacks
 

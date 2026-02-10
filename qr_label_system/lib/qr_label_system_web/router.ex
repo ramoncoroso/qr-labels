@@ -38,6 +38,14 @@ defmodule QrLabelSystemWeb.Router do
     plug :rate_limit_login
   end
 
+  pipeline :rate_limited_uploads do
+    plug :rate_limit_uploads
+  end
+
+  pipeline :rate_limited_batch do
+    plug :rate_limit_batch_generation
+  end
+
   # Public routes - Home with integrated login
   scope "/", QrLabelSystemWeb do
     pipe_through [:browser, :redirect_if_user_is_authenticated]
@@ -90,6 +98,13 @@ defmodule QrLabelSystemWeb.Router do
     post "/users/log_in/limited", UserSessionController, :create
   end
 
+  # Rate-limited file upload endpoint
+  scope "/", QrLabelSystemWeb do
+    pipe_through [:browser, :require_authenticated_user, :rate_limited_uploads]
+
+    post "/data-sources/upload", DataSourceController, :upload
+  end
+
   scope "/", QrLabelSystemWeb do
     pipe_through [:browser, :require_authenticated_user]
 
@@ -102,8 +117,6 @@ defmodule QrLabelSystemWeb.Router do
     # POST fallback for data source creation when LiveView websocket fails
     post "/data-sources/new", DataSourceController, :create
 
-    # File upload for data sources
-    post "/data-sources/upload", DataSourceController, :upload
     post "/data-sources/cancel-upload", DataSourceController, :cancel_upload
 
     # DELETE for data sources
