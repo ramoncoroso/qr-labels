@@ -312,16 +312,136 @@ defmodule QrLabelSystem.Designs.ApprovalWorkflowTest do
   end
 
   describe "sanitize_comment/1" do
-    test "HTML in comments is escaped" do
+    test "comments are trimmed and truncated, HTML stored raw (escaped by HEEx at render)" do
       owner = user_fixture()
       admin = admin_fixture()
       design = design_fixture(%{user_id: owner.id})
       {:ok, pending} = Designs.request_review(design, owner)
-      {:ok, _} = Designs.approve_design(pending, admin, "<script>alert('xss')</script>")
+      {:ok, _} = Designs.approve_design(pending, admin, "  <script>alert('xss')</script>  ")
 
       history = Designs.get_approval_history(design.id)
       approve_record = Enum.find(history, &(&1.action == "approve"))
-      refute String.contains?(approve_record.comment, "<script>")
+      # Stored trimmed but not HTML-escaped (HEEx auto-escapes on render)
+      assert approve_record.comment == "<script>alert('xss')</script>"
+    end
+
+    test "comments are truncated to 1000 chars" do
+      owner = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      long_comment = String.duplicate("a", 1500)
+      {:ok, _} = Designs.approve_design(pending, admin, long_comment)
+
+      history = Designs.get_approval_history(design.id)
+      approve_record = Enum.find(history, &(&1.action == "approve"))
+      assert String.length(approve_record.comment) == 1000
+    end
+  end
+
+  describe "revert_status option" do
+    test "revert_status: false prevents auto-revert on approved design" do
+      owner = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+
+      # With revert_status: false, editing should NOT revert
+      {:ok, edited} = Designs.update_design(approved, %{name: "New Name"}, revert_status: false)
+      assert edited.status == "approved"
+    end
+
+    test "revert_status: true (default) reverts approved design on content edit" do
+      owner = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+
+      {:ok, edited} = Designs.update_design(approved, %{name: "New Name"})
+      assert edited.status == "draft"
+    end
+  end
+
+  describe "pending_review auto-revert on edit" do
+    test "editing a pending_review design reverts it to draft" do
+      owner = user_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+
+      assert pending.status == "pending_review"
+
+      {:ok, edited} = Designs.update_design(pending, %{name: "Changed"})
+      assert edited.status == "draft"
+    end
+
+    test "revert_status: false prevents pending_review auto-revert" do
+      owner = user_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+
+      {:ok, edited} = Designs.update_design(pending, %{name: "Changed"}, revert_status: false)
+      assert edited.status == "pending_review"
+    end
+  end
+
+  describe "archive/reactivate ownership" do
+    test "owner can archive own approved design" do
+      owner = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+
+      assert {:ok, archived} = Designs.archive_design(approved, owner)
+      assert archived.status == "archived"
+    end
+
+    test "admin can archive any approved design" do
+      owner = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+
+      assert {:ok, archived} = Designs.archive_design(approved, admin)
+      assert archived.status == "archived"
+    end
+
+    test "non-owner non-admin cannot archive design" do
+      owner = user_fixture()
+      other = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+
+      assert {:error, _} = Designs.archive_design(approved, other)
+    end
+
+    test "owner can reactivate own archived design" do
+      owner = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+      {:ok, archived} = Designs.archive_design(approved, owner)
+
+      assert {:ok, reactivated} = Designs.reactivate_design(archived, owner)
+      assert reactivated.status == "draft"
+    end
+
+    test "non-owner non-admin cannot reactivate design" do
+      owner = user_fixture()
+      other = user_fixture()
+      admin = admin_fixture()
+      design = design_fixture(%{user_id: owner.id})
+      {:ok, pending} = Designs.request_review(design, owner)
+      {:ok, approved} = Designs.approve_design(pending, admin)
+      {:ok, archived} = Designs.archive_design(approved, owner)
+
+      assert {:error, _} = Designs.reactivate_design(archived, other)
     end
   end
 end

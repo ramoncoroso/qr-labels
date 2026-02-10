@@ -3,6 +3,10 @@ defmodule QrLabelSystem.Settings do
   Context for system-wide settings with ETS cache.
   Settings are stored in the database and cached in ETS
   for fast reads without hitting the DB on every request.
+
+  The ETS table is :protected (only GenServer can write).
+  DB reads happen in the calling process for Ecto Sandbox compatibility.
+  Writes are serialized through GenServer to prevent race conditions.
   """
   use GenServer
 
@@ -30,13 +34,28 @@ defmodule QrLabelSystem.Settings do
 
   @doc """
   Get a setting value by key. Returns cached value if available.
-  On cache miss, fetches from DB via GenServer (which owns the ETS table).
+  On cache miss, reads DB from caller process and populates cache via GenServer.
   """
   def get_setting(key) do
     case lookup_cache(key) do
-      {:ok, value} -> value
-      :miss -> GenServer.call(__MODULE__, {:fetch_setting, key})
+      {:ok, value} ->
+        value
+
+      :miss ->
+        # DB read in caller process (Ecto Sandbox compatible)
+        case Repo.one(from s in SystemSetting, where: s.key == ^key) do
+          nil ->
+            nil
+
+          setting ->
+            # Populate cache via GenServer (ETS owner)
+            GenServer.cast(__MODULE__, {:put_cache, key, setting.value})
+            setting.value
+        end
     end
+  rescue
+    # Handle case where GenServer isn't started yet or DB unavailable
+    _ -> nil
   end
 
   @doc """
@@ -56,7 +75,6 @@ defmodule QrLabelSystem.Settings do
 
   @doc """
   Clears the ETS cache. Used in tests to avoid stale cache.
-  Routed through GenServer since ETS table is :protected.
   """
   def clear_cache do
     GenServer.call(__MODULE__, :clear_cache)
@@ -79,17 +97,29 @@ defmodule QrLabelSystem.Settings do
   end
 
   @impl true
-  def handle_call({:fetch_setting, key}, _from, state) do
-    # Re-check cache (another process may have populated it)
-    result = case lookup_cache(key) do
-      {:ok, value} -> value
-      :miss -> fetch_and_cache(key)
-    end
+  def handle_call({:set_setting, key, value}, {from_pid, _}, state) do
+    # Allow caller's sandbox connection for DB access
+    result =
+      try do
+        Ecto.Adapters.SQL.Sandbox.allow(Repo, from_pid, self())
+        do_set_setting(key, value)
+      rescue
+        # Fallback for non-sandbox (prod) or if allow fails
+        _ -> do_set_setting(key, value)
+      end
+
     {:reply, result, state}
   end
 
   @impl true
-  def handle_call({:set_setting, key, value}, _from, state) do
+  def handle_cast({:put_cache, key, value}, state) do
+    put_cache(key, value)
+    {:noreply, state}
+  end
+
+  # Private helpers
+
+  defp do_set_setting(key, value) do
     result =
       case Repo.one(from s in SystemSetting, where: s.key == ^key) do
         nil ->
@@ -106,14 +136,12 @@ defmodule QrLabelSystem.Settings do
     case result do
       {:ok, setting} ->
         put_cache(key, setting.value)
-        {:reply, {:ok, setting}, state}
+        {:ok, setting}
 
       error ->
-        {:reply, error, state}
+        error
     end
   end
-
-  # Private helpers
 
   defp lookup_cache(key) do
     case :ets.lookup(@table_name, key) do
@@ -129,15 +157,6 @@ defmodule QrLabelSystem.Settings do
     end
   rescue
     ArgumentError -> :miss
-  end
-
-  defp fetch_and_cache(key) do
-    case Repo.one(from s in SystemSetting, where: s.key == ^key) do
-      nil -> nil
-      setting ->
-        put_cache(key, setting.value)
-        setting.value
-    end
   end
 
   defp put_cache(key, value) do
