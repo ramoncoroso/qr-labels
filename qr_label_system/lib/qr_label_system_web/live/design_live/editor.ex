@@ -961,7 +961,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       Logger.debug("uploaded_files count: #{length(uploaded_files)}")
 
       case uploaded_files do
-        [{:ok, %{data: image_data, filename: filename}}] ->
+        [%{data: image_data, filename: filename}] ->
           Logger.debug("Pushing update_element_image event for element: #{element_id}")
           {:noreply,
            socket
