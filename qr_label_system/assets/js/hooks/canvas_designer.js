@@ -567,7 +567,8 @@ const CanvasDesigner = {
         // handled via _pendingRecreate in saveElementsImmediate.
         // Textboxes have width managed by Fabric.js directly.
         const isCodeElement = obj.elementType === 'qr' || obj.elementType === 'barcode'
-        if (!isCodeElement && obj.type !== 'textbox') {
+        const isImageElement = obj.elementType === 'image' && obj.type === 'image'
+        if (!isCodeElement && !isImageElement && obj.type !== 'textbox') {
           const sx = obj.scaleX || 1
           const sy = obj.scaleY || 1
           if (Math.abs(sx - 1) > 0.01 || Math.abs(sy - 1) > 0.01) {
