@@ -155,13 +155,15 @@ const CanvasDesigner = {
       this.canvas = null
     }
 
-    // Clear element and group references
+    // Clear element, group, and compliance references
     if (this.elements) {
       this.elements.clear()
     }
     if (this.groups) {
       this.groups.clear()
     }
+    this._complianceErrors = new Set()
+    this._complianceWarnings = new Set()
   },
 
   /**
@@ -290,8 +292,30 @@ const CanvasDesigner = {
     this._baseCanvasWidth = totalWidth
     this._baseCanvasHeight = totalHeight
 
+    // Draw compliance highlight borders after each render
+    this.canvas.on('after:render', () => {
+      if (this._complianceErrors.size === 0 && this._complianceWarnings.size === 0) return
+      const ctx = this.canvas.getContext()
+      ctx.save()
+      this.elements.forEach((obj, id) => {
+        const isError = this._complianceErrors.has(id)
+        const isWarning = !isError && this._complianceWarnings.has(id)
+        if (!isError && !isWarning) return
+        if (!obj.visible) return
+        const bounds = obj.getBoundingRect(true, true)
+        const pad = 3
+        ctx.strokeStyle = isError ? '#ef4444' : '#f59e0b'
+        ctx.lineWidth = 2
+        ctx.setLineDash(isError ? [] : [6, 3])
+        ctx.strokeRect(bounds.left - pad, bounds.top - pad, bounds.width + pad * 2, bounds.height + pad * 2)
+      })
+      ctx.restore()
+    })
+
     this.elements = new Map()
     this.groups = new Map()  // group_id -> {id, name, locked, visible, collapsed}
+    this._complianceErrors = new Set()    // element IDs with errors
+    this._complianceWarnings = new Set()  // element IDs with warnings
 
     // Final verification - ensure canvas is interactive
     this.verifyCanvasInteractive()
@@ -931,6 +955,15 @@ const CanvasDesigner = {
     this.handleEvent("remove_from_group", ({ element_id }) => {
       if (!this._isDestroyed) {
         this.removeFromGroup(element_id)
+      }
+    })
+
+    // Compliance highlights
+    this.handleEvent("highlight_compliance_issues", ({ errors, warnings }) => {
+      if (!this._isDestroyed) {
+        this._complianceErrors = new Set(errors || [])
+        this._complianceWarnings = new Set(warnings || [])
+        this.canvas.requestRenderAll()
       }
     })
 

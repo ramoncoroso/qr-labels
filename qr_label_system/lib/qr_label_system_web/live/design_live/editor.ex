@@ -2220,15 +2220,22 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         |> assign(:compliance_issues, [])
         |> assign(:compliance_standard_name, nil)
         |> assign(:compliance_counts, %{errors: 0, warnings: 0, infos: 0})
+        |> push_event("highlight_compliance_issues", %{errors: [], warnings: []})
 
       {name, issues} ->
         sorted = Compliance.sort_issues(issues)
         counts = Compliance.count_by_severity(issues)
 
+        error_ids = issues |> Enum.filter(&(&1.severity == :error && &1.element_id)) |> Enum.map(& &1.element_id) |> Enum.uniq()
+        warning_ids = issues |> Enum.filter(&(&1.severity == :warning && &1.element_id)) |> Enum.map(& &1.element_id) |> Enum.uniq()
+        # Don't highlight an element as warning if it already has an error
+        warning_ids = warning_ids -- error_ids
+
         socket
         |> assign(:compliance_issues, sorted)
         |> assign(:compliance_standard_name, name)
         |> assign(:compliance_counts, counts)
+        |> push_event("highlight_compliance_issues", %{errors: error_ids, warnings: warning_ids})
     end
   end
 
