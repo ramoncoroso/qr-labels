@@ -36,6 +36,7 @@ const CanvasDesigner = {
     this._isInitialLoad = true  // Flag to allow first load_design
     this._previewLanguage = null
     this._defaultLanguage = 'es'
+    this._translationHints = new Map() // elementId → fabric.Text decorator
 
     // Snap settings
     this.snapEnabled = this.el.dataset.snapEnabled === 'true'
@@ -148,8 +149,9 @@ const CanvasDesigner = {
       window.removeEventListener('beforeunload', this._beforeUnloadHandler)
     }
 
-    // Clear alignment lines
+    // Clear alignment lines and translation hints
     this.clearAlignmentLines()
+    this._clearTranslationHints()
 
     // Properly dispose of Fabric.js canvas to prevent memory leaks
     if (this.canvas) {
@@ -724,11 +726,14 @@ const CanvasDesigner = {
         const currentTranslation = (obj.elementData.translations && obj.elementData.translations[lang]) || ''
         obj.set('fill', obj._originalColor || obj.elementData.color || '#000000')
         obj.set('fontStyle', obj.elementData.font_style || 'normal')
-        obj.set('stroke', null)
-        obj.set('strokeWidth', 0)
-        obj.set('strokeDashArray', null)
         obj._isPlaceholder = false
-        // Use insertChars approach: clear and insert to preserve cursor
+        // Remove hint label for this element while editing
+        const hint = this._translationHints.get(obj.elementId)
+        if (hint) {
+          this.canvas.remove(hint)
+          this._translationHints.delete(obj.elementId)
+        }
+        // Set text to current translation, preserving cursor
         obj.text = currentTranslation
         obj.initDimensions()
         obj.setSelectionStart(currentTranslation.length)
@@ -2310,6 +2315,9 @@ const CanvasDesigner = {
     const defaultLang = this._defaultLanguage || 'es'
     const isNonDefault = lang && lang !== defaultLang
 
+    // Clear all existing translation hints
+    this._clearTranslationHints()
+
     this.elements.forEach((obj) => {
       if (!obj || !obj.elementData || obj.elementData.type !== 'text') return
 
@@ -2318,12 +2326,10 @@ const CanvasDesigner = {
       let needsTranslation = false
 
       if (isExpression(data.binding)) {
-        // Re-evaluate expression with new language context
         const ctx = { rowIndex: 0, batchSize: 1, now: new Date(), language: lang, defaultLanguage: defaultLang }
         const preview = evaluate(data.binding, row, ctx)
         obj.set('text', preview || data.binding)
       } else if (hasData && (hasBinding || mapping[obj.elementId])) {
-        // Has data loaded: resolve using data row + mapping (includes name-based mapping)
         const resolved = resolveText(data, row, mapping, {
           language: lang,
           defaultLanguage: defaultLang
@@ -2332,14 +2338,13 @@ const CanvasDesigner = {
         obj.set('text', hasContent ? resolved : `[${data.binding || data.name || 'sin datos'}]`)
         obj.set('fill', hasContent ? (obj._originalColor || data.color || '#000000') : '#999999')
       } else if (!hasBinding) {
-        // Fixed text: resolve with language (translations)
         const resolved = this._resolveCanvasText(data)
         const hasTranslation = isNonDefault && data.translations && data.translations[lang] && data.translations[lang].trim() !== ''
         needsTranslation = isNonDefault && !hasTranslation && data.text_content && data.text_content.trim() !== ''
 
         if (needsTranslation) {
-          // Show base text in gray with pending hint
-          obj.set('text', data.text_content + ' · traducir')
+          // Show base text in gray
+          obj.set('text', data.text_content)
           obj.set('fill', '#9CA3AF')
           obj.set('fontStyle', data.font_style || 'normal')
         } else {
@@ -2350,24 +2355,46 @@ const CanvasDesigner = {
         }
       }
 
-      // Subtle dashed border for untranslated elements
+      // Restore stroke (no more dashed border)
+      obj.set('stroke', obj._originalStroke || null)
+      obj.set('strokeWidth', obj._originalStrokeWidth || 0)
+      obj.set('strokeDashArray', null)
+
+      // Create small "traducir" label below element
       if (needsTranslation) {
-        if (!obj._originalStroke) obj._originalStroke = obj.stroke
-        if (!obj._originalStrokeWidth) obj._originalStrokeWidth = obj.strokeWidth
-        obj.set('stroke', '#D1D5DB')
-        obj.set('strokeWidth', 0.5)
-        obj.set('strokeDashArray', [3, 2])
-      } else {
-        // Restore original stroke
-        obj.set('stroke', obj._originalStroke || null)
-        obj.set('strokeWidth', obj._originalStrokeWidth || 0)
-        obj.set('strokeDashArray', null)
+        this._addTranslationHint(obj)
       }
 
       this.updateTextFit(obj)
     })
 
     this.canvas.renderAll()
+  },
+
+  // Add a small "traducir" label below an untranslated text element
+  _addTranslationHint(obj) {
+    const hint = new fabric.Text('traducir', {
+      fontSize: 7,
+      fill: '#9CA3AF',
+      fontFamily: 'Arial',
+      fontStyle: 'italic',
+      selectable: false,
+      evented: false,
+      excludeFromExport: true
+    })
+    // Position below the element, left-aligned
+    const objBottom = obj.top + obj.getScaledHeight()
+    hint.set({ left: obj.left, top: objBottom + 1 })
+    this.canvas.add(hint)
+    this._translationHints.set(obj.elementId, hint)
+  },
+
+  // Remove all translation hint decorators from canvas
+  _clearTranslationHints() {
+    this._translationHints.forEach((hint) => {
+      this.canvas.remove(hint)
+    })
+    this._translationHints.clear()
   },
 
   /**
