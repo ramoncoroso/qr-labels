@@ -10,11 +10,12 @@ defmodule QrLabelSystem.Compliance.Issue do
           code: String.t(),
           message: String.t(),
           element_id: String.t() | nil,
-          fix_hint: String.t() | nil
+          fix_hint: String.t() | nil,
+          fix_action: map() | nil
         }
 
   @enforce_keys [:severity, :code, :message]
-  defstruct [:severity, :code, :message, :element_id, :fix_hint]
+  defstruct [:severity, :code, :message, :element_id, :fix_hint, :fix_action]
 
   def error(code, message, opts \\ []) do
     %__MODULE__{
@@ -22,7 +23,8 @@ defmodule QrLabelSystem.Compliance.Issue do
       code: code,
       message: message,
       element_id: Keyword.get(opts, :element_id),
-      fix_hint: Keyword.get(opts, :fix_hint)
+      fix_hint: Keyword.get(opts, :fix_hint),
+      fix_action: Keyword.get(opts, :fix_action)
     }
   end
 
@@ -32,7 +34,8 @@ defmodule QrLabelSystem.Compliance.Issue do
       code: code,
       message: message,
       element_id: Keyword.get(opts, :element_id),
-      fix_hint: Keyword.get(opts, :fix_hint)
+      fix_hint: Keyword.get(opts, :fix_hint),
+      fix_action: Keyword.get(opts, :fix_action)
     }
   end
 
@@ -42,7 +45,8 @@ defmodule QrLabelSystem.Compliance.Issue do
       code: code,
       message: message,
       element_id: Keyword.get(opts, :element_id),
-      fix_hint: Keyword.get(opts, :fix_hint)
+      fix_hint: Keyword.get(opts, :fix_hint),
+      fix_action: Keyword.get(opts, :fix_action)
     }
   end
 end

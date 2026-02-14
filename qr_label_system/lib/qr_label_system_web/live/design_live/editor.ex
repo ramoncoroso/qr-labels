@@ -1492,6 +1492,69 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("add_compliance_element", params, socket) do
+    type = params["type"]
+    if type in @valid_element_types do
+      design = socket.assigns.design
+      current_elements = design.elements || []
+      element = create_default_element(type, current_elements)
+
+      # Override defaults with compliance-specific values
+      element = element
+        |> Map.put(:name, params["name"] || element.name)
+        |> Map.put("name", params["name"] || element.name)
+        |> maybe_put(params, "text_content")
+        |> maybe_put(params, "font_size", &parse_number/1)
+        |> maybe_put(params, "font_weight")
+        |> maybe_put(params, "barcode_format")
+
+      current_elements_as_maps = Enum.map(current_elements, fn el ->
+        case el do
+          %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
+          map when is_map(map) -> map
+        end
+      end)
+      new_elements = current_elements_as_maps ++ [element]
+
+      case Designs.update_design(design, %{elements: new_elements}) do
+        {:ok, updated_design} ->
+          socket = socket
+            |> push_to_history(design)
+            |> assign(:design, updated_design)
+            |> assign(:selected_element, element)
+            |> push_event("add_element", %{element: element})
+            |> maybe_run_compliance()
+
+          {:noreply, socket}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Error al crear elemento")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp maybe_put(element, params, key, transform \\ &Function.identity/1) do
+    case params[key] do
+      nil -> element
+      "" -> element
+      value ->
+        atom_key = String.to_existing_atom(key)
+        transformed = transform.(value)
+        element |> Map.put(atom_key, transformed) |> Map.put(key, transformed)
+    end
+  end
+
+  defp parse_number(value) when is_binary(value) do
+    case Float.parse(value) do
+      {num, _} -> num
+      :error -> value
+    end
+  end
+  defp parse_number(value), do: value
+
+  @impl true
   def handle_event("generation_complete", _params, socket) do
     case socket.assigns[:pending_print_action] do
       :print ->
@@ -2102,8 +2165,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     <div class="mt-2 flex items-center bg-white rounded-lg shadow-sm border border-gray-200 px-3 h-9 text-sm">
       <%!-- Zone 1: Compliance (left) --%>
       <div class="flex items-center gap-2 min-w-0 flex-1">
+        <div class="flex items-center gap-1 text-gray-400 flex-shrink-0">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          <span class="text-xs">Norma:</span>
+        </div>
+        <form phx-change="set_compliance_standard" class="flex items-center flex-shrink-0">
+          <select
+            name="standard"
+            class="text-xs border-0 bg-transparent text-gray-600 font-medium focus:ring-0 py-0 pr-6 pl-0 cursor-pointer"
+          >
+            <option value="">Ninguna</option>
+            <%= for {code, name, _desc} <- @standards do %>
+              <option value={code} selected={@standard == code}><%= name %></option>
+            <% end %>
+          </select>
+        </form>
         <%= if @standard do %>
-          <button phx-click="toggle_compliance_panel" class="flex items-center gap-2 hover:opacity-80 transition flex-shrink-0" title="Ver detalle de cumplimiento">
+          <button phx-click="toggle_compliance_panel" class="flex items-center gap-1.5 hover:opacity-80 transition flex-shrink-0" title="Ver detalle de cumplimiento">
             <%= cond do %>
               <% @counts.errors > 0 -> %>
                 <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
@@ -2125,20 +2205,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
-        <% else %>
-          <span class="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0"></span>
         <% end %>
-        <form phx-change="set_compliance_standard" class="flex items-center flex-shrink-0">
-          <select
-            name="standard"
-            class="text-xs border-0 bg-transparent text-gray-500 focus:ring-0 py-0 pr-6 pl-1 cursor-pointer"
-          >
-            <option value="">— Ninguna —</option>
-            <%= for {code, name, _desc} <- @standards do %>
-              <option value={code} selected={@standard == code}><%= name %></option>
-            <% end %>
-          </select>
-        </form>
       </div>
 
       <%!-- Zone 2: Workflow (center) — only if approval is required --%>
@@ -2203,7 +2270,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <div class="flex items-center flex-shrink-0">
         <button
           phx-click="toggle_versions"
-          class="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition text-xs font-medium"
+          class="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md transition text-xs font-medium border border-gray-300"
           title="Historial de versiones"
         >
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -3229,7 +3296,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       <div class="flex-1 min-w-0">
                         <p class="text-sm text-gray-900"><%= issue.message %></p>
                         <p :if={issue.fix_hint} class="text-xs text-gray-500 mt-0.5"><%= issue.fix_hint %></p>
-                        <p class="text-xs text-gray-400 mt-0.5 font-mono"><%= issue.code %></p>
+                        <div class="flex items-center justify-between mt-1">
+                          <p class="text-xs text-gray-400 font-mono"><%= issue.code %></p>
+                          <button
+                            :if={issue.fix_action && !issue.element_id}
+                            phx-click="add_compliance_element"
+                            phx-value-type={issue.fix_action.type}
+                            phx-value-name={issue.fix_action.name}
+                            phx-value-text_content={issue.fix_action[:text_content]}
+                            phx-value-font_size={issue.fix_action[:font_size]}
+                            phx-value-font_weight={issue.fix_action[:font_weight]}
+                            phx-value-barcode_format={issue.fix_action[:barcode_format]}
+                            class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded text-xs font-medium transition"
+                          >
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Agregar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

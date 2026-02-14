@@ -91,6 +91,17 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Returns system templates matching a specific compliance standard.
+  """
+  def list_system_templates_by_standard(standard) when is_binary(standard) do
+    Repo.all(
+      from d in Design,
+        where: d.is_template == true and d.template_source == "system" and d.compliance_standard == ^standard,
+        order_by: [asc: d.name]
+    )
+  end
+
+  @doc """
   Returns designs with pagination and optional filters.
   """
   def list_designs(params) do

@@ -82,24 +82,30 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
   defp validate_mandatory_fields(detected) do
     mandatory = [
       {:product_name, "FMD_MISSING_PRODUCT_NAME", "Falta el nombre del medicamento",
-       "Agregue el nombre comercial del medicamento"},
+       "Agregue el nombre comercial del medicamento",
+       %{type: "text", name: "Nombre medicamento", text_content: "Nombre comercial del medicamento", font_size: 12}},
       {:active_ingredient, "FMD_MISSING_ACTIVE_INGREDIENT", "Falta el principio activo (DCI/INN)",
-       "Agregue la denominación común internacional del principio activo"},
+       "Agregue la denominación común internacional del principio activo",
+       %{type: "text", name: "Principio activo (DCI)", text_content: "DCI: Principio activo 000mg", font_size: 9}},
       {:lot, "FMD_MISSING_LOT", "Falta el número de lote",
-       "Agregue el número de lote (obligatorio FMD Art. 54)"},
+       "Agregue el número de lote (obligatorio FMD Art. 54)",
+       %{type: "text", name: "Lote", text_content: "Lote: XXXXXX", font_size: 8}},
       {:expiry, "FMD_MISSING_EXPIRY", "Falta la fecha de caducidad",
-       "Agregue la fecha de caducidad del medicamento"},
+       "Agregue la fecha de caducidad del medicamento",
+       %{type: "text", name: "Fecha caducidad", text_content: "CAD: MM/AAAA", font_size: 8}},
       {:national_code, "FMD_MISSING_NATIONAL_CODE", "Falta el código nacional (CN/PZN/CIP)",
-       "Agregue el código nacional del medicamento"},
+       "Agregue el código nacional del medicamento",
+       %{type: "text", name: "Código nacional (CN)", text_content: "CN: 000000", font_size: 8}},
       {:serial, "FMD_MISSING_SERIAL", "Falta el número de serie único (anti-falsificación)",
-       "Agregue un identificador de serie único (Reglamento Delegado UE 2016/161)"}
+       "Agregue un identificador de serie único (Reglamento Delegado UE 2016/161)",
+       %{type: "text", name: "Número de serie (SN)", text_content: "SN: XXXXXXXXXXXX", font_size: 7}}
     ]
 
-    Enum.flat_map(mandatory, fn {field, code, msg, hint} ->
+    Enum.flat_map(mandatory, fn {field, code, msg, hint, action} ->
       if Map.has_key?(detected, field) do
         []
       else
-        [Issue.error(code, msg, fix_hint: hint)]
+        [Issue.error(code, msg, fix_hint: hint, fix_action: action)]
       end
     end)
   end
@@ -108,16 +114,18 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
   defp validate_recommended_fields(detected) do
     recommended = [
       {:dosage, "FMD_MISSING_DOSAGE", "Falta la forma farmacéutica/dosis",
-       "Agregue información sobre la forma farmacéutica y dosificación"},
+       "Agregue información sobre la forma farmacéutica y dosificación",
+       %{type: "text", name: "Forma farmacéutica", text_content: "Comprimidos recubiertos 000mg", font_size: 8}},
       {:manufacturer, "FMD_MISSING_MANUFACTURER", "Falta el titular de autorización de comercialización",
-       "Agregue el nombre del laboratorio titular"}
+       "Agregue el nombre del laboratorio titular",
+       %{type: "text", name: "Laboratorio titular", text_content: "Laboratorio S.A.", font_size: 7}}
     ]
 
-    Enum.flat_map(recommended, fn {field, code, msg, hint} ->
+    Enum.flat_map(recommended, fn {field, code, msg, hint, action} ->
       if Map.has_key?(detected, field) do
         []
       else
-        [Issue.warning(code, msg, fix_hint: hint)]
+        [Issue.warning(code, msg, fix_hint: hint, fix_action: action)]
       end
     end)
   end
@@ -126,7 +134,8 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
   defp validate_datamatrix([]) do
     [Issue.error("FMD_MISSING_DATAMATRIX",
       "Falta código DataMatrix (obligatorio para FMD)",
-      fix_hint: "Agregue un código DataMatrix con datos GS1 (GTIN + serial + lote + caducidad)")]
+      fix_hint: "Agregue un código DataMatrix con datos GS1 (GTIN + serial + lote + caducidad)",
+      fix_action: %{type: "barcode", name: "DataMatrix FMD", barcode_format: "DATAMATRIX", text_content: "(01)00000000000000(17)000000(10)LOT000(21)SN000"})]
   end
 
   defp validate_datamatrix(datamatrix_elements) do

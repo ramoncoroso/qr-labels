@@ -43,7 +43,8 @@ defmodule QrLabelSystem.Compliance.Gs1Validator do
   defp validate_global(gs1_barcodes) do
     if gs1_barcodes == [] do
       [Issue.warning("GS1_NO_BARCODE", "El diseño no contiene ningún código de barras GS1",
-        fix_hint: "Agregue un código de barras EAN-13, EAN-8, UPC-A, ITF-14 o GS1-128")]
+        fix_hint: "Agregue un código de barras EAN-13, EAN-8, UPC-A, ITF-14 o GS1-128",
+        fix_action: %{type: "barcode", name: "Código EAN-13", barcode_format: "EAN13", text_content: "0000000000000"})]
     else
       []
     end
