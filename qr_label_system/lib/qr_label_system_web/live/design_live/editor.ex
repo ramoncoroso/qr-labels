@@ -1547,6 +1547,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               |> maybe_put(params, "font_size", &parse_number/1)
               |> maybe_put(params, "font_weight")
               |> maybe_put(params, "barcode_format")
+
+            # 2D barcode formats (DataMatrix, PDF417, etc.) need square dimensions
+            new_el = if params["barcode_format"] in ~w(DATAMATRIX AZTEC MAXICODE) do
+              %{new_el | width: 20.0, height: 20.0}
+            else
+              new_el
+            end
+
             {new_el, false}
 
           found ->
@@ -2347,17 +2355,21 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </svg>
           <span class="text-xs">Norma:</span>
         </div>
-        <form phx-change="set_compliance_standard" class="flex items-center flex-shrink-0">
-          <select
-            name="standard"
-            class="text-xs border-0 bg-transparent text-gray-600 font-medium focus:ring-0 py-0 pr-6 pl-0 cursor-pointer"
-          >
-            <option value="">Ninguna</option>
-            <%= for {code, name, _desc} <- @standards do %>
-              <option value={code} selected={@standard == code}><%= name %></option>
-            <% end %>
-          </select>
-        </form>
+        <%= if @standard do %>
+          <span class="text-xs font-medium text-gray-700"><%= @standard_name %></span>
+        <% else %>
+          <form phx-change="set_compliance_standard" class="flex items-center flex-shrink-0">
+            <select
+              name="standard"
+              class="text-xs border-0 bg-transparent text-gray-600 font-medium focus:ring-0 py-0 pr-6 pl-0 cursor-pointer"
+            >
+              <option value="">Ninguna</option>
+              <%= for {code, name, _desc} <- @standards do %>
+                <option value={code} selected={@standard == code}><%= name %></option>
+              <% end %>
+            </select>
+          </form>
+        <% end %>
         <%= if @standard do %>
           <button phx-click="toggle_compliance_panel" class="flex items-center gap-1.5 hover:opacity-80 transition flex-shrink-0" title="Ver detalle de cumplimiento">
             <%= cond do %>
