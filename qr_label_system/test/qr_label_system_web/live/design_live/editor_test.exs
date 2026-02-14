@@ -159,6 +159,100 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
     end
   end
 
+  describe "Editor - add_compliance_element" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      conn = log_in_user(conn, user)
+      design = design_fixture(%{
+        user_id: user.id,
+        name: "Compliance Add Test",
+        width_mm: 100.0,
+        height_mm: 50.0,
+        compliance_standard: "eu1169"
+      })
+      %{conn: conn, user: user, design: design}
+    end
+
+    test "add_compliance_element adds text element and does not crash", %{conn: conn, design: design} do
+      {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
+
+      # Set compliance standard to EU 1169
+      render_change(view, "set_compliance_standard", %{"standard" => "eu1169"})
+
+      # Simulate clicking "Agregar campo" for a missing mandatory field (product name)
+      html = render_click(view, "add_compliance_element", %{
+        "type" => "text",
+        "name" => "Nombre del producto",
+        "text_content" => "Denominación de venta",
+        "font_size" => "14"
+      })
+
+      # View should NOT crash - it should render successfully
+      assert html =~ "Nombre del producto" or html =~ "Denominación"
+
+      # The element should be added to the design
+      assert html =~ "Elemento"
+    end
+
+    test "add_compliance_element adds allergen field with font_weight", %{conn: conn, design: design} do
+      {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
+
+      render_change(view, "set_compliance_standard", %{"standard" => "eu1169"})
+
+      html = render_click(view, "add_compliance_element", %{
+        "type" => "text",
+        "name" => "Alérgenos",
+        "text_content" => "Alérgenos: ...",
+        "font_size" => "8",
+        "font_weight" => "bold"
+      })
+
+      # Should not crash
+      assert html =~ "Alérgenos" or html =~ "añadido"
+    end
+
+    test "re-adding deleted element restores from history", %{conn: conn, design: design} do
+      # Create a design with a custom-styled element that matches compliance field
+      {:ok, design} = QrLabelSystem.Designs.update_design(design, %{
+        elements: [%{
+          id: "el_prod_name",
+          type: "text",
+          name: "Nombre del producto",
+          text_content: "Mi Producto Premium",
+          x: 5.0, y: 42.0,
+          width: 35.0, height: 8.0,
+          font_size: 10.0, font_family: "Helvetica",
+          font_weight: "bold", color: "#333333",
+          rotation: 0, z_index: 0, visible: true, locked: false
+        }]
+      })
+
+      {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
+
+      # Select EU 1169 standard
+      render_change(view, "set_compliance_standard", %{"standard" => "eu1169"})
+
+      # Select and delete the element
+      render_click(view, "select_layer", %{"id" => "el_prod_name"})
+      render_click(view, "delete_element", %{})
+
+      # Simulate JS canvas responding with element_modified (empty elements after delete)
+      # This triggers do_save_elements which pushes to history
+      render_click(view, "element_modified", %{"elements" => []})
+
+      # Now re-add from compliance - should restore from history
+      html = render_click(view, "add_compliance_element", %{
+        "type" => "text",
+        "name" => "Nombre del producto",
+        "text_content" => "Denominación de venta",
+        "font_size" => "14"
+      })
+
+      # Should show "restaurado" flash (element recovered from history)
+      assert html =~ "restaurado"
+    end
+  end
+
   describe "Editor - unauthenticated" do
     test "redirects to login", %{conn: conn} do
       design = design_fixture()
