@@ -2103,27 +2103,23 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <%!-- Zone 1: Compliance (left) --%>
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <%= if @standard do %>
-          <%= cond do %>
-            <% @counts.errors > 0 -> %>
-              <span class="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0"></span>
-            <% @counts.warnings > 0 -> %>
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-400 flex-shrink-0"></span>
-            <% true -> %>
-              <span class="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0"></span>
-          <% end %>
-          <button
-            phx-click="toggle_compliance_panel"
-            class="text-gray-700 hover:text-blue-600 font-medium transition truncate"
-          >
-            <%= @standard_name %>
+          <button phx-click="toggle_compliance_panel" class="flex items-center gap-2 hover:opacity-80 transition flex-shrink-0" title="Ver detalle de cumplimiento">
+            <%= cond do %>
+              <% @counts.errors > 0 -> %>
+                <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+              <% @counts.warnings > 0 -> %>
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <% true -> %>
+                <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+            <% end %>
+            <%= if @counts.errors > 0 || @counts.warnings > 0 do %>
+              <span :if={@counts.errors > 0} class="text-xs text-red-600 font-medium whitespace-nowrap"><%= @counts.errors %> error<%= if @counts.errors != 1, do: "es" %></span>
+              <span :if={@counts.warnings > 0} class="text-xs text-amber-600 font-medium whitespace-nowrap"><%= @counts.warnings %> aviso<%= if @counts.warnings != 1, do: "s" %></span>
+              <span :if={@counts.infos > 0} class="text-xs text-blue-500 whitespace-nowrap"><%= @counts.infos %> info</span>
+            <% else %>
+              <span class="text-xs text-green-600 font-medium">Cumple</span>
+            <% end %>
           </button>
-          <%= if @counts.errors > 0 || @counts.warnings > 0 do %>
-            <span :if={@counts.errors > 0} class="text-xs text-red-600 font-medium whitespace-nowrap"><%= @counts.errors %> error<%= if @counts.errors != 1, do: "es" %></span>
-            <span :if={@counts.warnings > 0} class="text-xs text-amber-600 font-medium whitespace-nowrap"><%= @counts.warnings %> aviso<%= if @counts.warnings != 1, do: "s" %></span>
-            <span :if={@counts.infos > 0} class="text-xs text-blue-500 whitespace-nowrap"><%= @counts.infos %> info</span>
-          <% else %>
-            <span class="text-xs text-green-600 font-medium">Cumple</span>
-          <% end %>
           <button phx-click="run_compliance_check" class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition flex-shrink-0" title="Re-validar">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -2131,7 +2127,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           </button>
         <% else %>
           <span class="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0"></span>
-          <span class="text-gray-400 truncate">Sin norma seleccionada</span>
         <% end %>
         <form phx-change="set_compliance_standard" class="flex items-center flex-shrink-0">
           <select

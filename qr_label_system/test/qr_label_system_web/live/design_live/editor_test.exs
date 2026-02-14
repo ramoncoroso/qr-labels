@@ -106,14 +106,14 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
 
       # Should show gray semaphore (no standard selected)
       assert html =~ "bg-gray-300"
-      assert html =~ "Sin norma seleccionada"
+      assert html =~ "Ninguna"
     end
 
     test "semaphore changes color when standard is selected", %{conn: conn, design: design} do
       {:ok, view, html} = live(conn, ~p"/designs/#{design.id}/edit")
 
       # Initially gray - no standard selected
-      assert html =~ "Sin norma seleccionada"
+      assert html =~ "Ninguna"
 
       # Select GS1 standard
       html = render_change(view, "set_compliance_standard", %{"standard" => "gs1"})
@@ -155,7 +155,7 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
       html = render_change(view, "set_compliance_standard", %{"standard" => ""})
 
       assert html =~ "bg-gray-300"
-      assert html =~ "Sin norma seleccionada"
+      assert html =~ "Ninguna"
     end
   end
 
