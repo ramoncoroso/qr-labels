@@ -6,7 +6,7 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Refactor Historial de Versiones
+## Sesion Actual (14 febrero 2026) - Refactor Versiones, Compliance, Auditoria
 
 ### Resumen Ejecutivo
 
@@ -18,15 +18,22 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 | 4 | Diff contra version anterior (no contra la ultima) | Completado |
 | 5 | Restaurar sin crear version automatica | Completado |
 | 6 | Fix: pasar assigns al componente unified_status_bar | Completado |
+| 7 | Auditoria de codigo: fix bugs criticos y mejoras | Completado |
+| 8 | Simplificar lista de versiones | Completado |
+| 9 | Fix: nombre del diseno se graba correctamente | Completado |
+| 10 | Fix: rename version (phx-submit en vez de phx-key) | Completado |
+| 11 | Preview SVG en detalle de version | Completado |
+| 12 | Lapiz de renombrar mas visible (w-4 al lado de vN) | Completado |
+| 13 | Normativa: analisis de bloqueo tras seleccion | Completado |
+| 14 | Normativa solo lectura en canvas | Completado |
+| 15 | Revisar avisos compliance y accion "añadir campo" | Completado |
+| 16 | Fix: DataMatrix dimensiones cuadradas desde compliance | Completado |
 
-### Problema Original
+---
 
-El editor creaba un snapshot de version en cada autosave, inundando el historial con micro-cambios. El usuario queria:
-- Versiones solo al pulsar "Guardar"
-- Poder renombrar versiones
-- Indicador que refleje la version actual real
+### Cambios por Area
 
-### Cambios Realizados
+#### Historial de Versiones (refactorizado)
 
 **Migracion:** `20260214120000_add_custom_name_to_design_versions.exs`
 - Columna nullable `custom_name :string` en `design_versions`
@@ -36,70 +43,48 @@ El editor creaba un snapshot de version en cada autosave, inundando el historial
 - Nuevo `rename_changeset/2` con validacion max 100 chars
 
 **Versioning (`versioning.ex`):**
-- `restore_version/3` — Ya no crea version al restaurar, solo actualiza el diseño
+- `restore_version/3` — Ya no crea version al restaurar, solo actualiza el diseno
 - `rename_version/3` — Nuevo: poner/quitar nombre personalizado a versiones
 - `generate_change_summary/2` — Nuevo: genera resumen legible de cambios vs ultima version
 - `diff_against_previous/2` — Nuevo: diff contra version anterior (para panel de detalle)
-- `compute_hash/4` — Eliminado `change_message` del hash (ya no necesario)
-- Helpers privados: `get_latest_version/1`, `diff_fields_against_design/2`, `field_label/1`
+- `compute_hash/4` — Eliminado `change_message` del hash
+- `duplicate_hash?/2` — Corregido: solo compara contra la ultima version (no todas)
 
 **Designs context (`designs.ex`):**
 - Eliminado bloque `Task.start` en `update_design/3` que creaba snapshots automaticos
 
 **Editor LiveView (`editor.ex`):**
-- Mount: nuevos assigns `current_version_number`, `has_unversioned_changes`, `restored_from_version`, `renaming_version_id`, `rename_version_value`
-- `do_save_elements`: dos caminos — autosave (marca `has_unversioned_changes`) y guardado explicito (crea snapshot con `generate_change_summary`)
+- Mount: nuevos assigns `current_version_number`, `has_unversioned_changes`, `restored_from_version`, `renaming_version_id`, `rename_version_value`, `version_preview_svg`
+- `do_save_elements`: autosave (marca `has_unversioned_changes`) vs guardado explicito (crea snapshot)
 - `restore_version`: establece `current_version_number` al restaurado, sin crear version
-- Handlers de renombrar: `start_rename_version`, `save_rename_version`, `cancel_rename_version`, `update_rename_version_value`
-- `handle_select_version`: usa `diff_against_previous` en vez de diff vs ultima
-- Undo/redo: marcan `has_unversioned_changes: true`
-- Template: indicador `v3 *`, badge "actual", custom_name, inline rename, textos actualizados
-- Fix: pasar `current_version_number` y `has_unversioned_changes` al componente `unified_status_bar`
+- Rename: usa `<form phx-submit>` (fix critico — antes `phx-key="Enter"` rompia el input)
+- `handle_select_version`: usa `diff_against_previous`, genera SVG preview on-demand
+- Template: indicador `v3 *`, badge "actual", custom_name inline, lapiz w-4, preview SVG
 
-**Tests (`versioning_test.exs`):**
-- 31 tests, 0 failures
-- Tests actualizados para nuevo comportamiento (restore no crea version, update_design no crea snapshot)
-- Tests nuevos para `rename_version`, `generate_change_summary`, `diff_against_previous`
+#### Compliance / Normativas
+
+- **Normativa read-only en canvas**: si ya tiene normativa asignada, muestra nombre como texto (no selector). El selector solo aparece cuando no hay normativa
+- **DataMatrix fix**: formatos 2D (DATAMATRIX, AZTEC, MAXICODE) se crean con dimensiones cuadradas (20x20mm) en vez de lineales (40x15mm)
+- **Avisos de compliance**: revisado el flujo de "Agregar campo" — funciona correctamente
+
+#### Auditoria de Codigo
+
+Fixes aplicados de la auditoria automatica:
+- **Critico**: Rename version usaba `phx-key="Enter"` que impedia capturar keystrokes → cambiado a `<form phx-submit>`
+- **Medio**: `duplicate_hash?` comparaba contra TODAS las versiones → solo contra la ultima
+- **Medio**: `Integer.parse` sin guard en handlers de rename → añadido `case` con fallback
+- **Bajo**: Doble llamada a `latest_version_number` en mount → unificada en una variable
+
+**Tests:** 31 tests, 0 failures
 
 ### Commits de Esta Sesion
 
 ```
 495062b Refactor version history: explicit saves only, rename, and version indicator
+a4b73a9 Fix version rename, deduplicate hash check, and simplify version list UI
+07a6b9f Fix DataMatrix dimensions from compliance and make standard read-only
+f38e703 Add SVG preview in version detail panel
 ```
-
----
-
-## Tareas Pendientes
-
-### Bugs (prioridad alta)
-
-| # | Tarea | Descripcion |
-|---|-------|-------------|
-| 9 | Nombre no se graba | Al guardar el diseño, el nombre no persiste correctamente |
-| 10 | Rename version no graba | El inline rename de versiones no persiste el custom_name |
-| 16 | DataMatrix formato raro | Al añadir DataMatrix desde compliance, aparece con formato incorrecto |
-
-### Mejoras UI - Versiones
-
-| # | Tarea | Descripcion |
-|---|-------|-------------|
-| 8 | Simplificar info en lista | La lista del historial muestra informacion excesiva |
-| 12 | Lapiz renombrar mas visible | Icono muy pequeño, colocarlo al lado de la version y mas grande |
-| 11 | Preview de etiqueta en "Ver" | Mostrar preview visual de la etiqueta en el detalle de version |
-
-### Compliance / Normativas
-
-| # | Tarea | Descripcion |
-|---|-------|-------------|
-| 13 | Bloquear cambio de normativa | Analizar si permitir cambiar normativa tras seleccionarla |
-| 14 | Normativa solo lectura en canvas | En editor, mostrar la norma sin selector (read-only) |
-| 15 | Revisar avisos y "añadir campo" | Verificar comportamiento de avisos y accion de añadir campos faltantes |
-
-### Plan de Abordaje Sugerido
-
-1. **Primero bugs:** #9, #10, #16
-2. **Luego UI versiones:** #8, #12 (rapidos), #11 (mas complejo)
-3. **Compliance:** #13, #14, #15
 
 ---
 
@@ -130,8 +115,17 @@ Restaurar a v2
   has_unversioned_changes = false
        │
   Indicador: "v2"
-  (si edita después: "v2 *")
+  (si edita despues: "v2 *")
   (al guardar: crea version con "Restaurado desde v2. Cambiados: ...")
+```
+
+### Normativa en Canvas
+
+```
+Sin normativa asignada          Con normativa asignada
+       │                              │
+  Selector dropdown             Texto read-only
+  (elegir normativa)            (nombre de la norma)
 ```
 
 ### Flujo de Etiquetas Multiples
@@ -139,18 +133,17 @@ Restaurar a v2
 ```
 [/generate/data]       [/generate/design]      [/designs/:id/edit]
       │                       │                       │
- Subir Excel/CSV ──────► Elegir diseño ──────► Vincular columnas
+ Subir Excel/CSV ──────► Elegir diseno ──────► Vincular columnas
       │                       │                       │
  UploadDataStore.put()        │              UploadDataStore.get()
 ```
 
-### Streams y Assigns en LiveView
+### Lecciones Aprendidas
 
-**Importante:** Los elementos renderizados con `phx-update="stream"` solo se actualizan cuando el stream cambia, NO cuando otros assigns cambian. Para UI interactiva dentro de streams, usar modales globales fuera del stream.
-
-### Componentes de Funcion y Assigns
-
-**Importante:** Los function components (`defp component(assigns)`) solo reciben los assigns que se les pasan explicitamente. Si se añaden nuevos assigns al socket, hay que pasarlos tambien en la invocacion del componente. Error comun: `KeyError key :new_assign not found`.
+- **Function components**: solo reciben assigns pasados explicitamente. Si se añaden assigns al socket, hay que pasarlos en la invocacion del componente. Error comun: `KeyError key :new_assign not found`
+- **phx-key="Enter"**: filtra TODOS los event bindings del elemento (phx-keyup y phx-keydown). No usar si se necesita capturar keystrokes normales. Usar `<form phx-submit>` en su lugar
+- **Streams**: elementos con `phx-update="stream"` no se re-renderizan con cambios de assigns. Usar modales globales fuera del stream
+- **duplicate_hash?**: comparar solo contra la ultima version, no todas. Si no, restaurar a un estado anterior y guardar puede ser bloqueado por dedup
 
 ---
 
@@ -179,7 +172,7 @@ mix compile
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
-| 14 feb 2026 | 15 | Refactor historial versiones: solo guardado explicito, rename, indicador |
+| 14 feb 2026 | 15 | Refactor versiones, compliance read-only, auditoria, SVG preview |
 | 6 feb 2026 | 14 | SVG previews, botones en tarjetas, sistema categorias |
 | 6 feb 2026 | 13 | Fix compilacion, modal importacion con seleccion |
 | 4 feb 2026 | 12 | Fix element loss, binding mode, UI texto duplicado |
