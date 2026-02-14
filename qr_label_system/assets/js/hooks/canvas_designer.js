@@ -2284,9 +2284,12 @@ const CanvasDesigner = {
         needsTranslation = isNonDefault && !hasTranslation && data.text_content && data.text_content.trim() !== ''
 
         if (needsTranslation) {
-          // Show base text as placeholder to indicate it needs translation
-          obj.set('text', data.text_content)
-          obj.set('fill', '#9CA3AF')
+          // Show hint with original text as reference
+          const baseText = data.text_content.length > 20
+            ? data.text_content.substring(0, 20) + '…'
+            : data.text_content
+          obj.set('text', `[Traducir: ${baseText}]`)
+          obj.set('fill', '#D97706')
           obj.set('fontStyle', 'italic')
         } else {
           const hasContent = resolved && resolved.trim() !== ''
