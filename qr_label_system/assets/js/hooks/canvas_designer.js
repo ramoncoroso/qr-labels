@@ -34,6 +34,8 @@ const CanvasDesigner = {
     this._currentZoom = 1.0
     this._lastSaveTime = null
     this._isInitialLoad = true  // Flag to allow first load_design
+    this._previewLanguage = null
+    this._defaultLanguage = 'es'
 
     // Snap settings
     this.snapEnabled = this.el.dataset.snapEnabled === 'true'
@@ -805,6 +807,12 @@ const CanvasDesigner = {
         this._lastSaveTime = Date.now()
         console.log("[reload_design] done, canvas elements:", this.elements.size)
       }
+    })
+
+    this.handleEvent("set_preview_language", ({ language, default_language }) => {
+      this._previewLanguage = language
+      if (default_language) this._defaultLanguage = default_language
+      this._updateCanvasLanguage()
     })
 
     this.handleEvent("add_element", ({ element }) => {
@@ -1665,6 +1673,22 @@ const CanvasDesigner = {
     return group
   },
 
+  /**
+   * Resolve the display text for an element considering the active preview language.
+   * For fixed text (no binding), shows the translation if available.
+   */
+  _resolveCanvasText(element) {
+    const lang = this._previewLanguage
+    const defaultLang = this._defaultLanguage || 'es'
+    const isNonDefault = lang && lang !== defaultLang
+
+    // For fixed text: use translation if available
+    if (isNonDefault && element.translations && element.translations[lang]) {
+      return element.translations[lang]
+    }
+    return element.text_content
+  },
+
   createText(element, x, y) {
     // Show binding as [ColumnName] indicator, or text_content, or placeholder
     // Expressions: evaluate with empty row (functions like HOY() resolve, column refs show placeholder)
@@ -1673,12 +1697,13 @@ const CanvasDesigner = {
     let isExpr = false
     if (isExpression(element.binding)) {
       isExpr = true
-      const preview = evaluate(element.binding, {}, { rowIndex: 0, batchSize: 1, now: new Date() })
+      const ctx = { rowIndex: 0, batchSize: 1, now: new Date(), language: this._previewLanguage, defaultLanguage: this._defaultLanguage || 'es' }
+      const preview = evaluate(element.binding, {}, ctx)
       content = preview || element.binding
     } else if (element.binding) {
       content = `[${element.binding}]`
     } else if (hasContent) {
-      content = element.text_content
+      content = this._resolveCanvasText(element)
     } else {
       content = 'Completar texto'
     }
@@ -2210,6 +2235,41 @@ const CanvasDesigner = {
       textObj.set({ stroke: null, strokeDashArray: null, strokeWidth: 0 })
       textObj._textOverflows = false
     }
+  },
+
+  /**
+   * Update all text elements on the canvas to reflect the active preview language.
+   * Called when the user switches language in the status bar.
+   */
+  _updateCanvasLanguage() {
+    if (!this.elements || this._isDestroyed) return
+
+    this.elements.forEach((obj) => {
+      if (!obj || !obj.elementData || obj.elementData.type !== 'text') return
+
+      const data = obj.elementData
+      const hasBinding = data.binding && data.binding !== ''
+
+      // Only update fixed text elements (binding mode shows [ColumnName] regardless)
+      if (hasBinding && !isExpression(data.binding)) return
+
+      if (isExpression(data.binding)) {
+        // Re-evaluate expression with new language context
+        const ctx = { rowIndex: 0, batchSize: 1, now: new Date(), language: this._previewLanguage, defaultLanguage: this._defaultLanguage || 'es' }
+        const preview = evaluate(data.binding, {}, ctx)
+        obj.set('text', preview || data.binding)
+      } else {
+        // Fixed text: resolve with language
+        const resolved = this._resolveCanvasText(data)
+        const hasContent = resolved && resolved.trim() !== ''
+        obj.set('text', hasContent ? resolved : 'Completar texto')
+        obj.set('fill', hasContent ? (obj._originalColor || data.color || '#000000') : '#999999')
+      }
+
+      this.updateTextFit(obj)
+    })
+
+    this.canvas.renderAll()
   },
 
   /**

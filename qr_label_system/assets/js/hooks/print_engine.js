@@ -46,10 +46,12 @@ const PrintEngine = {
   },
 
   setupEventListeners() {
-    this.handleEvent("generate_batch", async ({design, data, column_mapping, print_config}) => {
+    this.handleEvent("generate_batch", async ({design, data, column_mapping, print_config, language, default_language}) => {
       this.design = design
       this.printConfig = print_config
       this.columnMapping = column_mapping || {}
+      this._language = language || null
+      this._defaultLanguage = default_language || 'es'
 
       try {
         this.labels = await this.generateAllLabels(design, data, column_mapping)
@@ -69,10 +71,12 @@ const PrintEngine = {
     })
 
     // Generate batch reading data from IndexedDB instead of receiving from server
-    this.handleEvent("generate_batch_from_idb", async ({design, column_mapping, print_config, user_id, design_id}) => {
+    this.handleEvent("generate_batch_from_idb", async ({design, column_mapping, print_config, user_id, design_id, language, default_language}) => {
       this.design = design
       this.printConfig = print_config
       this.columnMapping = column_mapping || {}
+      this._language = language || null
+      this._defaultLanguage = default_language || 'es'
 
       try {
         let dataset = await getDataset(user_id, design_id)
@@ -96,7 +100,7 @@ const PrintEngine = {
     })
 
     // ZPL: generate entirely client-side (no server round-trip)
-    this.handleEvent("generate_zpl_client", async ({design, dpi, user_id, design_id, mapping}) => {
+    this.handleEvent("generate_zpl_client", async ({design, dpi, user_id, design_id, mapping, language, default_language}) => {
       try {
         let dataset = await getDataset(user_id, design_id)
 
@@ -110,7 +114,7 @@ const PrintEngine = {
         }
 
         const rows = (dataset && dataset.rows.length > 0) ? dataset.rows : [{}]
-        const zpl = generateBatchZpl(design, rows, { dpi, mapping: mapping || {} })
+        const zpl = generateBatchZpl(design, rows, { dpi, mapping: mapping || {}, language: language || null, defaultLanguage: default_language || 'es' })
         const blob = new Blob([zpl], { type: 'application/x-zpl' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -173,7 +177,7 @@ const PrintEngine = {
 
     for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
       const row = data[rowIndex]
-      const context = { rowIndex, batchSize, now }
+      const context = { rowIndex, batchSize, now, language: this._language, defaultLanguage: this._defaultLanguage }
       const labelCodes = {}
 
       for (const element of design.elements || []) {

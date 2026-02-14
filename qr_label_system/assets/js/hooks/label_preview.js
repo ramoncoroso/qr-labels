@@ -18,6 +18,8 @@ const LabelPreview = {
     this._mapping = {}
     this._previewIndex = 0
     this._totalRows = 1
+    this._language = null
+    this._defaultLanguage = 'es'
     this._ready = true
 
     this.handleEvent("update_preview", (data) => {
@@ -26,6 +28,8 @@ const LabelPreview = {
       this._mapping = data.mapping || {}
       this._previewIndex = data.preview_index || 0
       this._totalRows = data.total_rows || 1
+      this._language = data.language || null
+      this._defaultLanguage = data.default_language || 'es'
       this.renderPreview()
     })
 
@@ -59,7 +63,13 @@ const LabelPreview = {
     const scale = Math.min(scaleX, scaleY, 2) // Cap at 2x for small labels
 
     // Build context for expression evaluation
-    const context = { rowIndex: this._previewIndex, batchSize: this._totalRows, now: new Date() }
+    const context = {
+      rowIndex: this._previewIndex,
+      batchSize: this._totalRows,
+      now: new Date(),
+      language: this._language,
+      defaultLanguage: this._defaultLanguage
+    }
 
     // Generate codes for this row (pass label_type to differentiate single vs multiple)
     const labelType = design.label_type || 'single'

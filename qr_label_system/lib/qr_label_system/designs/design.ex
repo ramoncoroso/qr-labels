@@ -46,6 +46,10 @@ defmodule QrLabelSystem.Designs.Design do
     # Regulatory compliance standard (nil = no compliance check)
     field :compliance_standard, :string
 
+    # Multi-language support
+    field :languages, {:array, :string}, default: ["es"]
+    field :default_language, :string, default: "es"
+
     # Elements on the label
     # IMPORTANT: Using :delete means elements not in the new data will be removed
     # This requires the client to ALWAYS send ALL elements, even unchanged ones
@@ -73,7 +77,8 @@ defmodule QrLabelSystem.Designs.Design do
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
       :is_template, :template_source, :template_category, :label_type, :user_id,
-      :status, :compliance_standard
+      :status, :compliance_standard,
+      :languages, :default_language
     ])
     |> validate_inclusion(:template_source, ~w(system user), message: "must be system or user")
     |> validate_inclusion(:template_category, ~w(alimentacion farmaceutica logistica manufactura retail), message: "must be a valid category")
@@ -108,6 +113,8 @@ defmodule QrLabelSystem.Designs.Design do
     |> put_change(:template_category, nil)
     |> put_change(:label_type, design.label_type)
     |> put_change(:compliance_standard, design.compliance_standard)
+    |> put_change(:languages, design.languages)
+    |> put_change(:default_language, design.default_language)
     |> put_embed(:elements, design.elements)
     |> put_embed(:groups, design.groups || [])
     |> validate_required([:name, :width_mm, :height_mm])
@@ -151,6 +158,8 @@ defmodule QrLabelSystem.Designs.Design do
       template_source: design.template_source,
       template_category: design.template_category,
       compliance_standard: design.compliance_standard,
+      languages: design.languages || ["es"],
+      default_language: design.default_language || "es",
       elements: Enum.map(design.elements || [], &element_to_json/1),
       groups: Enum.map(design.groups || [], &group_to_json/1)
     }
@@ -175,6 +184,8 @@ defmodule QrLabelSystem.Designs.Design do
       template_source: design.template_source,
       template_category: design.template_category,
       compliance_standard: design.compliance_standard,
+      languages: design.languages || ["es"],
+      default_language: design.default_language || "es",
       elements: Enum.map(design.elements || [], &element_to_json_light/1),
       groups: Enum.map(design.groups || [], &group_to_json/1)
     }
@@ -242,7 +253,9 @@ defmodule QrLabelSystem.Designs.Design do
       # Group membership
       group_id: element.group_id,
       # Compliance role
-      compliance_role: element.compliance_role
+      compliance_role: element.compliance_role,
+      # Multi-language translations
+      translations: element.translations || %{}
     }
   end
 

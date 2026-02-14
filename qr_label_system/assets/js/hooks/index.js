@@ -14,6 +14,7 @@ import PropertyFields from "./property_fields"
 import BorderRadiusSlider from "./border_radius_slider"
 import ScrollTo from "./scroll_to"
 import QRLogoUpload from "./qr_logo_upload"
+import LangDropdown from "./lang_dropdown"
 
 const Hooks = {
   CanvasDesigner,
@@ -31,7 +32,8 @@ const Hooks = {
   PropertyFields,
   BorderRadiusSlider,
   ScrollTo,
-  QRLogoUpload
+  QRLogoUpload,
+  LangDropdown
 }
 
 export default Hooks

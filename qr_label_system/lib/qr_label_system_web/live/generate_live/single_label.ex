@@ -5,6 +5,16 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
   alias QrLabelSystem.Designs.Design
   alias QrLabelSystem.Settings
 
+  @available_languages [
+    {"es", "Español", "🇪🇸"}, {"en", "English", "🇬🇧"}, {"fr", "Français", "🇫🇷"},
+    {"de", "Deutsch", "🇩🇪"}, {"it", "Italiano", "🇮🇹"}, {"pt", "Português", "🇵🇹"},
+    {"nl", "Nederlands", "🇳🇱"}, {"pl", "Polski", "🇵🇱"}, {"ro", "Română", "🇷🇴"},
+    {"sv", "Svenska", "🇸🇪"}, {"da", "Dansk", "🇩🇰"}, {"fi", "Suomi", "🇫🇮"},
+    {"el", "Ελληνικά", "🇬🇷"}, {"hu", "Magyar", "🇭🇺"}, {"cs", "Čeština", "🇨🇿"},
+    {"bg", "Български", "🇧🇬"}, {"hr", "Hrvatski", "🇭🇷"}, {"zh", "中文", "🇨🇳"},
+    {"ja", "日本語", "🇯🇵"}, {"ko", "한국어", "🇰🇷"}, {"ar", "العربية", "🇸🇦"}
+  ]
+
   @impl true
   def mount(%{"design_id" => design_id}, _session, socket) do
     design = Designs.get_design!(design_id)
@@ -23,6 +33,8 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
        |> assign(:printing, false)
        |> assign(:zpl_dpi, 203)
        |> assign(:approval_required, Settings.approval_required?())
+       |> assign(:generate_language, design.default_language || "es")
+       |> assign(:available_languages, @available_languages)
        |> push_event("update_preview", %{
          design: Design.to_json_light(design),
          row: %{},
@@ -64,7 +76,9 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
        |> assign(:printing, true)
        |> push_event("print_single_labels", %{
          design: Design.to_json(socket.assigns.design),
-         quantity: socket.assigns.quantity
+         quantity: socket.assigns.quantity,
+         language: socket.assigns.generate_language,
+         default_language: socket.assigns.design.default_language || "es"
        })}
     end
   end
@@ -85,7 +99,9 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
       {:noreply,
        push_event(socket, "download_single_pdf", %{
          design: Design.to_json(socket.assigns.design),
-         quantity: socket.assigns.quantity
+         quantity: socket.assigns.quantity,
+         language: socket.assigns.generate_language,
+         default_language: socket.assigns.design.default_language || "es"
        })}
     end
   end
@@ -119,6 +135,11 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
          mime_type: "application/x-zpl"
        })}
     end
+  end
+
+  @impl true
+  def handle_event("set_generate_language", %{"lang" => lang}, socket) do
+    {:noreply, assign(socket, :generate_language, lang)}
   end
 
   defp print_blocked?(socket) do
@@ -244,6 +265,27 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
                 </button>
               <% end %>
             </div>
+
+            <!-- Language selector (only if design has multiple languages) -->
+            <%= if length(@design.languages || ["es"]) > 1 do %>
+              <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  Idioma de generación
+                </label>
+                <div class="flex flex-wrap gap-2">
+                  <%= for lang <- (@design.languages || ["es"]) do %>
+                    <% {_code, name, flag} = Enum.find(@available_languages, {"es", "Español", "🇪🇸"}, fn {c, _, _} -> c == lang end) %>
+                    <button
+                      phx-click="set_generate_language"
+                      phx-value-lang={lang}
+                      class={"px-3 py-2 rounded-lg text-sm font-medium transition #{if @generate_language == lang, do: "bg-blue-600 text-white", else: "bg-gray-100 text-gray-700 hover:bg-gray-200"}"}
+                    >
+                      <%= flag %> <%= name %>
+                    </button>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
 
             <!-- Action Buttons -->
             <div class="space-y-3">

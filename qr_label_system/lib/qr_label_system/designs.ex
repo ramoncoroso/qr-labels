@@ -527,6 +527,8 @@ defmodule QrLabelSystem.Designs do
         border_width: design.border_width,
         border_color: design.border_color,
         border_radius: design.border_radius,
+        languages: design.languages || ["es"],
+        default_language: design.default_language || "es",
         elements: Enum.map(design.elements || [], &export_element/1),
         groups: Enum.map(design.groups || [], &export_group/1)
       }
@@ -565,7 +567,8 @@ defmodule QrLabelSystem.Designs do
       locked: element.locked,
       name: element.name,
       group_id: element.group_id,
-      compliance_role: element.compliance_role
+      compliance_role: element.compliance_role,
+      translations: element.translations || %{}
     }
   end
 
@@ -633,6 +636,8 @@ defmodule QrLabelSystem.Designs do
       border_width: design_data["border_width"] || 0,
       border_color: design_data["border_color"] || "#000000",
       border_radius: design_data["border_radius"] || 0,
+      languages: design_data["languages"] || ["es"],
+      default_language: design_data["default_language"] || "es",
       user_id: user_id,
       elements: elements,
       groups: groups
@@ -674,7 +679,8 @@ defmodule QrLabelSystem.Designs do
       locked: element_data["locked"] || false,
       name: element_data["name"],
       group_id: element_data["group_id"],
-      compliance_role: element_data["compliance_role"]
+      compliance_role: element_data["compliance_role"],
+      translations: element_data["translations"] || %{}
     }
   end
 

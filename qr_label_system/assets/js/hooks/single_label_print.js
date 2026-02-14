@@ -33,7 +33,9 @@ const SingleLabelPrint = {
   },
 
   setupEventListeners() {
-    this.handleEvent("print_single_labels", async ({design, quantity}) => {
+    this.handleEvent("print_single_labels", async ({design, quantity, language, default_language}) => {
+      this._language = language || null
+      this._defaultLanguage = default_language || 'es'
       try {
         await this.printLabels(design, quantity)
         this.pushEvent("print_complete", {})
@@ -42,7 +44,9 @@ const SingleLabelPrint = {
       }
     })
 
-    this.handleEvent("download_single_pdf", async ({design, quantity}) => {
+    this.handleEvent("download_single_pdf", async ({design, quantity, language, default_language}) => {
+      this._language = language || null
+      this._defaultLanguage = default_language || 'es'
       try {
         await this.exportPDF(design, quantity)
       } catch (err) {
@@ -98,7 +102,7 @@ const SingleLabelPrint = {
 
     for (let i = 0; i < quantity; i++) {
       if (i > 0) pdf.addPage([w, h], w > h ? 'l' : 'p')
-      const context = { rowIndex: i, batchSize: quantity, now }
+      const context = { rowIndex: i, batchSize: quantity, now, language: this._language, defaultLanguage: this._defaultLanguage }
       const codes = await this.generateCodes(design, context)
       await this.renderLabelToPDF(pdf, design, codes, 0, 0, context)
     }
@@ -121,7 +125,7 @@ const SingleLabelPrint = {
       if (i > 0) {
         pdf.addPage([w, h], w > h ? 'l' : 'p')
       }
-      const context = { rowIndex: i, batchSize: quantity, now }
+      const context = { rowIndex: i, batchSize: quantity, now, language: this._language, defaultLanguage: this._defaultLanguage }
       const codes = await this.generateCodes(design, context)
       await this.renderLabelToPDF(pdf, design, codes, 0, 0, context)
     }

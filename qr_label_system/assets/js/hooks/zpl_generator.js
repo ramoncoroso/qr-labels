@@ -26,7 +26,9 @@ export function generateZpl(design, row = {}, opts = {}) {
   const rowIndex = opts.rowIndex || 0
   const batchSize = opts.batchSize || 1
   const mapping = opts.mapping || {}
-  const context = { rowIndex, batchSize, now: new Date() }
+  const language = opts.language || null
+  const defaultLanguage = opts.defaultLanguage || 'es'
+  const context = { rowIndex, batchSize, now: new Date(), language, defaultLanguage }
 
   const wDots = mmToDots(design.width_mm, dpmm)
   const hDots = mmToDots(design.height_mm, dpmm)

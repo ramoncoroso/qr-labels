@@ -75,6 +75,10 @@ defmodule QrLabelSystem.Designs.Element do
 
     # Compliance: explicit role for regulatory field detection
     field :compliance_role, :string
+
+    # Multi-language: translations per language code
+    # %{"en" => "Ingredients", "fr" => "Ingrédients"}
+    field :translations, :map, default: %{}
   end
 
   @max_image_size 2_000_000  # 2MB limit for image data
@@ -90,7 +94,8 @@ defmodule QrLabelSystem.Designs.Element do
       :text_auto_fit, :text_min_font_size,
       :color, :background_color, :border_width, :border_color, :border_radius,
       :image_url, :image_data, :image_filename,
-      :z_index, :visible, :locked, :name, :group_id, :compliance_role
+      :z_index, :visible, :locked, :name, :group_id, :compliance_role,
+      :translations
     ])
     |> generate_id_if_missing()
     |> generate_name_if_missing()

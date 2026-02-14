@@ -49,8 +49,16 @@ export function evaluate(template, row = {}, context = {}) {
  * @returns {string}
  */
 export function resolveText(element, row = {}, mapping = null, context = {}) {
+  const lang = context.language
+  const defaultLang = context.defaultLanguage || 'es'
+  const isNonDefault = lang && lang !== defaultLang
+
+  // Resolve fixed text with language support
+  const textContent = (isNonDefault && element.translations && element.translations[lang])
+    ? element.translations[lang]
+    : (element.text_content || '')
+
   const binding = element.binding
-  const textContent = element.text_content || ''
 
   // 1. Expression mode: binding contains {{
   if (isExpression(binding)) {
@@ -59,7 +67,14 @@ export function resolveText(element, row = {}, mapping = null, context = {}) {
 
   // 2. Column binding mode (plain binding without {{)
   if (binding && binding !== '') {
-    // Try mapped column first
+    // Determine the effective column
+    const baseCol = (mapping && mapping[element.id]) || binding
+    // If non-default language, try column with suffix: nombre_en, nombre_fr
+    const langCol = isNonDefault ? `${baseCol}_${lang}` : null
+
+    // Try translated column first
+    if (langCol && row[langCol] != null) return String(row[langCol])
+    // Try mapped column
     if (mapping && mapping[element.id]) {
       const col = mapping[element.id]
       if (row[col] != null) return String(row[col])
@@ -78,23 +93,29 @@ export function resolveText(element, row = {}, mapping = null, context = {}) {
  * Resolve value for QR/barcode elements (similar to text but returns the code value).
  */
 export function resolveCodeValue(element, row = {}, mapping = null, context = {}) {
+  const lang = context.language
+  const defaultLang = context.defaultLanguage || 'es'
+  const isNonDefault = lang && lang !== defaultLang
   const binding = element.binding
-  const textContent = element.text_content || element.binding || ''
 
   // 1. Expression mode
   if (isExpression(binding)) {
     return evaluate(binding, row, context)
   }
 
-  // 2. Mapped column
+  // 2. Mapped column (with language suffix support)
   if (mapping && mapping[element.id]) {
-    const col = mapping[element.id]
-    if (row[col] != null) return String(row[col])
+    const baseCol = mapping[element.id]
+    const langCol = isNonDefault ? `${baseCol}_${lang}` : null
+    if (langCol && row[langCol] != null) return String(row[langCol])
+    if (row[baseCol] != null) return String(row[baseCol])
   }
 
-  // 3. Direct binding
-  if (binding && row[binding] != null) {
-    return String(row[binding])
+  // 3. Direct binding (with language suffix support)
+  if (binding) {
+    const langCol = isNonDefault ? `${binding}_${lang}` : null
+    if (langCol && row[langCol] != null) return String(row[langCol])
+    if (row[binding] != null) return String(row[binding])
   }
 
   // 4. Static content
@@ -428,6 +449,12 @@ FUNCTIONS['POR_DEFECTO'] = (args) => {
   return val !== '' ? val : alt
 }
 
+// --- Language functions ---
+
+FUNCTIONS['IDIOMA'] = (_args, _row, context) => {
+  return context.language || 'es'
+}
+
 // ─── Available functions list (for UI) ────────────────────────
 
 export const FUNCTION_GROUPS = [
@@ -439,7 +466,8 @@ export const FUNCTION_GROUPS = [
       { name: 'RECORTAR', template: 'RECORTAR(valor, largo)', desc: 'Recorta texto' },
       { name: 'CONCAT', template: 'CONCAT(v1, v2)', desc: 'Concatena valores' },
       { name: 'REEMPLAZAR', template: 'REEMPLAZAR(valor, buscar, reemplazo)', desc: 'Reemplaza texto' },
-      { name: 'LARGO', template: 'LARGO(valor)', desc: 'Largo del texto' }
+      { name: 'LARGO', template: 'LARGO(valor)', desc: 'Largo del texto' },
+      { name: 'IDIOMA', template: 'IDIOMA()', desc: 'Código del idioma activo' }
     ]
   },
   {
