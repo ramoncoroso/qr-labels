@@ -2673,7 +2673,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </svg>
             <span>Idioma</span>
           </button>
-          <div id="lang-dropdown-menu" class="hidden absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+          <div id="lang-dropdown-menu" style="display: none;" class="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
             <div class="p-1.5 border-b border-gray-100">
               <input
                 type="text"
@@ -2687,8 +2687,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <%= for {code, name, flag} <- @available_languages do %>
                 <%= unless code in (@design.languages || ["es"]) do %>
                   <button
-                    phx-click="add_language"
-                    phx-value-lang={code}
+                    phx-click={Phoenix.LiveView.JS.push("add_language", value: %{lang: code}) |> Phoenix.LiveView.JS.hide(to: "#lang-dropdown-menu")}
                     data-lang-name={String.downcase(name)}
                     data-lang-code={code}
                     class="lang-option w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
@@ -3026,7 +3025,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
             </button>
             <!-- Dropdown: shown on hover or keyboard focus -->
-            <div class="invisible opacity-0 group-hover/print:visible group-hover/print:opacity-100 group-focus-within/print:visible group-focus-within/print:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
+            <div class="invisible opacity-0 group-hover/print:visible group-hover/print:opacity-100 group-focus-within/print:visible group-focus-within/print:opacity-100 transition-all duration-150 absolute left-0 top-full pt-1 z-50">
               <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
                 <button
                   phx-click="toggle_preview"
