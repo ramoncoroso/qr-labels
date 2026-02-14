@@ -6,7 +6,122 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Auditoria de seguridad y robustez
+## Sesion Actual (14 febrero 2026) - Multi-idioma en etiquetas
+
+> **Plan de referencia:** `~/.claude/plans/quirky-fluttering-zebra.md`
+> **Plan de producto:** `PLAN_PRODUCTO.md` seccion 2.3 "Multi-idioma en etiquetas"
+
+### Resumen Ejecutivo
+
+Implementacion completa del sistema multi-idioma para etiquetas. Permite crear un unico diseno y traducir todos los textos a multiples idiomas, generando etiquetas en el idioma deseado. Los 8 pasos del plan fueron completados.
+
+| # | Tarea | Estado |
+|---|-------|--------|
+| 1 | Schema + Migracion (translations, languages, default_language) | Completado |
+| 2 | Expression Engine language-aware (resolveText, resolveCodeValue, IDIOMA()) | Completado |
+| 3 | Editor — Barra de idiomas y assigns (pills, dropdown, handlers) | Completado |
+| 4 | Preview integration (label_preview.js, canvas_designer.js) | Completado |
+| 5 | Editor — Panel de traducciones (slide-out con tabla elementos × idiomas) | Completado |
+| 6 | Tab "Texto fijo" con idiomas (inputs inline por elemento) | Completado |
+| 7 | Generacion con idioma (single_label, print_engine, zpl_generator) | Completado |
+| 8 | Tests (13 tests: schema, persistence, export/import, duplicate) | Completado |
+| 9 | Dropdown de idiomas con busqueda (LangDropdown hook) | Completado |
+| 10 | Fix: Canvas actualiza textos al cambiar idioma preview | Completado |
+| 11 | Borrar 28 disenos de ramon@duck.com | Completado |
+
+---
+
+### Cambios por Area
+
+#### Modelo de datos
+
+**Element schema** (`lib/qr_label_system/designs/element.ex`):
+- Campo `field :translations, :map, default: %{}` — almacena traducciones por codigo de idioma: `%{"en" => "Ingredients", "fr" => "Ingrédients"}`
+- `text_content` sigue siendo el texto del idioma por defecto (retrocompatible)
+
+**Design schema** (`lib/qr_label_system/designs/design.ex`):
+- Campo `field :languages, {:array, :string}, default: ["es"]`
+- Campo `field :default_language, :string, default: "es"`
+- Actualizado `element_to_json/1`, `to_json/1`, `to_json_light/1`, `duplicate_changeset/2`
+
+**Migracion** (`priv/repo/migrations/20260214160000_add_languages_to_designs.exs`):
+- Añade `languages` y `default_language` a tabla `label_designs`
+
+**Export/Import** (`lib/qr_label_system/designs.ex`):
+- `export_element/1` incluye `translations`
+- `import_element/1` lee `translations`
+- `export_design/1` incluye `languages` y `default_language`
+- `import_v1_design/1` lee `languages` y `default_language`
+
+#### Expression Engine (`assets/js/hooks/expression_engine.js`)
+
+**Resolucion de texto con 2 fuentes de traduccion:**
+1. **Texto fijo**: `element.translations[lang]` — para etiquetas estaticas
+2. **Columnas Excel**: convencion de sufijo `columna_xx` (ej: `nombre_en`, `nombre_fr`) — para datos dinamicos
+
+**resolveText()** — detecta idioma activo y resuelve en orden:
+1. Columna traducida (`baseCol_lang`) si existe en el row
+2. Columna base si no hay traduccion
+3. Texto fijo traducido como fallback
+
+**resolveCodeValue()** — mismo tratamiento para codigos QR/barras
+
+**IDIOMA()** — nueva funcion para expresiones: devuelve el codigo del idioma activo
+
+#### Editor (`lib/qr_label_system_web/live/design_live/editor.ex`)
+
+- **@available_languages**: 21 idiomas (EU + internacionales) con codigo, nombre y flag
+- **Status bar**: pills de idioma clicables, dropdown searchable para añadir, boton "Traducir"
+- **Panel de traducciones**: slide-out lateral con tabla elementos × idiomas (mismo patron que compliance panel)
+- **Tab texto fijo**: inputs inline de traduccion por elemento cuando el diseno tiene 2+ idiomas
+- **Handlers**: `set_preview_language`, `add_language`, `remove_language`, `toggle_translations_panel`, `update_translation`
+- **push_preview_update**: envia `language` y `default_language`
+
+#### LangDropdown hook (`assets/js/hooks/lang_dropdown.js`) — NUEVO
+
+Hook JS para filtrado client-side del dropdown de idiomas:
+- Filtra por nombre e ISO code mientras el usuario escribe
+- MutationObserver para auto-focus del input al abrir el dropdown
+- Cleanup del observer en `destroyed()`
+
+#### Preview y Canvas
+
+**label_preview.js**: recibe y pasa `language`/`defaultLanguage` en context a resolveText/resolveCodeValue
+
+**canvas_designer.js**:
+- `_resolveCanvasText(element)`: resuelve texto fijo con idioma activo
+- `_updateCanvasLanguage()`: itera todos los textos del canvas y actualiza con traduccion
+- `createText()`: usa `_resolveCanvasText()` para texto inicial
+- Handler `set_preview_language`: almacena idioma y llama `_updateCanvasLanguage()`
+
+#### Generacion
+
+**print_engine.js**: recibe `language`/`defaultLanguage` en eventos de generacion, pasa en context
+**single_label_print.js**: mismo tratamiento
+**zpl_generator.js**: lee language/defaultLanguage de opts y pasa en context
+**single_label.ex**: selector de idioma en UI cuando diseno tiene 2+ idiomas
+
+#### Tests (`test/qr_label_system/designs/multi_language_test.exs`) — NUEVO
+
+13 tests cubriendo:
+- Element translations field (default, changeset)
+- Design language fields (defaults, changeset)
+- to_json/to_json_light con languages
+- Persistencia (create, update, create con translations)
+- Export/import con translations
+- Duplicate design con languages y translations
+
+**Resultado: 1064 tests, 0 failures**
+
+### Commits de Esta Sesion
+
+```
+7d93823 Multi-idioma: soporte completo de traducciones en etiquetas
+```
+
+---
+
+## Sesion Anterior (14 febrero 2026) - Auditoria de seguridad y robustez
 
 ### Resumen Ejecutivo
 
@@ -213,6 +328,9 @@ Sin normativa asignada          Con normativa asignada
 - **Cache en tags**: al modificar relaciones many-to-many (tags), invalidar el cache de la entidad padre (design) explicitamente
 - **Clausulas agrupadas**: en LiveView, todas las clausulas de `handle_event/3` deben estar juntas sin `defp` intermedias, o el compilador da warning con `--warnings-as-errors`
 - **Transacciones en version creation**: usar `FOR UPDATE` lock en la fila del design para serializar creacion concurrente de versiones
+- **Multi-idioma — dos fuentes de traduccion**: texto fijo usa `element.translations[lang]`, datos dinamicos usan convencion de columna con sufijo `_xx` (ej: `nombre_en`). resolveText() prueba columna traducida primero, luego base, luego texto fijo
+- **Canvas re-render en cambio de idioma**: al cambiar preview language, hay que iterar todos los objetos texto del canvas Fabric.js y actualizar su `.text` con la traduccion correcta, luego `canvas.renderAll()`
+- **LangDropdown con MutationObserver**: para auto-focus en dropdowns que se muestran/ocultan con clases CSS, usar MutationObserver en `attributes` + `attributeFilter: ['class']` y limpiar en `destroyed()`
 
 ---
 
@@ -231,6 +349,9 @@ mix test test/qr_label_system/designs/versioning_test.exs
 # Tests de compliance
 mix test test/qr_label_system/compliance/
 
+# Tests multi-idioma
+mix test test/qr_label_system/designs/multi_language_test.exs
+
 # Tests completos
 mix test
 
@@ -244,6 +365,7 @@ mix compile --warnings-as-errors
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 14 feb 2026 | 20 | Multi-idioma completo: translations, expression engine, editor UI, preview, generacion, tests |
 | 14 feb 2026 | 19 | Auditoria seguridad: race condition fix, ownership checks, safe Integer.parse, cache tags |
 | 14 feb 2026 | 18 | Canvas thumbnails, DataMatrix deselect fix, GS1 HRI, change info dedup |
 | 14 feb 2026 | 17 | Campo compliance_role, HRI parsing, export/import fix, template roles |
@@ -256,4 +378,4 @@ mix compile --warnings-as-errors
 
 ---
 
-*Handoff actualizado: 14 febrero 2026 (sesion 19)*
+*Handoff actualizado: 14 febrero 2026 (sesion 20)*

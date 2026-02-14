@@ -6,13 +6,13 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleLabel do
   alias QrLabelSystem.Settings
 
   @available_languages [
-    {"es", "Español", "🇪🇸"}, {"en", "English", "🇬🇧"}, {"fr", "Français", "🇫🇷"},
-    {"de", "Deutsch", "🇩🇪"}, {"it", "Italiano", "🇮🇹"}, {"pt", "Português", "🇵🇹"},
-    {"nl", "Nederlands", "🇳🇱"}, {"pl", "Polski", "🇵🇱"}, {"ro", "Română", "🇷🇴"},
-    {"sv", "Svenska", "🇸🇪"}, {"da", "Dansk", "🇩🇰"}, {"fi", "Suomi", "🇫🇮"},
-    {"el", "Ελληνικά", "🇬🇷"}, {"hu", "Magyar", "🇭🇺"}, {"cs", "Čeština", "🇨🇿"},
-    {"bg", "Български", "🇧🇬"}, {"hr", "Hrvatski", "🇭🇷"}, {"zh", "中文", "🇨🇳"},
-    {"ja", "日本語", "🇯🇵"}, {"ko", "한국어", "🇰🇷"}, {"ar", "العربية", "🇸🇦"}
+    {"es", "Español", "🇪🇸"}, {"en", "Inglés", "🇬🇧"}, {"fr", "Francés", "🇫🇷"},
+    {"de", "Alemán", "🇩🇪"}, {"it", "Italiano", "🇮🇹"}, {"pt", "Portugués", "🇵🇹"},
+    {"nl", "Neerlandés", "🇳🇱"}, {"pl", "Polaco", "🇵🇱"}, {"ro", "Rumano", "🇷🇴"},
+    {"sv", "Sueco", "🇸🇪"}, {"da", "Danés", "🇩🇰"}, {"fi", "Finés", "🇫🇮"},
+    {"el", "Griego", "🇬🇷"}, {"hu", "Húngaro", "🇭🇺"}, {"cs", "Checo", "🇨🇿"},
+    {"bg", "Búlgaro", "🇧🇬"}, {"hr", "Croata", "🇭🇷"}, {"zh", "Chino", "🇨🇳"},
+    {"ja", "Japonés", "🇯🇵"}, {"ko", "Coreano", "🇰🇷"}, {"ar", "Árabe", "🇸🇦"}
   ]
 
   @impl true

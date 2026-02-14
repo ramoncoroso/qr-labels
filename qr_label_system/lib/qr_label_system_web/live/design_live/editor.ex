@@ -35,26 +35,26 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # Available languages for multi-language label support
   @available_languages [
     {"es", "Español", "🇪🇸"},
-    {"en", "English", "🇬🇧"},
-    {"fr", "Français", "🇫🇷"},
-    {"de", "Deutsch", "🇩🇪"},
+    {"en", "Inglés", "🇬🇧"},
+    {"fr", "Francés", "🇫🇷"},
+    {"de", "Alemán", "🇩🇪"},
     {"it", "Italiano", "🇮🇹"},
-    {"pt", "Português", "🇵🇹"},
-    {"nl", "Nederlands", "🇳🇱"},
-    {"pl", "Polski", "🇵🇱"},
-    {"ro", "Română", "🇷🇴"},
-    {"sv", "Svenska", "🇸🇪"},
-    {"da", "Dansk", "🇩🇰"},
-    {"fi", "Suomi", "🇫🇮"},
-    {"el", "Ελληνικά", "🇬🇷"},
-    {"hu", "Magyar", "🇭🇺"},
-    {"cs", "Čeština", "🇨🇿"},
-    {"bg", "Български", "🇧🇬"},
-    {"hr", "Hrvatski", "🇭🇷"},
-    {"zh", "中文", "🇨🇳"},
-    {"ja", "日本語", "🇯🇵"},
-    {"ko", "한국어", "🇰🇷"},
-    {"ar", "العربية", "🇸🇦"}
+    {"pt", "Portugués", "🇵🇹"},
+    {"nl", "Neerlandés", "🇳🇱"},
+    {"pl", "Polaco", "🇵🇱"},
+    {"ro", "Rumano", "🇷🇴"},
+    {"sv", "Sueco", "🇸🇪"},
+    {"da", "Danés", "🇩🇰"},
+    {"fi", "Finés", "🇫🇮"},
+    {"el", "Griego", "🇬🇷"},
+    {"hu", "Húngaro", "🇭🇺"},
+    {"cs", "Checo", "🇨🇿"},
+    {"bg", "Búlgaro", "🇧🇬"},
+    {"hr", "Croata", "🇭🇷"},
+    {"zh", "Chino", "🇨🇳"},
+    {"ja", "Japonés", "🇯🇵"},
+    {"ko", "Coreano", "🇰🇷"},
+    {"ar", "Árabe", "🇸🇦"}
   ]
 
   # Whitelist of allowed fields for element updates (security)
@@ -2645,9 +2645,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <%!-- Zone 3: Languages (right) --%>
       <div class="w-px h-5 bg-gray-200 mx-3 flex-shrink-0"></div>
       <div class="flex items-center gap-1 flex-shrink-0">
-        <svg class="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-        </svg>
         <%= for lang <- (@design.languages || ["es"]) do %>
           <% {_code, _name, flag} = Enum.find(@available_languages, {"es", "Español", "🇪🇸"}, fn {c, _, _} -> c == lang end) %>
           <button
@@ -2662,10 +2659,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         <div class="relative" id="lang-add-dropdown" phx-hook="LangDropdown">
           <button
             phx-click={Phoenix.LiveView.JS.toggle(to: "#lang-dropdown-menu")}
-            class="px-1.5 py-0.5 rounded text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+            class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 border border-dashed border-gray-300 hover:border-gray-400 transition"
             title="Añadir idioma"
           >
-            +
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Idioma</span>
           </button>
           <div id="lang-dropdown-menu" class="hidden absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
             <div class="p-1.5 border-b border-gray-100">
