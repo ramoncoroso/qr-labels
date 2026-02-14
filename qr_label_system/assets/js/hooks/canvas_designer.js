@@ -711,9 +711,23 @@ const CanvasDesigner = {
     })
 
     // Text editing: clear placeholder on enter, restore on exit
+    // When a non-default language is active, editing modifies the translation, not the original text
     this.canvas.on('text:editing:entered', (e) => {
       const obj = e.target
-      if (obj && obj._isPlaceholder) {
+      if (!obj || !obj.elementData) return
+
+      const isTranslationEdit = this._isTranslationEditMode(obj)
+
+      if (isTranslationEdit) {
+        // Show current translation for editing (may be empty)
+        const lang = this._previewLanguage
+        const currentTranslation = (obj.elementData.translations && obj.elementData.translations[lang]) || ''
+        obj.set('text', currentTranslation)
+        obj.set('fill', obj._originalColor || obj.elementData.color || '#000000')
+        obj.set('fontStyle', obj.elementData.font_style || 'normal')
+        obj._isPlaceholder = false
+        this.canvas.renderAll()
+      } else if (obj._isPlaceholder) {
         obj.set('text', '')
         obj.set('fill', obj._originalColor || '#000000')
         obj._isPlaceholder = false
@@ -723,18 +737,39 @@ const CanvasDesigner = {
 
     this.canvas.on('text:editing:exited', (e) => {
       const obj = e.target
-      const hasBinding = obj && obj.elementData && obj.elementData.binding
-      if (obj && obj.elementId && (!obj.text || obj.text.trim() === '') && !hasBinding) {
+      if (!obj || !obj.elementId) return
+
+      const hasBinding = obj.elementData && obj.elementData.binding
+      const isTranslationEdit = this._isTranslationEditMode(obj)
+
+      if (isTranslationEdit) {
+        // Save translation, not text_content
+        const lang = this._previewLanguage
+        const newText = (obj.text || '').trim()
+
+        // Update local elementData translations
+        if (!obj.elementData.translations) obj.elementData.translations = {}
+        obj.elementData.translations[lang] = newText
+
+        // Push translation update to server
+        this.pushEvent("update_translation", {
+          element_id: obj.elementId,
+          lang: lang,
+          value: newText
+        })
+
+        // Re-apply language display
+        this._updateCanvasLanguage()
+      } else if ((!obj.text || obj.text.trim() === '') && !hasBinding) {
         // Restore placeholder (only for unbound text elements)
         obj.set('text', 'Completar texto')
         obj.set('fill', '#999999')
         obj._isPlaceholder = true
-        // Save empty text_content to backend
         if (obj.elementData) {
           obj.elementData.text_content = ''
         }
         this.canvas.renderAll()
-      } else if (obj && obj.elementId && (!obj.text || obj.text.trim() === '') && hasBinding) {
+      } else if ((!obj.text || obj.text.trim() === '') && hasBinding) {
         // Bound element with empty text: restore binding display
         const binding = obj.elementData.binding
         if (isExpression(binding)) {
@@ -750,7 +785,7 @@ const CanvasDesigner = {
           obj.elementData.text_content = ''
         }
         this.canvas.renderAll()
-      } else if (obj && obj.elementId) {
+      } else {
         // User typed real content - update elementData and push to backend
         obj._isPlaceholder = false
         obj.set('fill', obj._originalColor || '#000000')
@@ -1694,6 +1729,18 @@ const CanvasDesigner = {
     return element.text_content
   },
 
+  // Check if editing this object should modify a translation (not text_content)
+  _isTranslationEditMode(obj) {
+    if (!obj || !obj.elementData) return false
+    const data = obj.elementData
+    const hasBinding = data.binding && data.binding !== ''
+    if (hasBinding) return false // Bound elements don't use static translations
+    if (data.type !== 'text') return false
+    const lang = this._previewLanguage
+    const defaultLang = this._defaultLanguage || 'es'
+    return lang && lang !== defaultLang
+  },
+
   createText(element, x, y) {
     // Show binding as [ColumnName] indicator, or text_content, or placeholder
     // Expressions: evaluate with empty row (functions like HOY() resolve, column refs show placeholder)
@@ -2284,13 +2331,10 @@ const CanvasDesigner = {
         needsTranslation = isNonDefault && !hasTranslation && data.text_content && data.text_content.trim() !== ''
 
         if (needsTranslation) {
-          // Show hint with original text as reference
-          const baseText = data.text_content.length > 20
-            ? data.text_content.substring(0, 20) + '…'
-            : data.text_content
-          obj.set('text', `[Traducir: ${baseText}]`)
-          obj.set('fill', '#D97706')
-          obj.set('fontStyle', 'italic')
+          // Show base text normally but with subtle dashed border
+          obj.set('text', data.text_content)
+          obj.set('fill', obj._originalColor || data.color || '#000000')
+          obj.set('fontStyle', data.font_style || 'normal')
         } else {
           const hasContent = resolved && resolved.trim() !== ''
           obj.set('text', hasContent ? resolved : 'Completar texto')
@@ -2299,21 +2343,18 @@ const CanvasDesigner = {
         }
       }
 
-      // Visual indicator for untranslated elements
+      // Subtle dashed border for untranslated elements
       if (needsTranslation) {
         if (!obj._originalStroke) obj._originalStroke = obj.stroke
         if (!obj._originalStrokeWidth) obj._originalStrokeWidth = obj.strokeWidth
-        obj.set('stroke', '#F59E0B')
-        obj.set('strokeWidth', 1)
-        obj.set('strokeDashArray', [4, 3])
+        obj.set('stroke', '#D1D5DB')
+        obj.set('strokeWidth', 0.5)
+        obj.set('strokeDashArray', [3, 2])
       } else {
         // Restore original stroke
         obj.set('stroke', obj._originalStroke || null)
         obj.set('strokeWidth', obj._originalStrokeWidth || 0)
         obj.set('strokeDashArray', null)
-        if (!isNonDefault) {
-          obj.set('fontStyle', obj.elementData.font_style || 'normal')
-        }
       }
 
       this.updateTextFit(obj)
