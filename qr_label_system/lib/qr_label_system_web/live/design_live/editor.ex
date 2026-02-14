@@ -2139,9 +2139,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       </div>
 
       <!-- Right: standard selector -->
-      <div class="flex items-center gap-1">
+      <form phx-change="set_compliance_standard" class="flex items-center gap-1">
         <select
-          phx-change="set_compliance_standard"
           name="standard"
           class="text-xs border-0 bg-transparent text-gray-500 focus:ring-0 py-0 pr-6 pl-1 cursor-pointer"
         >
@@ -2150,7 +2149,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <option value={code} selected={@standard == code}><%= name %></option>
           <% end %>
         </select>
-      </div>
+      </form>
     </div>
     """
   end
