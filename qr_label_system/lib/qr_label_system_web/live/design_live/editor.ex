@@ -127,8 +127,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:zpl_dpi, 203)
        |> assign(:show_versions, false)
        |> assign(:versions, [])
-       |> assign(:version_count, Versioning.latest_version_number(design.id))
-       |> assign(:current_version_number, Versioning.latest_version_number(design.id))
+       |> then(fn s ->
+         latest_v = Versioning.latest_version_number(design.id)
+         s |> assign(:version_count, latest_v) |> assign(:current_version_number, latest_v)
+       end)
        |> assign(:has_unversioned_changes, false)
        |> assign(:restored_from_version, nil)
        |> assign(:renaming_version_id, nil)
@@ -866,21 +868,35 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   @impl true
   def handle_event("start_rename_version", %{"version" => version_str}, socket) do
-    {version_number, ""} = Integer.parse(version_str)
-    version = Enum.find(socket.assigns.versions, &(&1.version_number == version_number))
-    current_name = if version, do: version.custom_name || "", else: ""
+    case Integer.parse(version_str) do
+      {version_number, ""} ->
+        version = Enum.find(socket.assigns.versions, &(&1.version_number == version_number))
+        current_name = if version, do: version.custom_name || "", else: ""
 
-    {:noreply,
-     socket
-     |> assign(:renaming_version_id, version_number)
-     |> assign(:rename_version_value, current_name)}
+        {:noreply,
+         socket
+         |> assign(:renaming_version_id, version_number)
+         |> assign(:rename_version_value, current_name)}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   @impl true
-  def handle_event("save_rename_version", %{"version" => version_str}, socket) do
-    {version_number, ""} = Integer.parse(version_str)
-    design_id = socket.assigns.design.id
-    name = String.trim(socket.assigns.rename_version_value)
+  def handle_event("save_rename_version", %{"version" => version_str} = params, socket) do
+    case Integer.parse(version_str) do
+      {version_number, ""} ->
+        design_id = socket.assigns.design.id
+        name = String.trim(params["custom_name"] || socket.assigns.rename_version_value)
+        do_save_rename_version(socket, design_id, version_number, name)
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp do_save_rename_version(socket, design_id, version_number, name) do
 
     case Versioning.rename_version(design_id, version_number, name) do
       {:ok, _updated} ->
@@ -3327,75 +3343,61 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                 <div class="divide-y divide-gray-200">
                   <%= for version <- @versions do %>
                     <div class="px-4 py-3 hover:bg-gray-100 transition">
+                      <%!-- Row 1: vN + badge + custom_name + pencil + date --%>
                       <div class="flex items-center justify-between mb-1">
-                        <div class="flex items-center gap-2">
-                          <span class="text-sm font-bold text-gray-900">v<%= version.version_number %></span>
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="text-sm font-bold text-gray-900 flex-shrink-0">v<%= version.version_number %></span>
                           <%= if version.version_number == @current_version_number do %>
-                            <span class="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">actual</span>
+                            <span class="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">actual</span>
+                          <% end %>
+                          <%= if version.custom_name && @renaming_version_id != version.version_number do %>
+                            <span class="text-xs font-medium text-indigo-700 truncate"><%= version.custom_name %></span>
+                          <% end %>
+                          <%= if @renaming_version_id != version.version_number do %>
+                            <button
+                              phx-click="start_rename_version"
+                              phx-value-version={version.version_number}
+                              class="text-gray-400 hover:text-blue-600 flex-shrink-0 transition"
+                              title="Renombrar versión"
+                            >
+                              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
                           <% end %>
                         </div>
-                        <span class="text-xs text-gray-500">
+                        <span class="text-xs text-gray-400 flex-shrink-0 ml-2">
                           <%= Calendar.strftime(version.inserted_at, "%d/%m %H:%M") %>
                         </span>
                       </div>
+                      <%!-- Inline rename form --%>
                       <%= if @renaming_version_id == version.version_number do %>
-                        <div class="flex items-center gap-1 mb-1">
+                        <form phx-submit="save_rename_version" phx-value-version={version.version_number} class="flex items-center gap-1 mb-1">
                           <input
                             type="text"
+                            name="custom_name"
                             value={@rename_version_value}
                             phx-keyup="update_rename_version_value"
-                            phx-key="Enter"
-                            phx-keydown="save_rename_version"
-                            phx-value-version={version.version_number}
                             class="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Nombre personalizado"
                             autofocus
                           />
-                          <button
-                            phx-click="save_rename_version"
-                            phx-value-version={version.version_number}
-                            class="text-xs text-green-600 hover:text-green-800 font-medium"
-                          >OK</button>
-                          <button
-                            phx-click="cancel_rename_version"
-                            class="text-xs text-gray-400 hover:text-gray-600"
-                          >X</button>
-                        </div>
-                      <% else %>
-                        <%= if version.custom_name do %>
-                          <div class="flex items-center gap-1 mb-1">
-                            <span class="text-xs font-medium text-indigo-700"><%= version.custom_name %></span>
-                            <button
-                              phx-click="start_rename_version"
-                              phx-value-version={version.version_number}
-                              class="text-gray-400 hover:text-gray-600"
-                              title="Renombrar"
-                            >
-                              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                          </div>
-                        <% end %>
+                          <button type="submit" class="text-xs text-green-600 hover:text-green-800 font-medium">OK</button>
+                          <button type="button" phx-click="cancel_rename_version" class="text-xs text-gray-400 hover:text-gray-600">X</button>
+                        </form>
                       <% end %>
+                      <%!-- Row 2: user email --%>
                       <div class="text-xs text-gray-500 mb-1">
                         <%= if version.user, do: version.user.email, else: "Sistema" %>
                       </div>
+                      <%!-- Row 3: change_message + actions --%>
                       <div class="flex items-center justify-between">
-                        <span class="text-xs text-gray-400"><%= version.element_count %> elementos</span>
-                        <div class="flex gap-2">
-                          <%= unless version.custom_name || @renaming_version_id == version.version_number do %>
-                            <button
-                              phx-click="start_rename_version"
-                              phx-value-version={version.version_number}
-                              class="text-xs text-gray-400 hover:text-gray-600"
-                              title="Renombrar"
-                            >
-                              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                          <% end %>
+                        <%= if version.change_message do %>
+                          <span class="text-xs text-gray-400 italic truncate mr-2"><%= version.change_message %></span>
+                        <% else %>
+                          <span></span>
+                        <% end %>
+                        <div class="flex gap-2 flex-shrink-0">
                           <button
                             phx-click="select_version"
                             phx-value-version={version.version_number}
@@ -3413,9 +3415,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                           </button>
                         </div>
                       </div>
-                      <%= if version.change_message do %>
-                        <div class="mt-1 text-xs text-amber-600 italic"><%= version.change_message %></div>
-                      <% end %>
                     </div>
                   <% end %>
                 </div>

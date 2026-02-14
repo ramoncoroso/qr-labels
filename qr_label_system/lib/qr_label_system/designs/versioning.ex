@@ -329,13 +329,16 @@ defmodule QrLabelSystem.Designs.Versioning do
   end
 
   defp duplicate_hash?(design_id, hash) do
-    Repo.exists?(
+    latest_hash =
       from(v in DesignVersion,
-        where: v.design_id == ^design_id and v.snapshot_hash == ^hash,
+        where: v.design_id == ^design_id,
         order_by: [desc: v.version_number],
-        limit: 1
+        limit: 1,
+        select: v.snapshot_hash
       )
-    )
+      |> Repo.one()
+
+    latest_hash == hash
   end
 
   defp next_version_number(design_id) do
