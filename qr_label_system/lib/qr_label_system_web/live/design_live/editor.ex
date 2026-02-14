@@ -1810,6 +1810,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, socket}
   end
 
+  @impl true
+  def handle_event("download_template_excel", _params, socket) do
+    design = socket.assigns.design
+    {:noreply, push_event(socket, "download_template", Design.to_json(design))}
+  end
+
   defp do_save_rename_version(socket, design_id, version_number, name) do
     case Versioning.rename_version(design_id, version_number, name) do
       {:ok, _updated} ->
@@ -2853,6 +2859,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     assigns = assign(assigns, :element_count, length(assigns.design.elements || []))
     ~H"""
     <div class="h-screen flex flex-col bg-gray-100" id="editor-container" phx-hook="KeyboardShortcuts">
+      <div id="template-download-hook" phx-hook="TemplateDownload" class="hidden"></div>
       <!-- Header -->
       <div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
         <!-- Left: Back + Name + Dimensions -->
@@ -3320,15 +3327,27 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <p class="text-xs text-amber-700 mt-1">
                       Carga un archivo Excel o pega datos para vincular columnas a los elementos.
                     </p>
-                    <.link
-                      navigate={~p"/generate/data/#{@design.id}"}
-                      class="inline-flex items-center space-x-1 mt-2 text-sm font-medium text-amber-700 hover:text-amber-900"
-                    >
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <span>Vincular datos</span>
-                    </.link>
+                    <div class="flex items-center space-x-3 mt-2">
+                      <.link
+                        navigate={~p"/generate/data/#{@design.id}"}
+                        class="inline-flex items-center space-x-1 text-sm font-medium text-amber-700 hover:text-amber-900"
+                      >
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span>Vincular datos</span>
+                      </.link>
+                      <button
+                        phx-click="download_template_excel"
+                        class="inline-flex items-center space-x-1 text-sm font-medium text-amber-700 hover:text-amber-900"
+                        title="Descargar plantilla Excel con las columnas del diseño"
+                      >
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>Descargar plantilla</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3370,6 +3389,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       <p class="text-xs text-indigo-600">
                         Datos Excel cargados. Asigna columnas a los elementos y usa Vista previa para ver el resultado.
                       </p>
+                      <button
+                        phx-click="download_template_excel"
+                        class="inline-flex items-center space-x-1 mt-2 text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                        title="Descargar plantilla Excel con las columnas del diseño"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>Descargar plantilla Excel</span>
+                      </button>
                     </div>
                   </div>
                 <% end %>
@@ -3915,6 +3944,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </svg>
             </button>
           </div>
+
+          <!-- Language selector (only if design has multiple languages) -->
+          <%= if length(@design.languages || ["es"]) > 1 do %>
+            <div class="bg-blue-50 rounded-lg p-3 mb-4">
+              <label class="block text-xs font-medium text-blue-700 mb-1.5">Idioma de vista previa</label>
+              <div class="flex flex-wrap gap-1.5">
+                <%= for lang <- (@design.languages || ["es"]) do %>
+                  <% {_code, name, flag} = Enum.find(@available_languages, {"es", "Español", "🇪🇸"}, fn {c, _, _} -> c == lang end) %>
+                  <button
+                    phx-click="set_preview_language"
+                    phx-value-lang={lang}
+                    class={"px-2 py-1 rounded text-xs font-medium transition #{if @preview_language == lang, do: "bg-blue-600 text-white", else: "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"}"}
+                  >
+                    <%= flag %> <%= name %>
+                  </button>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
 
           <!-- Row Navigation (when multiple rows available) -->
           <%= if @upload_total_rows > 1 do %>
