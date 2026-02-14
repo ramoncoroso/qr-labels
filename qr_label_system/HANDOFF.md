@@ -6,7 +6,7 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Refactor Versiones, Compliance, Auditoria
+## Sesion Actual (14 febrero 2026) - Refactor Versiones, Compliance, Auditoria, Fix 2D Barcodes
 
 ### Resumen Ejecutivo
 
@@ -28,6 +28,7 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 | 14 | Normativa solo lectura en canvas | Completado |
 | 15 | Revisar avisos compliance y accion "añadir campo" | Completado |
 | 16 | Fix: DataMatrix dimensiones cuadradas desde compliance | Completado |
+| 17 | Fix: DataMatrix/2D forzar cuadrado en render y cambio de formato | Completado |
 
 ---
 
@@ -64,7 +65,8 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 #### Compliance / Normativas
 
 - **Normativa read-only en canvas**: si ya tiene normativa asignada, muestra nombre como texto (no selector). El selector solo aparece cuando no hay normativa
-- **DataMatrix fix**: formatos 2D (DATAMATRIX, AZTEC, MAXICODE) se crean con dimensiones cuadradas (20x20mm) en vez de lineales (40x15mm)
+- **DataMatrix fix (compliance)**: formatos 2D (DATAMATRIX, AZTEC, MAXICODE) se crean con dimensiones cuadradas (20x20mm) en vez de lineales (40x15mm)
+- **DataMatrix fix (render + formato)**: elementos 2D existentes con dimensiones rectangulares se corrigen al renderizar en canvas (`createBarcode` fuerza cuadrado). Al cambiar `barcode_format` a 2D en el panel de propiedades, se auto-ajustan width/height a cuadrado (minimo 20mm)
 - **Avisos de compliance**: revisado el flujo de "Agregar campo" — funciona correctamente
 
 #### Auditoria de Codigo
@@ -84,6 +86,7 @@ Fixes aplicados de la auditoria automatica:
 a4b73a9 Fix version rename, deduplicate hash check, and simplify version list UI
 07a6b9f Fix DataMatrix dimensions from compliance and make standard read-only
 f38e703 Add SVG preview in version detail panel
+60488d8 Fix 2D barcode rendering: force square dimensions for DataMatrix/Aztec/MaxiCode
 ```
 
 ---
@@ -144,6 +147,7 @@ Sin normativa asignada          Con normativa asignada
 - **phx-key="Enter"**: filtra TODOS los event bindings del elemento (phx-keyup y phx-keydown). No usar si se necesita capturar keystrokes normales. Usar `<form phx-submit>` en su lugar
 - **Streams**: elementos con `phx-update="stream"` no se re-renderizan con cambios de assigns. Usar modales globales fuera del stream
 - **duplicate_hash?**: comparar solo contra la ultima version, no todas. Si no, restaurar a un estado anterior y guardar puede ser bloqueado por dedup
+- **Formatos 2D (DataMatrix, Aztec, MaxiCode)**: siempre deben ser cuadrados. Forzar en 3 puntos: creacion desde compliance, render en canvas JS, y cambio de formato en panel de propiedades
 
 ---
 
@@ -172,6 +176,7 @@ mix compile
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 14 feb 2026 | 16 | Fix 2D barcode square rendering (render, format change, compliance) |
 | 14 feb 2026 | 15 | Refactor versiones, compliance read-only, auditoria, SVG preview |
 | 6 feb 2026 | 14 | SVG previews, botones en tarjetas, sistema categorias |
 | 6 feb 2026 | 13 | Fix compilacion, modal importacion con seleccion |
@@ -180,4 +185,4 @@ mix compile
 
 ---
 
-*Handoff actualizado: 14 febrero 2026 (sesion 15)*
+*Handoff actualizado: 14 febrero 2026 (sesion 16)*
