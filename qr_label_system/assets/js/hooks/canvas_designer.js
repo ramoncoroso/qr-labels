@@ -719,13 +719,20 @@ const CanvasDesigner = {
       const isTranslationEdit = this._isTranslationEditMode(obj)
 
       if (isTranslationEdit) {
-        // Show current translation for editing (may be empty)
+        // Replace displayed text with current translation for editing
         const lang = this._previewLanguage
         const currentTranslation = (obj.elementData.translations && obj.elementData.translations[lang]) || ''
-        obj.set('text', currentTranslation)
         obj.set('fill', obj._originalColor || obj.elementData.color || '#000000')
         obj.set('fontStyle', obj.elementData.font_style || 'normal')
+        obj.set('stroke', null)
+        obj.set('strokeWidth', 0)
+        obj.set('strokeDashArray', null)
         obj._isPlaceholder = false
+        // Use insertChars approach: clear and insert to preserve cursor
+        obj.text = currentTranslation
+        obj.initDimensions()
+        obj.setSelectionStart(currentTranslation.length)
+        obj.setSelectionEnd(currentTranslation.length)
         this.canvas.renderAll()
       } else if (obj._isPlaceholder) {
         obj.set('text', '')
@@ -2331,9 +2338,9 @@ const CanvasDesigner = {
         needsTranslation = isNonDefault && !hasTranslation && data.text_content && data.text_content.trim() !== ''
 
         if (needsTranslation) {
-          // Show base text normally but with subtle dashed border
-          obj.set('text', data.text_content)
-          obj.set('fill', obj._originalColor || data.color || '#000000')
+          // Show base text in gray with small pending hint
+          obj.set('text', data.text_content + '  ⟡')
+          obj.set('fill', '#9CA3AF')
           obj.set('fontStyle', data.font_style || 'normal')
         } else {
           const hasContent = resolved && resolved.trim() !== ''

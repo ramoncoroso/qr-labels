@@ -1625,6 +1625,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("select_element", %{"id" => id}, socket) do
+    {:noreply,
+     socket
+     |> assign(:sidebar_tab, "properties")
+     |> push_event("select_element", %{id: id})}
+  end
+
+  @impl true
   def handle_event("update_translation", %{"element_id" => element_id, "lang" => lang, "value" => text}, socket) do
     design = socket.assigns.design
     elements = design.elements || []
