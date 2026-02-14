@@ -2371,22 +2371,43 @@ const CanvasDesigner = {
     this.canvas.renderAll()
   },
 
-  // Add a small "traducir" label below an untranslated text element
+  // Add a badge-style "traducir" label below an untranslated text element
+  // Visual style matches the barcode format badge (CODE128, etc.)
   _addTranslationHint(obj) {
-    const hint = new fabric.Text('traducir', {
-      fontSize: 7,
-      fill: '#9CA3AF',
+    const text = new fabric.Text('traducir', {
+      fontSize: 8,
       fontFamily: 'Arial',
-      fontStyle: 'italic',
+      fill: '#6B7280',
+      originX: 'left',
+      originY: 'top'
+    })
+
+    const padX = 4
+    const padY = 1
+    const rect = new fabric.Rect({
+      width: text.width + padX * 2,
+      height: text.height + padY * 2,
+      fill: '#F3F4F6',
+      stroke: '#D1D5DB',
+      strokeWidth: 0.5,
+      rx: 3,
+      ry: 3,
+      originX: 'left',
+      originY: 'top'
+    })
+
+    text.set({ left: padX, top: padY })
+
+    const badge = new fabric.Group([rect, text], {
+      left: obj.left,
+      top: obj.top + obj.getScaledHeight() + 2,
       selectable: false,
       evented: false,
       excludeFromExport: true
     })
-    // Position below the element, left-aligned
-    const objBottom = obj.top + obj.getScaledHeight()
-    hint.set({ left: obj.left, top: objBottom + 1 })
-    this.canvas.add(hint)
-    this._translationHints.set(obj.elementId, hint)
+
+    this.canvas.add(badge)
+    this._translationHints.set(obj.elementId, badge)
   },
 
   // Remove all translation hint decorators from canvas
