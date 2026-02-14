@@ -2374,22 +2374,23 @@ const CanvasDesigner = {
   // Add a badge-style "traducir" label below an untranslated text element
   // Visual style matches the barcode format badge (CODE128, etc.)
   _addTranslationHint(obj) {
-    const text = new fabric.Text('traducir', {
-      fontSize: 8,
+    const text = new fabric.Text('2 click para traducir', {
+      fontSize: 9,
       fontFamily: 'Arial',
-      fill: '#6B7280',
+      fontWeight: 'bold',
+      fill: '#D97706',
       originX: 'left',
       originY: 'top'
     })
 
-    const padX = 4
-    const padY = 1
+    const padX = 5
+    const padY = 2
     const rect = new fabric.Rect({
       width: text.width + padX * 2,
       height: text.height + padY * 2,
-      fill: '#F3F4F6',
-      stroke: '#D1D5DB',
-      strokeWidth: 0.5,
+      fill: '#FFFBEB',
+      stroke: '#F59E0B',
+      strokeWidth: 1,
       rx: 3,
       ry: 3,
       originX: 'left',
