@@ -733,9 +733,12 @@ const CanvasDesigner = {
           this.canvas.remove(hint)
           this._translationHints.delete(obj.elementId)
         }
-        // Set text to current translation, preserving cursor
+        // Set text to current translation and sync hidden textarea
         obj.text = currentTranslation
         obj.initDimensions()
+        if (obj.hiddenTextarea) {
+          obj.hiddenTextarea.value = currentTranslation
+        }
         obj.setSelectionStart(currentTranslation.length)
         obj.setSelectionEnd(currentTranslation.length)
         this.canvas.renderAll()
@@ -743,6 +746,11 @@ const CanvasDesigner = {
         obj.set('text', '')
         obj.set('fill', obj._originalColor || '#000000')
         obj._isPlaceholder = false
+        if (obj.hiddenTextarea) {
+          obj.hiddenTextarea.value = ''
+        }
+        obj.setSelectionStart(0)
+        obj.setSelectionEnd(0)
         this.canvas.renderAll()
       }
     })
