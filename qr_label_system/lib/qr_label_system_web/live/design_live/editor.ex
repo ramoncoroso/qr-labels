@@ -174,7 +174,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:show_compliance_panel, false)
        |> assign(:preview_language, design.default_language || "es")
        |> assign(:available_languages, @available_languages)
-       |> assign(:show_translations_panel, false)
        |> then(&maybe_run_compliance/1)
        |> allow_upload(:element_image,
          accept: ~w(.png .jpg .jpeg .gif),  # SVG blocked for XSS security
@@ -1626,11 +1625,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
-  def handle_event("toggle_translations_panel", _params, socket) do
-    {:noreply, assign(socket, :show_translations_panel, !socket.assigns.show_translations_panel)}
-  end
-
-  @impl true
   def handle_event("update_translation", %{"element_id" => element_id, "lang" => lang, "value" => text}, socket) do
     design = socket.assigns.design
     elements = design.elements || []
@@ -2748,15 +2742,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             </div>
           </div>
         </div>
-        <%= if length(@design.languages || ["es"]) > 1 do %>
-          <button
-            phx-click="toggle_translations_panel"
-            class="px-1.5 py-0.5 rounded text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition"
-            title="Panel de traducciones"
-          >
-            Traducir
-          </button>
-        <% end %>
       </div>
 
       <%!-- Zone 4: Historial + Versions (right) --%>
@@ -3428,7 +3413,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <%= String.capitalize(@selected_element.type) %>
                   </span>
                 </div>
-                <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} collapsed_sections={@collapsed_sections} compliance_standard={@design.compliance_standard} all_elements={@design.elements || []} design={@design} available_languages={@available_languages} />
+                <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} collapsed_sections={@collapsed_sections} compliance_standard={@design.compliance_standard} all_elements={@design.elements || []} design={@design} available_languages={@available_languages} preview_language={@preview_language} />
 
                 <div class="mt-6 pt-4 border-t">
                   <button
@@ -3822,69 +3807,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <%= if approval.comment do %>
                       <p class="text-xs text-gray-700 mt-1 italic bg-gray-100 rounded p-2"><%= approval.comment %></p>
                     <% end %>
-                  </div>
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-        </div>
-
-        <!-- Translations Panel (overlay) -->
-        <div :if={@show_translations_panel && length(@design.languages || ["es"]) > 1} class="absolute right-72 top-0 bottom-0 w-96 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
-            <h3 class="font-semibold text-gray-900">Traducciones</h3>
-            <button phx-click="toggle_translations_panel" class="text-gray-400 hover:text-gray-600">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div class="flex-1 overflow-y-auto p-3">
-            <% text_elements = Enum.filter(@design.elements || [], fn el -> el.type == "text" end) %>
-            <%= if text_elements == [] do %>
-              <div class="p-4 text-center text-sm text-gray-500">
-                <p>No hay elementos de texto para traducir.</p>
-              </div>
-            <% else %>
-              <div class="space-y-4">
-                <%= for element <- text_elements do %>
-                  <div class="bg-white rounded-lg border border-gray-200 p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                      <span class="text-xs font-medium text-gray-500"><%= element.name || "Texto" %></span>
-                      <%= if element.binding do %>
-                        <span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">[<%= element.binding %>]</span>
-                      <% end %>
-                    </div>
-                    <div class="space-y-2">
-                      <%= for lang <- (@design.languages || ["es"]) do %>
-                        <% {_code, lang_name, flag} = Enum.find(@available_languages, {"es", "Español", "🇪🇸"}, fn {c, _, _} -> c == lang end) %>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs w-8 text-center flex-shrink-0" title={lang_name}><%= flag %></span>
-                          <%= if lang == (@design.default_language || "es") do %>
-                            <input
-                              type="text"
-                              value={element.text_content || ""}
-                              disabled
-                              class="flex-1 text-xs border-gray-200 bg-gray-50 rounded px-2 py-1 text-gray-500"
-                              title="Editar en el canvas (idioma por defecto)"
-                            />
-                          <% else %>
-                            <form phx-change="update_translation" class="flex-1">
-                              <input type="hidden" name="element_id" value={element.id} />
-                              <input type="hidden" name="lang" value={lang} />
-                              <input
-                                type="text"
-                                value={Map.get(element.translations || %{}, lang, "")}
-                                name="value"
-                                phx-debounce="500"
-                                placeholder={"Traducción #{String.upcase(lang)}"}
-                                class="w-full text-xs border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                              />
-                            </form>
-                          <% end %>
-                        </div>
-                      <% end %>
-                    </div>
                   </div>
                 <% end %>
               </div>
@@ -4366,6 +4288,69 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
       </div>
 
+      <!-- Section: Translation (prominent, only for non-default language + fixed text) -->
+      <% is_non_default_lang = @preview_language != (@design.default_language || "es") %>
+      <% has_binding = (@element.binding || "") != "" %>
+      <%= if is_non_default_lang && @element.type == "text" && !has_binding do %>
+        <% {_code, lang_name, lang_flag} = Enum.find(@available_languages, {"es", "Español", "🇪🇸"}, fn {c, _, _} -> c == @preview_language end) %>
+        <% current_translation = Map.get(@element.translations || %{}, @preview_language, "") %>
+        <% has_translation = current_translation != "" %>
+        <div class="border-b border-gray-200">
+          <div class="p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="text-sm"><%= lang_flag %></span>
+                <span class="text-xs font-semibold text-gray-700">Traducción (<%= lang_name %>)</span>
+              </div>
+              <%= if !has_translation do %>
+                <span class="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Pendiente</span>
+              <% end %>
+            </div>
+            <form phx-change="update_translation">
+              <input type="hidden" name="element_id" value={@element.id} />
+              <input type="hidden" name="lang" value={@preview_language} />
+              <input
+                type="text"
+                value={current_translation}
+                name="value"
+                phx-debounce="500"
+                placeholder={"Traducir al #{String.downcase(lang_name)}..."}
+                class={"w-full text-sm rounded-md shadow-sm #{if has_translation, do: "border-gray-300", else: "border-amber-300 focus:border-amber-500 focus:ring-amber-500"}"}
+              />
+            </form>
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] text-gray-400">
+                Original: <span class="font-medium text-gray-500"><%= @element.text_content || "(vacío)" %></span>
+              </p>
+              <% untranslated = Enum.filter(@design.elements || [], fn el ->
+                el.type == "text" && (el.binding || "") == "" &&
+                (el.text_content || "") != "" &&
+                (Map.get(el.translations || %{}, @preview_language, "") == "")
+              end) %>
+              <%= if length(untranslated) > 0 do %>
+                <% next = Enum.find(untranslated, List.first(untranslated), fn el -> el.id != @element.id end) %>
+                <button
+                  type="button"
+                  phx-click="select_element"
+                  phx-value-id={next.id}
+                  class="inline-flex items-center gap-1 text-[11px] text-amber-600 hover:text-amber-800 font-medium"
+                  title={"#{length(untranslated)} pendiente(s)"}
+                >
+                  <span class="bg-amber-100 text-amber-700 px-1 rounded text-[10px]"><%= length(untranslated) %></span>
+                  Siguiente
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+              <% else %>
+                <span class="inline-flex items-center gap-1 text-[11px] text-green-600 font-medium">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                  Todo traducido
+                </span>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      <% end %>
+
       <!-- Section: Contenido (only for qr/barcode/text) -->
       <%= if @element.type in ["qr", "barcode", "text"] do %>
         <div class="border-b border-gray-200">
@@ -4470,29 +4455,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <p class="text-xs text-gray-500 mt-1">
                       Este contenido sera igual en todas las etiquetas
                     </p>
-                  <% end %>
-                  <%!-- Multi-language translations inline --%>
-                  <%= if length(@design.languages || ["es"]) > 1 && @element.type == "text" do %>
-                    <div class="mt-2 space-y-1">
-                      <%= for lang <- Enum.reject(@design.languages || ["es"], &(&1 == (@design.default_language || "es"))) do %>
-                        <% {_code, _name, flag} = Enum.find(@available_languages, {"es", "Español", "🇪🇸"}, fn {c, _, _} -> c == lang end) %>
-                        <div class="flex items-center gap-1.5">
-                          <span class="text-xs flex-shrink-0" title={lang}><%= flag %></span>
-                          <form phx-change="update_translation" class="flex-1">
-                            <input type="hidden" name="element_id" value={@element.id} />
-                            <input type="hidden" name="lang" value={lang} />
-                            <input
-                              type="text"
-                              value={Map.get(@element.translations || %{}, lang, "")}
-                              name="value"
-                              phx-debounce="500"
-                              placeholder={"#{String.upcase(lang)}"}
-                              class="w-full text-xs border-gray-200 rounded px-2 py-0.5 focus:ring-1 focus:ring-blue-500"
-                            />
-                          </form>
-                        </div>
-                      <% end %>
-                    </div>
                   <% end %>
 
                 <% :expression -> %>

@@ -802,6 +802,9 @@ const CanvasDesigner = {
         console.log("[reload_design] calling loadDesign...")
         this.loadDesign(design)
 
+        // Re-apply language indicators after reload
+        this._updateCanvasLanguage()
+
         // Mark save time to prevent load_design from reverting and to give the
         // canvas time to settle before any autosave fires
         this._lastSaveTime = Date.now()
@@ -2249,23 +2252,27 @@ const CanvasDesigner = {
     const row = this._previewRow || {}
     const mapping = this._previewMapping || {}
     const hasData = Object.keys(row).length > 0
+    const lang = this._previewLanguage
+    const defaultLang = this._defaultLanguage || 'es'
+    const isNonDefault = lang && lang !== defaultLang
 
     this.elements.forEach((obj) => {
       if (!obj || !obj.elementData || obj.elementData.type !== 'text') return
 
       const data = obj.elementData
       const hasBinding = data.binding && data.binding !== ''
+      let needsTranslation = false
 
       if (isExpression(data.binding)) {
         // Re-evaluate expression with new language context
-        const ctx = { rowIndex: 0, batchSize: 1, now: new Date(), language: this._previewLanguage, defaultLanguage: this._defaultLanguage || 'es' }
+        const ctx = { rowIndex: 0, batchSize: 1, now: new Date(), language: lang, defaultLanguage: defaultLang }
         const preview = evaluate(data.binding, row, ctx)
         obj.set('text', preview || data.binding)
       } else if (hasData && (hasBinding || mapping[obj.elementId])) {
         // Has data loaded: resolve using data row + mapping (includes name-based mapping)
         const resolved = resolveText(data, row, mapping, {
-          language: this._previewLanguage,
-          defaultLanguage: this._defaultLanguage || 'es'
+          language: lang,
+          defaultLanguage: defaultLang
         })
         const hasContent = resolved && resolved.trim() !== ''
         obj.set('text', hasContent ? resolved : `[${data.binding || data.name || 'sin datos'}]`)
@@ -2273,9 +2280,37 @@ const CanvasDesigner = {
       } else if (!hasBinding) {
         // Fixed text: resolve with language (translations)
         const resolved = this._resolveCanvasText(data)
-        const hasContent = resolved && resolved.trim() !== ''
-        obj.set('text', hasContent ? resolved : 'Completar texto')
-        obj.set('fill', hasContent ? (obj._originalColor || data.color || '#000000') : '#999999')
+        const hasTranslation = isNonDefault && data.translations && data.translations[lang] && data.translations[lang].trim() !== ''
+        needsTranslation = isNonDefault && !hasTranslation && data.text_content && data.text_content.trim() !== ''
+
+        if (needsTranslation) {
+          // Show base text as placeholder to indicate it needs translation
+          obj.set('text', data.text_content)
+          obj.set('fill', '#9CA3AF')
+          obj.set('fontStyle', 'italic')
+        } else {
+          const hasContent = resolved && resolved.trim() !== ''
+          obj.set('text', hasContent ? resolved : 'Completar texto')
+          obj.set('fill', hasContent ? (obj._originalColor || data.color || '#000000') : '#999999')
+          obj.set('fontStyle', data.font_style || 'normal')
+        }
+      }
+
+      // Visual indicator for untranslated elements
+      if (needsTranslation) {
+        if (!obj._originalStroke) obj._originalStroke = obj.stroke
+        if (!obj._originalStrokeWidth) obj._originalStrokeWidth = obj.strokeWidth
+        obj.set('stroke', '#F59E0B')
+        obj.set('strokeWidth', 1)
+        obj.set('strokeDashArray', [4, 3])
+      } else {
+        // Restore original stroke
+        obj.set('stroke', obj._originalStroke || null)
+        obj.set('strokeWidth', obj._originalStrokeWidth || 0)
+        obj.set('strokeDashArray', null)
+        if (!isNonDefault) {
+          obj.set('fontStyle', obj.elementData.font_style || 'normal')
+        }
       }
 
       this.updateTextFit(obj)
