@@ -57,6 +57,7 @@ defmodule QrLabelSystem.Designs.Design do
     embeds_many :groups, ElementGroup, on_replace: :delete
 
     belongs_to :user, QrLabelSystem.Accounts.User
+    belongs_to :workspace, QrLabelSystem.Workspaces.Workspace
     has_many :versions, QrLabelSystem.Designs.DesignVersion
     has_many :approvals, QrLabelSystem.Designs.DesignApproval
     many_to_many :tags, Tag, join_through: "design_tag_assignments"
@@ -77,7 +78,7 @@ defmodule QrLabelSystem.Designs.Design do
       :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
       :is_template, :template_source, :template_category, :label_type, :user_id,
-      :status, :compliance_standard,
+      :workspace_id, :status, :compliance_standard,
       :languages, :default_language
     ])
     |> validate_inclusion(:template_source, ~w(system user), message: "must be system or user")
@@ -100,7 +101,7 @@ defmodule QrLabelSystem.Designs.Design do
   """
   def duplicate_changeset(design, attrs) do
     %__MODULE__{}
-    |> cast(attrs, [:name, :user_id, :label_type])
+    |> cast(attrs, [:name, :user_id, :workspace_id, :label_type])
     |> put_change(:description, design.description)
     |> put_change(:width_mm, design.width_mm)
     |> put_change(:height_mm, design.height_mm)

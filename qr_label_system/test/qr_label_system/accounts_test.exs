@@ -75,6 +75,16 @@ defmodule QrLabelSystem.AccountsTest do
       assert user.role == "operator"
     end
 
+    test "creates personal workspace on registration" do
+      {:ok, user} = Accounts.register_user(valid_user_attributes())
+      workspace = QrLabelSystem.Workspaces.get_personal_workspace(user.id)
+
+      assert workspace != nil
+      assert workspace.type == "personal"
+      assert workspace.owner_id == user.id
+      assert QrLabelSystem.Workspaces.workspace_admin?(workspace.id, user.id)
+    end
+
     test "allows setting role during registration" do
       {:ok, admin} = Accounts.register_user(valid_user_attributes(role: "admin"))
       assert admin.role == "admin"

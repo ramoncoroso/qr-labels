@@ -13,6 +13,7 @@ defmodule QrLabelSystem.Designs.Tag do
     field :color, :string, default: "#6366F1"
 
     belongs_to :user, QrLabelSystem.Accounts.User
+    belongs_to :workspace, QrLabelSystem.Workspaces.Workspace
     many_to_many :designs, QrLabelSystem.Designs.Design, join_through: "design_tag_assignments"
 
     timestamps(type: :utc_datetime)
@@ -23,10 +24,10 @@ defmodule QrLabelSystem.Designs.Tag do
   """
   def changeset(tag, attrs) do
     tag
-    |> cast(attrs, [:name, :color, :user_id])
-    |> validate_required([:name, :user_id])
+    |> cast(attrs, [:name, :color, :user_id, :workspace_id])
+    |> validate_required([:name])
     |> validate_length(:name, min: 1, max: 50)
     |> validate_format(:color, ~r/^#[0-9A-Fa-f]{6}$/, message: "must be a valid hex color")
-    |> unique_constraint([:user_id, :name], message: "ya existe un tag con este nombre")
+    |> unique_constraint([:workspace_id, :name], message: "ya existe un tag con este nombre")
   end
 end

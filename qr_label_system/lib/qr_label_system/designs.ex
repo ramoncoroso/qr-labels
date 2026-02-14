@@ -36,11 +36,30 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Returns the list of designs for a workspace.
+  """
+  def list_workspace_designs(workspace_id) do
+    Repo.all(
+      from d in Design,
+        where: d.workspace_id == ^workspace_id,
+        order_by: [desc: d.updated_at]
+    )
+  end
+
+  @doc """
   Returns designs for a user with heavy binary data stripped from elements.
   Used for listing pages where image_data/qr_logo_data aren't needed.
   """
   def list_user_designs_light(user_id) do
     list_user_designs(user_id)
+    |> Enum.map(&strip_heavy_element_data/1)
+  end
+
+  @doc """
+  Returns workspace designs with heavy binary data stripped.
+  """
+  def list_workspace_designs_light(workspace_id) do
+    list_workspace_designs(workspace_id)
     |> Enum.map(&strip_heavy_element_data/1)
   end
 
@@ -62,6 +81,18 @@ defmodule QrLabelSystem.Designs do
     Repo.all(
       from d in Design,
         where: d.user_id == ^user_id and d.label_type == ^label_type,
+        order_by: [desc: d.updated_at],
+        preload: [:tags]
+    )
+  end
+
+  @doc """
+  Returns workspace designs filtered by label type.
+  """
+  def list_workspace_designs_by_type(workspace_id, label_type) when label_type in ["single", "multiple"] do
+    Repo.all(
+      from d in Design,
+        where: d.workspace_id == ^workspace_id and d.label_type == ^label_type,
         order_by: [desc: d.updated_at],
         preload: [:tags]
     )
@@ -286,7 +317,7 @@ defmodule QrLabelSystem.Designs do
     design = Repo.preload(design, :tags)
 
     case design
-         |> Design.duplicate_changeset(%{name: new_name, user_id: user_id})
+         |> Design.duplicate_changeset(%{name: new_name, user_id: user_id, workspace_id: design.workspace_id})
          |> Repo.insert() do
       {:ok, new_design} ->
         # Copy tags to the new design
@@ -501,6 +532,18 @@ defmodule QrLabelSystem.Designs do
     Repo.all(
       from d in Design,
         where: d.user_id == ^user_id and d.status == ^status,
+        order_by: [desc: d.updated_at]
+    )
+    |> Enum.map(&strip_heavy_element_data/1)
+  end
+
+  @doc """
+  Lists workspace designs filtered by status.
+  """
+  def list_workspace_designs_by_status(workspace_id, status) do
+    Repo.all(
+      from d in Design,
+        where: d.workspace_id == ^workspace_id and d.status == ^status,
         order_by: [desc: d.updated_at]
     )
     |> Enum.map(&strip_heavy_element_data/1)
@@ -816,6 +859,17 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Returns the list of tags for a workspace.
+  """
+  def list_workspace_tags(workspace_id) do
+    Repo.all(
+      from t in Tag,
+        where: t.workspace_id == ^workspace_id,
+        order_by: [asc: t.name]
+    )
+  end
+
+  @doc """
   Gets a single tag.
   """
   def get_tag(id), do: Repo.get(Tag, id)
@@ -842,6 +896,18 @@ defmodule QrLabelSystem.Designs do
 
     case Repo.one(from t in Tag, where: t.user_id == ^user_id and t.name == ^name) do
       nil -> create_tag(%{user_id: user_id, name: name, color: color})
+      tag -> {:ok, tag}
+    end
+  end
+
+  @doc """
+  Finds or creates a tag scoped to a workspace.
+  """
+  def find_or_create_workspace_tag(workspace_id, user_id, name, color \\ "#6366F1") do
+    name = String.trim(name)
+
+    case Repo.one(from t in Tag, where: t.workspace_id == ^workspace_id and t.name == ^name) do
+      nil -> create_tag(%{workspace_id: workspace_id, user_id: user_id, name: name, color: color})
       tag -> {:ok, tag}
     end
   end
@@ -908,6 +974,25 @@ defmodule QrLabelSystem.Designs do
   end
 
   @doc """
+  Searches workspace tags by name prefix.
+  """
+  def search_workspace_tags(workspace_id, prefix) do
+    sanitized = prefix
+      |> String.replace("\\", "\\\\")
+      |> String.replace("%", "\\%")
+      |> String.replace("_", "\\_")
+
+    search_term = "#{sanitized}%"
+
+    Repo.all(
+      from t in Tag,
+        where: t.workspace_id == ^workspace_id and ilike(t.name, ^search_term),
+        order_by: [asc: t.name],
+        limit: 10
+    )
+  end
+
+  @doc """
   Returns designs for a user filtered by tag IDs.
   A design must have ALL specified tags to be included.
   """
@@ -922,6 +1007,26 @@ defmodule QrLabelSystem.Designs do
       from d in Design,
         join: dta in "design_tag_assignments", on: dta.design_id == d.id,
         where: d.user_id == ^user_id and dta.tag_id in ^tag_ids,
+        group_by: d.id,
+        having: count(dta.tag_id) == ^tag_count,
+        order_by: [desc: d.updated_at]
+    )
+  end
+
+  @doc """
+  Returns workspace designs filtered by tag IDs.
+  """
+  def list_workspace_designs_by_tags(workspace_id, tag_ids) when tag_ids == [] do
+    list_workspace_designs(workspace_id)
+  end
+
+  def list_workspace_designs_by_tags(workspace_id, tag_ids) do
+    tag_count = length(tag_ids)
+
+    Repo.all(
+      from d in Design,
+        join: dta in "design_tag_assignments", on: dta.design_id == d.id,
+        where: d.workspace_id == ^workspace_id and dta.tag_id in ^tag_ids,
         group_by: d.id,
         having: count(dta.tag_id) == ^tag_count,
         order_by: [desc: d.updated_at]

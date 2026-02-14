@@ -8,7 +8,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.Edit do
     data_source = DataSources.get_data_source!(id)
 
     # Verify ownership
-    if data_source.user_id != socket.assigns.current_user.id do
+    if data_source.workspace_id != socket.assigns.current_workspace.id do
       {:ok,
        socket
        |> put_flash(:error, "No tienes permiso para editar estos datos")

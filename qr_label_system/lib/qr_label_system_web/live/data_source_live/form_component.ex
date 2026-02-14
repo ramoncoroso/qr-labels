@@ -122,7 +122,10 @@ defmodule QrLabelSystemWeb.DataSourceLive.FormComponent do
   end
 
   def handle_event("save", %{"data_source" => data_source_params}, socket) do
-    data_source_params = Map.put(data_source_params, "user_id", socket.assigns.user_id)
+    data_source_params =
+      data_source_params
+      |> Map.put("user_id", socket.assigns.user_id)
+      |> Map.put("workspace_id", socket.assigns[:workspace_id])
 
     # Build connection_config for database types
     data_source_params =

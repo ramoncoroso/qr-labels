@@ -12,9 +12,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    user_id = socket.assigns.current_user.id
-    designs = Designs.list_user_designs_light(user_id) |> Designs.preload_tags()
-    tags = Designs.list_user_tags(user_id)
+    workspace = socket.assigns.current_workspace
+    designs = Designs.list_workspace_designs_light(workspace.id) |> Designs.preload_tags()
+    tags = Designs.list_workspace_tags(workspace.id)
 
     {:ok,
      socket
@@ -249,7 +249,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("export_all", _params, socket) do
-    designs = Designs.list_user_designs(socket.assigns.current_user.id)
+    designs = Designs.list_workspace_designs(socket.assigns.current_workspace.id)
     json = Designs.export_all_designs_to_json(designs)
     date = Date.utc_today() |> Date.to_iso8601()
 
@@ -544,12 +544,12 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
 
   @impl true
   def handle_event("tag_input_change", %{"value" => value}, socket) do
-    user_id = socket.assigns.current_user.id
+    workspace = socket.assigns.current_workspace
     value = String.trim(value)
 
     suggestions =
       if value != "" do
-        Designs.search_user_tags(user_id, value)
+        Designs.search_workspace_tags(workspace.id, value)
       else
         []
       end
@@ -605,7 +605,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
             if d.id == updated_design.id, do: updated_design, else: d
           end)
 
-          tags = Designs.list_user_tags(socket.assigns.current_user.id)
+          tags = Designs.list_workspace_tags(socket.assigns.current_workspace.id)
           filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids, socket.assigns.status_filter)
 
           {:noreply,
@@ -671,13 +671,14 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
   end
 
   defp do_add_tag(socket, design_id_str, tag_name) do
+    workspace = socket.assigns.current_workspace
     user_id = socket.assigns.current_user.id
     design = find_design(socket.assigns.all_designs, safe_int(design_id_str))
 
     if is_nil(design) do
       {:noreply, socket}
     else
-      case Designs.find_or_create_tag(user_id, tag_name) do
+      case Designs.find_or_create_workspace_tag(workspace.id, user_id, tag_name) do
         {:ok, tag} ->
           case Designs.add_tag_to_design(design, tag) do
             {:ok, updated_design} ->
@@ -698,7 +699,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       if d.id == updated_design.id, do: updated_design, else: d
     end)
 
-    tags = Designs.list_user_tags(socket.assigns.current_user.id)
+    tags = Designs.list_workspace_tags(socket.assigns.current_workspace.id)
     filtered = apply_filters(updated_all, socket.assigns.filter, socket.assigns.active_tag_ids, socket.assigns.status_filter)
 
     socket

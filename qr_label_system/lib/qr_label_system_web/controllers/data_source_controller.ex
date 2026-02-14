@@ -101,7 +101,10 @@ defmodule QrLabelSystemWeb.DataSourceController do
   Creates a new data source and redirects to the index.
   """
   def create(conn, %{"data_source" => data_source_params}) do
-    data_source_params = Map.put(data_source_params, "user_id", conn.assigns.current_user.id)
+    data_source_params =
+      data_source_params
+      |> Map.put("user_id", conn.assigns.current_user.id)
+      |> Map.put("workspace_id", conn.assigns.current_workspace.id)
 
     # Build connection_config for database types
     data_source_params =

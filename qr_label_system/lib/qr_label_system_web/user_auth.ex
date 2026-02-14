@@ -8,6 +8,7 @@ defmodule QrLabelSystemWeb.UserAuth do
   import Phoenix.Controller
 
   alias QrLabelSystem.Accounts
+  alias QrLabelSystem.Workspaces
 
   # Make the remember me cookie valid for 14 days (reduced from 60 for security).
   @max_age 60 * 60 * 24 * 14
@@ -29,9 +30,13 @@ defmodule QrLabelSystemWeb.UserAuth do
     token = Accounts.generate_user_session_token(user)
     user_return_to = get_session(conn, :user_return_to)
 
+    # Set default workspace to personal
+    personal_ws = Workspaces.get_personal_workspace(user.id)
+
     conn
     |> renew_session()
     |> put_token_in_session(token)
+    |> put_session(:current_workspace_id, personal_ws && personal_ws.id)
     |> maybe_write_remember_me_cookie(token, params)
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
@@ -73,12 +78,25 @@ defmodule QrLabelSystemWeb.UserAuth do
 
   @doc """
   Authenticates the user by looking into the session
-  and remember me token.
+  and remember me token. Also loads the current workspace.
   """
   def fetch_current_user(conn, _opts) do
     {user_token, conn} = ensure_user_token(conn)
     user = user_token && Accounts.get_user_by_session_token(user_token)
-    assign(conn, :current_user, user)
+
+    conn = assign(conn, :current_user, user)
+
+    if user do
+      {workspace, role} = resolve_workspace(user, get_session(conn, :current_workspace_id))
+
+      conn
+      |> assign(:current_workspace, workspace)
+      |> assign(:workspace_role, role)
+    else
+      conn
+      |> assign(:current_workspace, nil)
+      |> assign(:workspace_role, nil)
+    end
   end
 
   defp ensure_user_token(conn) do
@@ -160,11 +178,55 @@ defmodule QrLabelSystemWeb.UserAuth do
   end
 
   defp mount_current_user(socket, session) do
-    Phoenix.Component.assign_new(socket, :current_user, fn ->
+    socket
+    |> Phoenix.Component.assign_new(:current_user, fn ->
       if user_token = session["user_token"] do
         Accounts.get_user_by_session_token(user_token)
       end
     end)
+    |> mount_workspace(session)
+  end
+
+  defp mount_workspace(socket, session) do
+    socket
+    |> Phoenix.Component.assign_new(:current_workspace, fn ->
+      user = socket.assigns[:current_user]
+      if user do
+        ws_id = session["current_workspace_id"]
+        {workspace, _role} = resolve_workspace(user, ws_id)
+        workspace
+      end
+    end)
+    |> Phoenix.Component.assign_new(:workspace_role, fn ->
+      user = socket.assigns[:current_user]
+      workspace = socket.assigns[:current_workspace]
+      if user && workspace do
+        Workspaces.get_user_role(workspace.id, user.id)
+      end
+    end)
+    |> Phoenix.Component.assign_new(:user_workspaces, fn ->
+      user = socket.assigns[:current_user]
+      if user, do: Workspaces.list_user_workspaces(user.id), else: []
+    end)
+  end
+
+  # Resolves the current workspace from session, with fallback to personal
+  defp resolve_workspace(user, workspace_id) do
+    cond do
+      workspace_id && Workspaces.member?(workspace_id, user.id) ->
+        workspace = Workspaces.get_workspace(workspace_id)
+        role = Workspaces.get_user_role(workspace_id, user.id)
+        {workspace, role}
+
+      true ->
+        workspace = Workspaces.get_personal_workspace(user.id)
+        if workspace do
+          role = Workspaces.get_user_role(workspace.id, user.id)
+          {workspace, role}
+        else
+          {nil, nil}
+        end
+    end
   end
 
   @doc """

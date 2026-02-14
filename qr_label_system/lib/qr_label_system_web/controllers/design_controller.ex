@@ -8,7 +8,10 @@ defmodule QrLabelSystemWeb.DesignController do
   Creates a new design and redirects to the editor.
   """
   def create(conn, %{"design" => design_params}) do
-    design_params = Map.put(design_params, "user_id", conn.assigns.current_user.id)
+    design_params =
+      design_params
+      |> Map.put("user_id", conn.assigns.current_user.id)
+      |> Map.put("workspace_id", conn.assigns.current_workspace.id)
 
     case Designs.create_design(design_params) do
       {:ok, design} ->

@@ -21,7 +21,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataSource do
        |> put_flash(:error, "No tienes permiso para acceder a este diseño")
        |> push_navigate(to: ~p"/designs")}
     else
-      data_sources = DataSources.list_user_data_sources(user_id)
+      data_sources = DataSources.list_workspace_data_sources(socket.assigns.current_workspace.id)
 
       {:ok,
        socket

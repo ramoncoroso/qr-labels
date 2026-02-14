@@ -71,7 +71,8 @@ defmodule QrLabelSystem.DataSourcesTest do
   describe "create_data_source/1" do
     test "creates a data source with valid data" do
       user = user_fixture()
-      attrs = valid_data_source_attributes(%{user_id: user.id})
+      workspace = QrLabelSystem.Workspaces.get_personal_workspace(user.id)
+      attrs = valid_data_source_attributes(%{user_id: user.id, workspace_id: workspace.id})
 
       assert {:ok, %DataSource{} = source} = DataSources.create_data_source(attrs)
       assert source.name == attrs.name
@@ -96,7 +97,8 @@ defmodule QrLabelSystem.DataSourcesTest do
 
     test "creates excel type data source" do
       user = user_fixture()
-      attrs = valid_data_source_attributes(%{user_id: user.id, type: "excel"})
+      workspace = QrLabelSystem.Workspaces.get_personal_workspace(user.id)
+      attrs = valid_data_source_attributes(%{user_id: user.id, workspace_id: workspace.id, type: "excel"})
 
       assert {:ok, source} = DataSources.create_data_source(attrs)
       assert source.type == "excel"

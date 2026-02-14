@@ -16,8 +16,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
     cond do
       # Mode: designing without external data
       no_data_mode ->
-        all_designs = Designs.list_user_designs_by_type(user_id, "multiple")
-        tags = Designs.list_user_tags(user_id)
+        all_designs = Designs.list_workspace_designs_by_type(socket.assigns.current_workspace.id, "multiple")
+        tags = Designs.list_workspace_tags(socket.assigns.current_workspace.id)
 
         {:ok,
          socket
@@ -34,8 +34,8 @@ defmodule QrLabelSystemWeb.GenerateLive.DesignSelect do
 
       # Mode: with uploaded data
       upload_total_rows > 0 ->
-        all_designs = Designs.list_user_designs_by_type(user_id, "multiple")
-        tags = Designs.list_user_tags(user_id)
+        all_designs = Designs.list_workspace_designs_by_type(socket.assigns.current_workspace.id, "multiple")
+        tags = Designs.list_workspace_tags(socket.assigns.current_workspace.id)
 
         {:ok,
          socket

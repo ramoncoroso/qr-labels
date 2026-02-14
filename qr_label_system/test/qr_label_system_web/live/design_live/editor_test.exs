@@ -101,19 +101,15 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
       %{conn: conn, user: user, design: design}
     end
 
-    test "semaphore starts gray with no standard", %{conn: conn, design: design} do
+    test "semaphore starts hidden with no standard", %{conn: conn, design: design} do
       {:ok, _view, html} = live(conn, ~p"/designs/#{design.id}/edit")
 
-      # Should show gray semaphore (no standard selected)
-      assert html =~ "bg-gray-300"
-      assert html =~ "Ninguna"
+      # No compliance section when no standard is selected (unified status bar hides it)
+      refute html =~ "Norma:"
     end
 
     test "semaphore changes color when standard is selected", %{conn: conn, design: design} do
-      {:ok, view, html} = live(conn, ~p"/designs/#{design.id}/edit")
-
-      # Initially gray - no standard selected
-      assert html =~ "Ninguna"
+      {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
 
       # Select GS1 standard
       html = render_change(view, "set_compliance_standard", %{"standard" => "gs1"})
@@ -145,7 +141,7 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
       assert html =~ "FMD"
     end
 
-    test "semaphore goes back to gray when standard is cleared", %{conn: conn, design: design} do
+    test "semaphore goes back to hidden when standard is cleared", %{conn: conn, design: design} do
       {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
 
       # Select a standard
@@ -154,8 +150,8 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
       # Clear standard
       html = render_change(view, "set_compliance_standard", %{"standard" => ""})
 
-      assert html =~ "bg-gray-300"
-      assert html =~ "Ninguna"
+      # Compliance section is hidden when no standard is active
+      refute html =~ "Norma:"
     end
   end
 

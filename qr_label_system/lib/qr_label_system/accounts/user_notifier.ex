@@ -124,4 +124,28 @@ defmodule QrLabelSystem.Accounts.UserNotifier do
     ==============================
     """)
   end
+
+  @doc """
+  Delivers a workspace invitation email.
+  """
+  def deliver_workspace_invitation(email, workspace_name, inviter_email, url) do
+    deliver(email, "Invitación al espacio \"#{workspace_name}\" - QR Label System", """
+
+    ==============================
+
+    Hola,
+
+    #{inviter_email} te ha invitado a unirte al espacio de trabajo "#{workspace_name}" en QR Label System.
+
+    Puedes aceptar la invitación haciendo clic en el siguiente enlace:
+
+    #{url}
+
+    Esta invitación expira en 7 días.
+
+    Si no esperabas esta invitación, puedes ignorar este mensaje.
+
+    ==============================
+    """)
+  end
 end

@@ -89,9 +89,12 @@ defmodule QrLabelSystemWeb.DesignLive.New do
   def handle_event("save", %{"design" => design_params}, socket) do
     user_id = socket.assigns.current_user.id
 
+    workspace = socket.assigns.current_workspace
+
     design_params =
       design_params
       |> Map.put("user_id", user_id)
+      |> Map.put("workspace_id", workspace.id)
       |> Map.put("label_type", socket.assigns.label_type)
 
     # Add compliance standard if selected

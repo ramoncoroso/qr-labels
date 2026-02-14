@@ -122,6 +122,9 @@ defmodule QrLabelSystemWeb.Router do
     # DELETE for data sources
     delete "/data-sources/:id", DataSourceController, :delete
 
+    # Workspace switching (must be controller, not LiveView, for session writes)
+    post "/workspaces/switch/:id", WorkspaceController, :switch
+
     live_session :require_authenticated_user,
       on_mount: [{QrLabelSystemWeb.UserAuth, :ensure_authenticated}] do
       # User settings
@@ -152,6 +155,11 @@ defmodule QrLabelSystemWeb.Router do
       live "/generate/design", GenerateLive.DesignSelect, :design_select
       live "/generate/design/:design_id", GenerateLive.DataSource, :data_source
       live "/generate/map/:design_id/:source_id", GenerateLive.Mapping, :mapping
+
+      # Workspaces
+      live "/workspaces", WorkspaceLive.Index, :index
+      live "/workspaces/new", WorkspaceLive.New, :new
+      live "/workspaces/:id/settings", WorkspaceLive.Settings, :settings
     end
   end
 
@@ -164,6 +172,9 @@ defmodule QrLabelSystemWeb.Router do
       on_mount: [{QrLabelSystemWeb.UserAuth, :mount_current_user}] do
       live "/users/confirm/:token", UserConfirmationLive, :edit
       live "/users/confirm", UserConfirmationInstructionsLive, :new
+
+      # Workspace invitation acceptance (public, works with or without auth)
+      live "/workspaces/invite/:token", WorkspaceLive.AcceptInvitation, :accept
     end
   end
 

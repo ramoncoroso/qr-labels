@@ -28,6 +28,17 @@ defmodule QrLabelSystem.DataSources do
   end
 
   @doc """
+  Returns data sources for a workspace.
+  """
+  def list_workspace_data_sources(workspace_id) do
+    Repo.all(
+      from d in DataSource,
+        where: d.workspace_id == ^workspace_id,
+        order_by: [desc: d.updated_at]
+    )
+  end
+
+  @doc """
   Gets a single data source.
   """
   def get_data_source!(id), do: Repo.get!(DataSource, id)

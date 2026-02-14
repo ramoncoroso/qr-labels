@@ -7,6 +7,7 @@ defmodule QrLabelSystem.Accounts do
   import Ecto.Query, warn: false
   alias QrLabelSystem.Repo
   alias QrLabelSystem.Accounts.{User, UserToken, UserNotifier}
+  alias QrLabelSystem.Workspaces
 
   ## User queries
 
@@ -113,23 +114,40 @@ defmodule QrLabelSystem.Accounts do
   ## User registration
 
   @doc """
-  Registers a user.
+  Registers a user and creates their personal workspace.
   """
   def register_user(attrs) do
-    %User{}
-    |> User.registration_changeset(attrs)
-    |> Repo.insert()
+    Ecto.Multi.new()
+    |> Ecto.Multi.insert(:user, User.registration_changeset(%User{}, attrs))
+    |> Workspaces.create_personal_workspace_multi(:user)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, :user, changeset, _} -> {:error, changeset}
+      {:error, _step, changeset, _} -> {:error, changeset}
+    end
   end
 
   @doc """
   Registers a user without password (for magic link auth).
   Marks user as confirmed since we verified their email via magic link.
+  Creates their personal workspace.
   """
   def register_user_passwordless(attrs) do
-    %User{}
-    |> User.passwordless_registration_changeset(attrs)
-    |> User.confirm_changeset()
-    |> Repo.insert()
+    changeset =
+      %User{}
+      |> User.passwordless_registration_changeset(attrs)
+      |> User.confirm_changeset()
+
+    Ecto.Multi.new()
+    |> Ecto.Multi.insert(:user, changeset)
+    |> Workspaces.create_personal_workspace_multi(:user)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, :user, changeset, _} -> {:error, changeset}
+      {:error, _step, changeset, _} -> {:error, changeset}
+    end
   end
 
   @doc """

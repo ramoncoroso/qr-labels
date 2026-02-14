@@ -23,6 +23,8 @@ defmodule QrLabelSystem.DesignsFixtures do
   end
 
   def design_fixture(attrs \\ %{}) do
+    attrs = ensure_workspace_id(attrs)
+
     {:ok, design} =
       attrs
       |> valid_design_attributes()
@@ -56,6 +58,8 @@ defmodule QrLabelSystem.DesignsFixtures do
   end
 
   def design_with_elements_fixture(attrs \\ %{}) do
+    attrs = ensure_workspace_id(attrs)
+
     elements = [
       qr_element_attrs(),
       text_element_attrs(),
@@ -69,6 +73,28 @@ defmodule QrLabelSystem.DesignsFixtures do
       |> Designs.create_design()
 
     design
+  end
+
+  # Auto-provide workspace_id when user_id is given but workspace_id is not.
+  # If neither is provided, creates a user+workspace automatically.
+  defp ensure_workspace_id(attrs) do
+    attrs = Map.new(attrs)
+
+    cond do
+      Map.has_key?(attrs, :workspace_id) ->
+        attrs
+
+      Map.has_key?(attrs, :user_id) ->
+        workspace = QrLabelSystem.Workspaces.get_personal_workspace(attrs.user_id)
+        Map.put(attrs, :workspace_id, workspace && workspace.id)
+
+      true ->
+        user = QrLabelSystem.AccountsFixtures.user_fixture()
+        workspace = QrLabelSystem.Workspaces.get_personal_workspace(user.id)
+        attrs
+        |> Map.put(:user_id, user.id)
+        |> Map.put(:workspace_id, workspace && workspace.id)
+    end
   end
 
   # Element attribute helpers

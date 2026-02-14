@@ -48,7 +48,8 @@ defmodule QrLabelSystemWeb.API.DesignController do
       width: design_params["width"] || 100,
       height: design_params["height"] || 50,
       elements: design_params["elements"] || [],
-      user_id: user.id
+      user_id: user.id,
+      workspace_id: conn.assigns.current_workspace && conn.assigns.current_workspace.id
     }
 
     case Designs.create_design(attrs) do

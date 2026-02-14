@@ -93,6 +93,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.New do
     data_source_params =
       data_source_params
       |> Map.put("user_id", socket.assigns.current_user.id)
+      |> Map.put("workspace_id", socket.assigns.current_workspace.id)
       |> Map.put("file_path", socket.assigns.uploaded_file.path)
       |> Map.put("file_name", socket.assigns.uploaded_file.name)
 

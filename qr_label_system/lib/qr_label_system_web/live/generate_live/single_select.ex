@@ -7,9 +7,8 @@ defmodule QrLabelSystemWeb.GenerateLive.SingleSelect do
 
   @impl true
   def mount(_params, _session, socket) do
-    user_id = socket.assigns.current_user.id
-    all_designs = Designs.list_user_designs_by_type(user_id, "single")
-    tags = Designs.list_user_tags(user_id)
+    all_designs = Designs.list_workspace_designs_by_type(socket.assigns.current_workspace.id, "single")
+    tags = Designs.list_workspace_tags(socket.assigns.current_workspace.id)
 
     {:ok,
      socket

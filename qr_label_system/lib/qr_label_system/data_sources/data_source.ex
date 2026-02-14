@@ -40,6 +40,7 @@ defmodule QrLabelSystem.DataSources.DataSource do
     field :test_error, :string
 
     belongs_to :user, QrLabelSystem.Accounts.User
+    belongs_to :workspace, QrLabelSystem.Workspaces.Workspace
 
     timestamps(type: :utc_datetime)
   end
@@ -49,7 +50,7 @@ defmodule QrLabelSystem.DataSources.DataSource do
   """
   def changeset(data_source, attrs) do
     data_source
-    |> cast(attrs, [:name, :type, :query, :connection_config, :user_id, :host, :port, :database, :username, :password, :file_path, :file_name])
+    |> cast(attrs, [:name, :type, :query, :connection_config, :user_id, :workspace_id, :host, :port, :database, :username, :password, :file_path, :file_name])
     |> validate_required([:name, :type])
     |> validate_inclusion(:type, @source_types)
     |> validate_connection_config()
