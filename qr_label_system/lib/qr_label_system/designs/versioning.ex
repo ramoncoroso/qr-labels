@@ -283,6 +283,21 @@ defmodule QrLabelSystem.Designs.Versioning do
   end
 
   @doc """
+  Updates the thumbnail of a version (base64 data URL from canvas capture).
+  """
+  def update_version_thumbnail(design_id, version_number, thumbnail) do
+    case get_version(design_id, version_number) do
+      nil ->
+        {:error, :version_not_found}
+
+      version ->
+        version
+        |> DesignVersion.changeset(%{thumbnail: thumbnail})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
   Returns the total number of versions for a design.
   """
   def version_count(design_id) do

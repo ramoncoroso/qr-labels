@@ -843,6 +843,20 @@ const CanvasDesigner = {
       }
     })
 
+    // Capture canvas thumbnail for version history
+    this.handleEvent("capture_thumbnail", ({ version_number }) => {
+      if (!this._isDestroyed && this.canvas && this.labelBounds) {
+        this.captureCanvasThumbnail().then(thumbnail => {
+          if (thumbnail) {
+            this.pushEvent("canvas_thumbnail", {
+              version_number: version_number,
+              thumbnail: thumbnail
+            })
+          }
+        })
+      }
+    })
+
     // Image upload
     this.handleEvent("update_element_image", ({ element_id, image_data, image_filename }) => {
       if (!this._isDestroyed) {
@@ -2820,6 +2834,43 @@ const CanvasDesigner = {
   // ============================================================================
   // Image Methods
   // ============================================================================
+
+  captureCanvasThumbnail() {
+    if (!this.canvas || !this.labelBounds) return null
+
+    const zoom = this.canvas.getZoom()
+    const bounds = this.labelBounds
+    const maxThumbWidth = 320
+    const maxThumbHeight = 220
+
+    // Capture only the label area (excluding gray padding/rulers)
+    const dataUrl = this.canvas.toDataURL({
+      format: 'jpeg',
+      quality: 0.8,
+      left: bounds.left * zoom,
+      top: bounds.top * zoom,
+      width: bounds.width * zoom,
+      height: bounds.height * zoom
+    })
+
+    // Scale down to thumbnail size using an offscreen canvas
+    const img = new Image()
+    return new Promise((resolve) => {
+      img.onload = () => {
+        const scale = Math.min(maxThumbWidth / img.width, maxThumbHeight / img.height, 1)
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        const offscreen = document.createElement('canvas')
+        offscreen.width = w
+        offscreen.height = h
+        const ctx = offscreen.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(offscreen.toDataURL('image/jpeg', 0.85))
+      }
+      img.onerror = () => resolve(null)
+      img.src = dataUrl
+    })
+  },
 
   updateElementImage(elementId, imageData, imageFilename) {
     // Try to find element by ID (handle both number and string keys)

@@ -137,7 +137,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:rename_version_value, "")
        |> assign(:selected_version, nil)
        |> assign(:version_diff, nil)
-       |> assign(:version_preview_svg, nil)
        |> assign(:approval_required, Settings.approval_required?())
        |> assign(:is_admin, User.admin?(socket.assigns.current_user))
        |> assign(:show_approval_history, false)
@@ -885,12 +884,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("canvas_thumbnail", %{"version_number" => vn, "thumbnail" => thumbnail}, socket) do
+    design_id = socket.assigns.design.id
+    Versioning.update_version_thumbnail(design_id, vn, thumbnail)
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("close_version_detail", _params, socket) do
     {:noreply,
      socket
      |> assign(:selected_version, nil)
      |> assign(:version_diff, nil)
-     |> assign(:version_preview_svg, nil)}
+     }
   end
 
   @impl true
@@ -1762,19 +1768,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         _ -> nil
       end
 
-    # Generate SVG preview from version data
-    version_preview =
-      if version do
-        QrLabelSystem.Designs.SvgPreview.generate(version, max_width: 260, max_height: 180)
-      else
-        nil
-      end
-
     {:noreply,
      socket
      |> assign(:selected_version, version)
-     |> assign(:version_diff, diff)
-     |> assign(:version_preview_svg, version_preview)}
+     |> assign(:version_diff, diff)}
   end
 
   defp navigate_to_preview_row(socket, new_index) do
@@ -1962,6 +1959,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               |> assign(:version_count, version.version_number)
               |> assign(:restored_from_version, nil)
               |> assign(:versions, Versioning.list_versions_light(updated_design.id))
+              |> push_event("capture_thumbnail", %{version_number: version.version_number})
               |> put_flash(:info, "Diseño guardado")
 
             {:duplicate, :no_changes} ->
@@ -3359,18 +3357,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   </svg>
                   <%= @selected_version.element_count %> elementos
                 </div>
-                <%= if @selected_version.change_message do %>
-                  <div class="mt-2 p-2 bg-amber-50 rounded text-xs text-amber-700">
-                    <%= @selected_version.change_message %>
-                  </div>
-                <% end %>
               </div>
 
-              <%= if @version_preview_svg do %>
+              <%= if @selected_version.thumbnail do %>
                 <div class="bg-white rounded-lg border border-gray-200 p-3 mb-4">
                   <h4 class="text-xs font-medium text-gray-500 mb-2">PREVIEW</h4>
                   <div class="flex justify-center bg-gray-50 rounded p-2">
-                    <%= Phoenix.HTML.raw(@version_preview_svg) %>
+                    <img src={@selected_version.thumbnail} alt={"Preview v#{@selected_version.version_number}"} class="max-w-full max-h-44 rounded" />
                   </div>
                 </div>
               <% end %>
@@ -3485,13 +3478,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       <div class="text-xs text-gray-500 mb-1">
                         <%= if version.user, do: version.user.email, else: "Sistema" %>
                       </div>
-                      <%!-- Row 3: change_message + actions --%>
-                      <div class="flex items-center justify-between">
-                        <%= if version.change_message do %>
-                          <span class="text-xs text-gray-400 italic truncate mr-2"><%= version.change_message %></span>
-                        <% else %>
-                          <span></span>
-                        <% end %>
+                      <%!-- Row 3: actions --%>
+                      <div class="flex items-center justify-end">
                         <div class="flex gap-2 flex-shrink-0">
                           <button
                             phx-click="select_version"
