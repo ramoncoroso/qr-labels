@@ -74,7 +74,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
          |> put_flash(:error, "Este diseño ha sido eliminado o no existe")
          |> push_navigate(to: ~p"/designs")}
 
-      design when design.user_id != socket.assigns.current_user.id ->
+      design when design.workspace_id != socket.assigns.current_workspace.id ->
         {:ok,
          socket
          |> put_flash(:error, "No tienes permiso para editar este diseño")
@@ -1394,6 +1394,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       _ -> socket.assigns.preview_data
     end
 
+    design = socket.assigns.design
+    mapping = build_auto_mapping(design.elements || [], preview_data)
+
     socket =
      socket
      |> assign(:available_columns, cols)
@@ -1401,6 +1404,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
      |> assign(:upload_sample_rows, sample)
      |> assign(:preview_data, preview_data)
      |> push_preview_update()
+     |> push_event("set_preview_language", %{
+       language: socket.assigns.preview_language,
+       default_language: design.default_language || "es",
+       row: preview_data,
+       mapping: mapping
+     })
 
     {:noreply, socket}
   end
@@ -1559,7 +1568,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
      socket
      |> assign(:preview_language, lang)
      |> push_preview_update()
-     |> push_event("set_preview_language", %{language: lang, default_language: socket.assigns.design.default_language || "es"})}
+     |> push_event("set_preview_language", %{
+       language: lang,
+       default_language: socket.assigns.design.default_language || "es",
+       row: socket.assigns.preview_data,
+       mapping: build_auto_mapping(socket.assigns.design.elements || [], socket.assigns.preview_data)
+     })}
   end
 
   @impl true
@@ -2832,15 +2846,14 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
     elements
     |> Enum.filter(fn el ->
+      # Only map elements with explicit binding (not expressions — they auto-resolve)
+      # Elements without binding use static translations from the Translate panel
       binding = el.binding
-      # Skip nil bindings and expression bindings (they auto-resolve)
-      binding && is_binary(binding) && !String.contains?(binding, "{{")
+      binding && is_binary(binding) && binding != "" && !String.contains?(binding, "{{")
     end)
     |> Enum.reduce(%{}, fn element, acc ->
-      # Try to find matching column
-      binding = element.binding
       matching_column = Enum.find(columns, fn col ->
-        String.downcase(col) == String.downcase(binding)
+        String.downcase(col) == String.downcase(element.binding)
       end)
 
       if matching_column do
@@ -2849,6 +2862,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         acc
       end
     end)
+
   end
 
   @impl true

@@ -134,33 +134,25 @@ export function downloadTemplate(design) {
   const defaultLang = design.default_language || 'es'
   const nonDefaultLangs = languages.filter(l => l !== defaultLang)
 
-  // 1. Collect unique column names from bindings + text elements without binding
+  // 1. Collect unique column names from bound elements only
+  // Elements without binding use static translations (managed in the editor's Translate panel)
   const columnSet = new Set()
   const elementInfo = [] // Track which elements use which columns
 
   for (const el of elements) {
-    const hasBinding = el.binding && el.binding.trim() !== ''
+    if (!el.binding || el.binding.trim() === '') continue
 
-    if (hasBinding) {
-      if (el.binding.includes('{{')) {
-        // Expression mode — extract column references
-        const cols = extractColumnsFromExpression(el.binding)
-        for (const c of cols) {
-          columnSet.add(c)
-          elementInfo.push({ column: c, element: el.name || el.id, type: 'expresión' })
-        }
-      } else {
-        // Direct column binding
-        columnSet.add(el.binding)
-        elementInfo.push({ column: el.binding, element: el.name || el.id, type: 'columna' })
+    if (el.binding.includes('{{')) {
+      // Expression mode — extract column references
+      const cols = extractColumnsFromExpression(el.binding)
+      for (const c of cols) {
+        columnSet.add(c)
+        elementInfo.push({ column: c, element: el.name || el.id, type: 'expresión' })
       }
-    } else if (el.type === 'text' || el.type === 'barcode' || el.type === 'qr') {
-      // Text/barcode elements without binding — use element name as column
-      const colName = el.name || el.type + '_' + (el.id || '').substring(0, 6)
-      if (!columnSet.has(colName)) {
-        columnSet.add(colName)
-        elementInfo.push({ column: colName, element: el.name || el.id, type: 'elemento' })
-      }
+    } else {
+      // Direct column binding
+      columnSet.add(el.binding)
+      elementInfo.push({ column: el.binding, element: el.name || el.id, type: 'columna' })
     }
   }
 
@@ -187,14 +179,6 @@ export function downloadTemplate(design) {
   }
 
   // 3. Build sample row with placeholder values
-  // Build a map of element name → text_content for better sample values
-  const elementTextMap = {}
-  for (const el of elements) {
-    const name = el.name || el.type + '_' + (el.id || '').substring(0, 6)
-    if (el.text_content) elementTextMap[name] = el.text_content
-    if (el.binding && !el.binding.includes('{{')) elementTextMap[el.binding] = el.text_content || ''
-  }
-
   const sampleRow = {}
   for (let i = 0; i < headers.length; i++) {
     const h = headers[i]
@@ -203,13 +187,9 @@ export function downloadTemplate(design) {
     if (langSuffix && nonDefaultLangs.includes(langSuffix[1])) {
       const base = h.replace(/_[a-z]{2}$/, '')
       const langName = LANG_NAMES[langSuffix[1]] || langSuffix[1]
-      // Use existing translation if available
-      const el = elements.find(e => (e.name || '') === base)
-      const translation = el && el.translations && el.translations[langSuffix[1]]
-      sampleRow[h] = translation || `(${base} en ${langName})`
+      sampleRow[h] = `(${base} en ${langName})`
     } else {
-      // Use element's current text as sample, or generic placeholder
-      sampleRow[h] = elementTextMap[h] || `(valor de ${h})`
+      sampleRow[h] = `(valor de ${h})`
     }
   }
 

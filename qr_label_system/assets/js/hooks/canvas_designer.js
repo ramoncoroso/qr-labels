@@ -11,7 +11,7 @@
 
 import { fabric } from 'fabric'
 import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent, getFormatInfo, is2DFormat as sharedIs2DFormat } from './barcode_generator'
-import { isExpression, evaluate } from './expression_engine'
+import { isExpression, evaluate, resolveText } from './expression_engine'
 import { calcAutoFitFontSize } from './text_utils'
 
 // Constants
@@ -809,9 +809,11 @@ const CanvasDesigner = {
       }
     })
 
-    this.handleEvent("set_preview_language", ({ language, default_language }) => {
+    this.handleEvent("set_preview_language", ({ language, default_language, row, mapping }) => {
       this._previewLanguage = language
       if (default_language) this._defaultLanguage = default_language
+      if (row) this._previewRow = row
+      if (mapping) this._previewMapping = mapping
       this._updateCanvasLanguage()
     })
 
@@ -2244,22 +2246,32 @@ const CanvasDesigner = {
   _updateCanvasLanguage() {
     if (!this.elements || this._isDestroyed) return
 
+    const row = this._previewRow || {}
+    const mapping = this._previewMapping || {}
+    const hasData = Object.keys(row).length > 0
+
     this.elements.forEach((obj) => {
       if (!obj || !obj.elementData || obj.elementData.type !== 'text') return
 
       const data = obj.elementData
       const hasBinding = data.binding && data.binding !== ''
 
-      // Only update fixed text elements (binding mode shows [ColumnName] regardless)
-      if (hasBinding && !isExpression(data.binding)) return
-
       if (isExpression(data.binding)) {
         // Re-evaluate expression with new language context
         const ctx = { rowIndex: 0, batchSize: 1, now: new Date(), language: this._previewLanguage, defaultLanguage: this._defaultLanguage || 'es' }
-        const preview = evaluate(data.binding, {}, ctx)
+        const preview = evaluate(data.binding, row, ctx)
         obj.set('text', preview || data.binding)
-      } else {
-        // Fixed text: resolve with language
+      } else if (hasData && (hasBinding || mapping[obj.elementId])) {
+        // Has data loaded: resolve using data row + mapping (includes name-based mapping)
+        const resolved = resolveText(data, row, mapping, {
+          language: this._previewLanguage,
+          defaultLanguage: this._defaultLanguage || 'es'
+        })
+        const hasContent = resolved && resolved.trim() !== ''
+        obj.set('text', hasContent ? resolved : `[${data.binding || data.name || 'sin datos'}]`)
+        obj.set('fill', hasContent ? (obj._originalColor || data.color || '#000000') : '#999999')
+      } else if (!hasBinding) {
+        // Fixed text: resolve with language (translations)
         const resolved = this._resolveCanvasText(data)
         const hasContent = resolved && resolved.trim() !== ''
         obj.set('text', hasContent ? resolved : 'Completar texto')
