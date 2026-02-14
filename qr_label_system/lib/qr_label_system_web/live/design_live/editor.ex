@@ -38,7 +38,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     barcode_format barcode_show_text font_size font_family font_weight
     text_align text_content text_auto_fit text_min_font_size
     color background_color border_width border_color border_radius
-    z_index visible locked name image_data image_filename group_id)
+    z_index visible locked name image_data image_filename group_id compliance_role)
 
   @impl true
   def mount(%{"id" => id} = params, _session, socket) do
@@ -1574,6 +1574,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               |> maybe_put(params, "font_size", &parse_number/1)
               |> maybe_put(params, "font_weight")
               |> maybe_put(params, "barcode_format")
+              |> maybe_put(params, "compliance_role")
 
             # 2D barcode formats (DataMatrix, PDF417, etc.) need square dimensions
             new_el = if params["barcode_format"] in ~w(DATAMATRIX AZTEC MAXICODE) do
@@ -1842,6 +1843,43 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         Map.put(element, atom_key, transformed)
     end
   end
+
+  defp compliance_roles_for("eu1169") do
+    [
+      {"product_name", "Nombre del producto"},
+      {"ingredients", "Ingredientes"},
+      {"allergens", "Alérgenos"},
+      {"net_quantity", "Cantidad neta"},
+      {"best_before", "Fecha caducidad"},
+      {"manufacturer", "Fabricante"},
+      {"origin", "País de origen"},
+      {"nutrition", "Información nutricional"},
+      {"lot", "Lote"},
+      {"eu1169_barcode", "Código de barras"}
+    ]
+  end
+
+  defp compliance_roles_for("fmd") do
+    [
+      {"product_name", "Nombre medicamento"},
+      {"active_ingredient", "Principio activo"},
+      {"lot", "Lote"},
+      {"expiry", "Fecha caducidad"},
+      {"national_code", "Código nacional"},
+      {"serial", "Número de serie"},
+      {"dosage", "Forma farmacéutica"},
+      {"manufacturer", "Laboratorio titular"},
+      {"datamatrix_fmd", "DataMatrix FMD"}
+    ]
+  end
+
+  defp compliance_roles_for("gs1") do
+    [
+      {"gs1_barcode", "Código de barras GS1"}
+    ]
+  end
+
+  defp compliance_roles_for(_), do: []
 
   defp parse_number(value) when is_binary(value) do
     case Float.parse(value) do
@@ -3118,7 +3156,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <%= String.capitalize(@selected_element.type) %>
                   </span>
                 </div>
-                <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} collapsed_sections={@collapsed_sections} />
+                <.element_properties element={@selected_element} uploads={@uploads} available_columns={@available_columns} label_type={@design.label_type} design_id={@design.id} show_binding_mode={@show_binding_mode} show_expression_mode={@show_expression_mode} expression_visual_mode={@expression_visual_mode} expression_builder={@expression_builder} expression_applied={@expression_applied} preview_data={@preview_data} collapsed_sections={@collapsed_sections} compliance_standard={@design.compliance_standard} all_elements={@design.elements || []} />
 
                 <div class="mt-6 pt-4 border-t">
                   <button
@@ -3565,6 +3603,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       phx-value-font_size={issue.fix_action[:font_size]}
                       phx-value-font_weight={issue.fix_action[:font_weight]}
                       phx-value-barcode_format={issue.fix_action[:barcode_format]}
+                      phx-value-compliance_role={issue.fix_action[:compliance_role]}
                     >
                       <div class="flex items-start gap-2">
                         <span class={"flex-shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold " <>
@@ -3886,6 +3925,29 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
             />
           </div>
+          <%= if @compliance_standard do %>
+            <% roles = compliance_roles_for(@compliance_standard) %>
+            <% assigned = Enum.reduce(@all_elements, MapSet.new(), fn el, acc ->
+              role = Map.get(el, :compliance_role) || Map.get(el, "compliance_role")
+              el_id = Map.get(el, :id) || Map.get(el, "id")
+              current_id = Map.get(@element, :id) || Map.get(@element, "id")
+              if role && role != "" && el_id != current_id, do: MapSet.put(acc, role), else: acc
+            end) %>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Rol normativo</label>
+              <form phx-change="update_element">
+                <input type="hidden" name="field" value="compliance_role" />
+                <select name="value" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                  <option value="">Sin rol</option>
+                  <%= for {value, label} <- roles do %>
+                    <option value={value} selected={(Map.get(@element, :compliance_role) || "") == value}>
+                      <%= label %><%= if MapSet.member?(assigned, value), do: " ✓" %>
+                    </option>
+                  <% end %>
+                </select>
+              </form>
+            </div>
+          <% end %>
           <div class="grid grid-cols-3 gap-2">
             <div>
               <label class="block text-xs font-medium text-gray-500">X (mm)</label>

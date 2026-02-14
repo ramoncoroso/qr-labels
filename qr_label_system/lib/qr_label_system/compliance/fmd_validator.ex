@@ -59,9 +59,19 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
 
   defp detect_fields(text_elements) do
     Enum.reduce(@field_patterns, %{}, fn {field, pattern}, acc ->
-      matched = Enum.filter(text_elements, fn el ->
-        searchable_text(el) |> String.match?(pattern)
+      # 1. Explicit match by compliance_role
+      by_role = Enum.filter(text_elements, fn el ->
+        to_string(Map.get(el, :compliance_role) || Map.get(el, "compliance_role") || "") == to_string(field)
       end)
+
+      # 2. Fallback: heuristic match by regex
+      matched = if by_role != [] do
+        by_role
+      else
+        Enum.filter(text_elements, fn el ->
+          searchable_text(el) |> String.match?(pattern)
+        end)
+      end
 
       if matched != [] do
         Map.put(acc, field, matched)
@@ -83,22 +93,22 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
     mandatory = [
       {:product_name, "FMD_MISSING_PRODUCT_NAME", "Falta el nombre del medicamento",
        "Agregue el nombre comercial del medicamento",
-       %{type: "text", name: "Nombre medicamento", text_content: "Nombre comercial del medicamento", font_size: 12}},
+       %{type: "text", name: "Nombre medicamento", text_content: "Nombre comercial del medicamento", font_size: 12, compliance_role: "product_name"}},
       {:active_ingredient, "FMD_MISSING_ACTIVE_INGREDIENT", "Falta el principio activo (DCI/INN)",
        "Agregue la denominación común internacional del principio activo",
-       %{type: "text", name: "Principio activo (DCI)", text_content: "DCI: Principio activo 000mg", font_size: 9}},
+       %{type: "text", name: "Principio activo (DCI)", text_content: "DCI: Principio activo 000mg", font_size: 9, compliance_role: "active_ingredient"}},
       {:lot, "FMD_MISSING_LOT", "Falta el número de lote",
        "Agregue el número de lote (obligatorio FMD Art. 54)",
-       %{type: "text", name: "Lote", text_content: "Lote: XXXXXX", font_size: 8}},
+       %{type: "text", name: "Lote", text_content: "Lote: XXXXXX", font_size: 8, compliance_role: "lot"}},
       {:expiry, "FMD_MISSING_EXPIRY", "Falta la fecha de caducidad",
        "Agregue la fecha de caducidad del medicamento",
-       %{type: "text", name: "Fecha caducidad", text_content: "CAD: MM/AAAA", font_size: 8}},
+       %{type: "text", name: "Fecha caducidad", text_content: "CAD: MM/AAAA", font_size: 8, compliance_role: "expiry"}},
       {:national_code, "FMD_MISSING_NATIONAL_CODE", "Falta el código nacional (CN/PZN/CIP)",
        "Agregue el código nacional del medicamento",
-       %{type: "text", name: "Código nacional (CN)", text_content: "CN: 000000", font_size: 8}},
+       %{type: "text", name: "Código nacional (CN)", text_content: "CN: 000000", font_size: 8, compliance_role: "national_code"}},
       {:serial, "FMD_MISSING_SERIAL", "Falta el número de serie único (anti-falsificación)",
        "Agregue un identificador de serie único (Reglamento Delegado UE 2016/161)",
-       %{type: "text", name: "Número de serie (SN)", text_content: "SN: XXXXXXXXXXXX", font_size: 7}}
+       %{type: "text", name: "Número de serie (SN)", text_content: "SN: XXXXXXXXXXXX", font_size: 7, compliance_role: "serial"}}
     ]
 
     Enum.flat_map(mandatory, fn {field, code, msg, hint, action} ->
@@ -115,10 +125,10 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
     recommended = [
       {:dosage, "FMD_MISSING_DOSAGE", "Falta la forma farmacéutica/dosis",
        "Agregue información sobre la forma farmacéutica y dosificación",
-       %{type: "text", name: "Forma farmacéutica", text_content: "Comprimidos recubiertos 000mg", font_size: 8}},
+       %{type: "text", name: "Forma farmacéutica", text_content: "Comprimidos recubiertos 000mg", font_size: 8, compliance_role: "dosage"}},
       {:manufacturer, "FMD_MISSING_MANUFACTURER", "Falta el titular de autorización de comercialización",
        "Agregue el nombre del laboratorio titular",
-       %{type: "text", name: "Laboratorio titular", text_content: "Laboratorio S.A.", font_size: 7}}
+       %{type: "text", name: "Laboratorio titular", text_content: "Laboratorio S.A.", font_size: 7, compliance_role: "manufacturer"}}
     ]
 
     Enum.flat_map(recommended, fn {field, code, msg, hint, action} ->
@@ -135,7 +145,7 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
     [Issue.error("FMD_MISSING_DATAMATRIX",
       "Falta código DataMatrix (obligatorio para FMD)",
       fix_hint: "Agregue un código DataMatrix con datos GS1 (GTIN + serial + lote + caducidad)",
-      fix_action: %{type: "barcode", name: "DataMatrix FMD", barcode_format: "DATAMATRIX", text_content: "(01)00000000000000(17)000000(10)LOT000(21)SN000"})]
+      fix_action: %{type: "barcode", name: "DataMatrix FMD", barcode_format: "DATAMATRIX", text_content: "(01)00000000000000(17)000000(10)LOT000(21)SN000", compliance_role: "datamatrix_fmd"})]
   end
 
   defp validate_datamatrix(datamatrix_elements) do

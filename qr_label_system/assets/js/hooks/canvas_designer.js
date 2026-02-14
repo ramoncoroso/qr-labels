@@ -1475,11 +1475,13 @@ const CanvasDesigner = {
           if (!obj || !obj._barcodeLoading || obj._barcodeContent !== content) return
 
           // Scale to fill the exact target dimensions
+          const creationScaleX = w / img.width
+          const creationScaleY = h / img.height
           img.set({
             left: x,
             top: y,
-            scaleX: w / img.width,
-            scaleY: h / img.height,
+            scaleX: creationScaleX,
+            scaleY: creationScaleY,
             angle: element.rotation || 0
           })
 
@@ -1489,6 +1491,10 @@ const CanvasDesigner = {
           img.elementData = obj.elementData
           img._barcodeContent = content
           img._barcodeFormat = format
+          // Track creation scale so saveElementsImmediate only triggers
+          // recreation when the user actually resizes (not on every move)
+          img._creationScaleX = creationScaleX
+          img._creationScaleY = creationScaleY
 
           // Copy visibility and lock state
           img.set({
@@ -2594,8 +2600,13 @@ const CanvasDesigner = {
           obj.elementData = data
         }
 
-        // If scale != 1, mark for recreation (regenerate image at new size)
-        if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+        // Only mark for recreation if the user actually resized the element
+        // (scale changed from creation scale, not just != 1).
+        // Barcode images always have non-1 scale because bwip-js output
+        // dimensions don't match target dimensions.
+        const baseScaleX = obj._creationScaleX || 1
+        const baseScaleY = obj._creationScaleY || 1
+        if (Math.abs(scaleX - baseScaleX) > 0.01 || Math.abs(scaleY - baseScaleY) > 0.01) {
           if (!obj._pendingRecreate) {
             obj._pendingRecreate = { width, height }
           }
@@ -2735,6 +2746,7 @@ const CanvasDesigner = {
     const elementId = obj.elementId
     const elementType = obj.elementType
     const data = { ...obj.elementData }
+    const wasActive = this.canvas.getActiveObject() === obj
 
     // Update dimensions
     data.width = newWidthMM
@@ -2745,6 +2757,9 @@ const CanvasDesigner = {
     const y = (obj.top - this.labelBounds.top) / PX_PER_MM
     data.x = x
     data.y = y
+
+    // Suppress selection:cleared during recreation
+    this._isRecreatingElement = true
 
     // Remove old badge and object
     this.removeFormatBadge(obj)
@@ -2791,11 +2806,14 @@ const CanvasDesigner = {
       }
 
       // Restore selection if this was the active object
-      if (this.canvas.getActiveObject() === obj) {
+      if (wasActive) {
         this.canvas.setActiveObject(newObj)
       }
 
+      this._isRecreatingElement = false
       this.canvas.renderAll()
+    } else {
+      this._isRecreatingElement = false
     }
   },
 
@@ -3228,6 +3246,9 @@ const CanvasDesigner = {
   // ============================================================================
 
   applyZIndexOrdering() {
+    // Suppress selection:cleared during reordering (bringToFront can trigger it)
+    this._isSavingElements = true
+
     // Get all elements sorted by z_index
     const sorted = []
     this.elements.forEach((obj, id) => {
@@ -3240,6 +3261,8 @@ const CanvasDesigner = {
     sorted.forEach(item => {
       this.canvas.bringToFront(item.obj)
     })
+
+    this._isSavingElements = false
 
     // Update depth overlays after reordering
     this.updateDepthOverlays()
@@ -3272,6 +3295,9 @@ const CanvasDesigner = {
   // Main method: recalculate and draw depth overlays at all intersection areas
   updateDepthOverlays() {
     if (this._isBulkLoading) return
+    // Suppress selection:cleared during overlay manipulation
+    const wasSaving = this._isSavingElements
+    this._isSavingElements = true
     this.clearDepthOverlays()
 
     if (this.elements.size <= 1) return
@@ -3341,6 +3367,9 @@ const CanvasDesigner = {
         if (ov) this.canvas.bringToFront(ov)
       }
     })
+
+    // Restore flag
+    this._isSavingElements = wasSaving
   },
 
   // Auto bring-to-front: when an element is dropped overlapping another with higher z_index,

@@ -53,9 +53,19 @@ defmodule QrLabelSystem.Compliance.Eu1169Validator do
 
   defp detect_fields(text_elements) do
     Enum.reduce(@field_patterns, %{}, fn {field, pattern}, acc ->
-      matched = Enum.filter(text_elements, fn el ->
-        searchable_text(el) |> String.match?(pattern)
+      # 1. Explicit match by compliance_role
+      by_role = Enum.filter(text_elements, fn el ->
+        to_string(Map.get(el, :compliance_role) || Map.get(el, "compliance_role") || "") == to_string(field)
       end)
+
+      # 2. Fallback: heuristic match by regex
+      matched = if by_role != [] do
+        by_role
+      else
+        Enum.filter(text_elements, fn el ->
+          searchable_text(el) |> String.match?(pattern)
+        end)
+      end
 
       if matched != [] do
         Map.put(acc, field, matched)
@@ -77,19 +87,19 @@ defmodule QrLabelSystem.Compliance.Eu1169Validator do
     mandatory = [
       {:product_name, "EU_MISSING_NAME", "Falta la denominación del producto",
        "Agregue un campo de texto con el nombre del producto",
-       %{type: "text", name: "Nombre del producto", text_content: "Denominación de venta", font_size: 14}},
+       %{type: "text", name: "Nombre del producto", text_content: "Denominación de venta", font_size: 14, compliance_role: "product_name"}},
       {:ingredients, "EU_MISSING_INGREDIENTS", "Falta la lista de ingredientes",
        "Agregue un campo de texto con la lista de ingredientes",
-       %{type: "text", name: "Ingredientes", text_content: "Ingredientes: ...", font_size: 8}},
+       %{type: "text", name: "Ingredientes", text_content: "Ingredientes: ...", font_size: 8, compliance_role: "ingredients"}},
       {:allergens, "EU_MISSING_ALLERGENS", "Falta información de alérgenos",
        "Agregue un campo que identifique los alérgenos (Reg. UE 1169/2011 Art. 21)",
-       %{type: "text", name: "Alérgenos", text_content: "Alérgenos: ...", font_size: 8, font_weight: "bold"}},
+       %{type: "text", name: "Alérgenos", text_content: "Alérgenos: ...", font_size: 8, font_weight: "bold", compliance_role: "allergens"}},
       {:net_quantity, "EU_MISSING_NET_QUANTITY", "Falta la cantidad neta (peso/volumen)",
        "Agregue un campo con el peso neto o volumen del producto",
-       %{type: "text", name: "Peso neto", text_content: "Peso neto: 000g", font_size: 10}},
+       %{type: "text", name: "Peso neto", text_content: "Peso neto: 000g", font_size: 10, compliance_role: "net_quantity"}},
       {:best_before, "EU_MISSING_BEST_BEFORE", "Falta la fecha de caducidad o consumo preferente",
        "Agregue un campo con la fecha de caducidad/consumo preferente",
-       %{type: "text", name: "Fecha caducidad", text_content: "Consumir antes de: DD/MM/AAAA", font_size: 8}}
+       %{type: "text", name: "Fecha caducidad", text_content: "Consumir antes de: DD/MM/AAAA", font_size: 8, compliance_role: "best_before"}}
     ]
 
     Enum.flat_map(mandatory, fn {field, code, msg, hint, action} ->
@@ -106,16 +116,16 @@ defmodule QrLabelSystem.Compliance.Eu1169Validator do
     recommended = [
       {:manufacturer, "EU_MISSING_MANUFACTURER", "Falta nombre/dirección del fabricante o envasador",
        "Agregue la identificación del operador responsable",
-       %{type: "text", name: "Fabricante", text_content: "Fabricado por: Empresa S.L.", font_size: 7}},
+       %{type: "text", name: "Fabricante", text_content: "Fabricado por: Empresa S.L.", font_size: 7, compliance_role: "manufacturer"}},
       {:origin, "EU_MISSING_ORIGIN", "Falta el país de origen",
        "Agregue el país de origen cuando sea obligatorio (carnes, frutas, verduras, etc.)",
-       %{type: "text", name: "País de origen", text_content: "Origen: España", font_size: 7}},
+       %{type: "text", name: "País de origen", text_content: "Origen: España", font_size: 7, compliance_role: "origin"}},
       {:nutrition, "EU_MISSING_NUTRITION", "Falta la declaración nutricional",
        "Agregue la información nutricional (Reg. UE 1169/2011 Art. 30)",
-       %{type: "text", name: "Información nutricional", text_content: "Valor energético: ... kJ / ... kcal", font_size: 7}},
+       %{type: "text", name: "Información nutricional", text_content: "Valor energético: ... kJ / ... kcal", font_size: 7, compliance_role: "nutrition"}},
       {:lot, "EU_MISSING_LOT", "Falta el número de lote",
        "Agregue el número de lote para trazabilidad",
-       %{type: "text", name: "Lote", text_content: "Lote: XXXXXX", font_size: 7}}
+       %{type: "text", name: "Lote", text_content: "Lote: XXXXXX", font_size: 7, compliance_role: "lot"}}
     ]
 
     field_issues = Enum.flat_map(recommended, fn {field, code, msg, hint, action} ->
@@ -129,7 +139,7 @@ defmodule QrLabelSystem.Compliance.Eu1169Validator do
     barcode_issue = if barcode_elements == [] do
       [Issue.info("EU_MISSING_BARCODE", "Considere agregar un código EAN-13 para distribución retail",
         fix_hint: "Un código EAN-13 facilita la venta en supermercados y tiendas",
-        fix_action: %{type: "barcode", name: "Código EAN-13", barcode_format: "EAN13", text_content: "0000000000000"})]
+        fix_action: %{type: "barcode", name: "Código EAN-13", barcode_format: "EAN13", text_content: "0000000000000", compliance_role: "eu1169_barcode"})]
     else
       []
     end

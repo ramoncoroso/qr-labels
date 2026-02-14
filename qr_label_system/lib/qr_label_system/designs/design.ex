@@ -240,7 +240,9 @@ defmodule QrLabelSystem.Designs.Design do
       image_data: element.image_data,
       image_filename: element.image_filename,
       # Group membership
-      group_id: element.group_id
+      group_id: element.group_id,
+      # Compliance role
+      compliance_role: element.compliance_role
     }
   end
 

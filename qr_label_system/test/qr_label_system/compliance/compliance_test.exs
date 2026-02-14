@@ -111,6 +111,56 @@ defmodule QrLabelSystem.Compliance.ComplianceTest do
     end
   end
 
+  describe "compliance_role detection" do
+    test "EU1169: element with compliance_role is detected without regex match" do
+      element = %QrLabelSystem.Designs.Element{
+        id: "el_1", type: "text", x: 0, y: 0,
+        name: "Campo genérico",
+        text_content: "abc",
+        compliance_role: "product_name"
+      }
+      design = make_design("eu1169", [element])
+      {_name, issues} = Compliance.validate(design)
+      codes = Enum.map(issues, & &1.code)
+      refute "EU_MISSING_NAME" in codes
+    end
+
+    test "EU1169: element without compliance_role falls back to regex" do
+      element = %QrLabelSystem.Designs.Element{
+        id: "el_1", type: "text", x: 0, y: 0,
+        name: "Nombre del producto",
+        text_content: "Denominación",
+        compliance_role: nil
+      }
+      design = make_design("eu1169", [element])
+      {_name, issues} = Compliance.validate(design)
+      codes = Enum.map(issues, & &1.code)
+      refute "EU_MISSING_NAME" in codes
+    end
+
+    test "FMD: element with compliance_role is detected without regex match" do
+      element = %QrLabelSystem.Designs.Element{
+        id: "el_1", type: "text", x: 0, y: 0,
+        name: "X",
+        text_content: "Y",
+        compliance_role: "lot"
+      }
+      design = make_design("fmd", [element])
+      {_name, issues} = Compliance.validate(design)
+      codes = Enum.map(issues, & &1.code)
+      refute "FMD_MISSING_LOT" in codes
+    end
+
+    test "EU1169: fix_actions include compliance_role" do
+      design = make_design("eu1169", [])
+      {_name, issues} = Compliance.validate(design)
+      actions_with_role = Enum.filter(issues, fn issue ->
+        issue.fix_action && Map.has_key?(issue.fix_action, :compliance_role)
+      end)
+      assert length(actions_with_role) > 0
+    end
+  end
+
   describe "issues_to_map/1" do
     test "serializes issues to maps" do
       issues = [Issue.error("TEST", "test msg", element_id: "el_1", fix_hint: "fix it")]

@@ -28,7 +28,17 @@ defmodule QrLabelSystem.Compliance.Gs1Validator do
     barcode_elements = Enum.filter(elements, &barcode_element?/1)
     gs1_barcodes = Enum.filter(barcode_elements, &gs1_barcode?/1)
 
-    global_issues = validate_global(gs1_barcodes)
+    # Also include barcodes explicitly tagged with gs1_barcode role
+    role_barcodes = Enum.filter(barcode_elements, fn el ->
+      role = Map.get(el, :compliance_role) || Map.get(el, "compliance_role")
+      role == "gs1_barcode"
+    end)
+
+    all_gs1 = Enum.uniq_by(gs1_barcodes ++ role_barcodes, fn el ->
+      Map.get(el, :id) || Map.get(el, "id")
+    end)
+
+    global_issues = validate_global(all_gs1)
     element_issues = Enum.flat_map(gs1_barcodes, &validate_element/1)
 
     global_issues ++ element_issues
@@ -44,7 +54,7 @@ defmodule QrLabelSystem.Compliance.Gs1Validator do
     if gs1_barcodes == [] do
       [Issue.warning("GS1_NO_BARCODE", "El diseño no contiene ningún código de barras GS1",
         fix_hint: "Agregue un código de barras EAN-13, EAN-8, UPC-A, ITF-14 o GS1-128",
-        fix_action: %{type: "barcode", name: "Código EAN-13", barcode_format: "EAN13", text_content: "0000000000000"})]
+        fix_action: %{type: "barcode", name: "Código EAN-13", barcode_format: "EAN13", text_content: "0000000000000", compliance_role: "gs1_barcode"})]
     else
       []
     end

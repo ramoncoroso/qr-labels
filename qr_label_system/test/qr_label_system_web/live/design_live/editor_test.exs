@@ -253,6 +253,50 @@ defmodule QrLabelSystemWeb.DesignLive.EditorTest do
     end
   end
 
+  describe "Editor - compliance_role" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      conn = log_in_user(conn, user)
+      design = design_fixture(%{
+        user_id: user.id,
+        name: "Role Test",
+        width_mm: 100.0,
+        height_mm: 50.0,
+        compliance_standard: "eu1169",
+        elements: [
+          %{id: "el_1", type: "text", x: 10, y: 10, width: 50, height: 10, text_content: "Hello"}
+        ]
+      })
+      %{conn: conn, user: user, design: design}
+    end
+
+    test "compliance_role dropdown appears when standard is active", %{conn: conn, design: design} do
+      {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
+
+      # Select the element to show properties
+      html = render_click(view, "select_layer", %{"id" => "el_1"})
+
+      # Should show the compliance role dropdown
+      assert html =~ "Rol normativo"
+      assert html =~ "compliance_role"
+    end
+
+    test "add_compliance_element sets compliance_role", %{conn: conn, design: design} do
+      {:ok, view, _html} = live(conn, ~p"/designs/#{design.id}/edit")
+
+      html = render_click(view, "add_compliance_element", %{
+        "type" => "text",
+        "name" => "Nombre del producto",
+        "text_content" => "Denominación de venta",
+        "font_size" => "14",
+        "compliance_role" => "product_name"
+      })
+
+      # Should add element with compliance_role
+      assert html =~ "Nombre del producto" or html =~ "añadido"
+    end
+  end
+
   describe "Editor - unauthenticated" do
     test "redirects to login", %{conn: conn} do
       design = design_fixture()
