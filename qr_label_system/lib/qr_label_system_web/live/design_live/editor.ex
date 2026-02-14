@@ -137,6 +137,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:rename_version_value, "")
        |> assign(:selected_version, nil)
        |> assign(:version_diff, nil)
+       |> assign(:version_preview_svg, nil)
        |> assign(:approval_required, Settings.approval_required?())
        |> assign(:is_admin, User.admin?(socket.assigns.current_user))
        |> assign(:show_approval_history, false)
@@ -863,7 +864,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply,
      socket
      |> assign(:selected_version, nil)
-     |> assign(:version_diff, nil)}
+     |> assign(:version_diff, nil)
+     |> assign(:version_preview_svg, nil)}
   end
 
   @impl true
@@ -1734,10 +1736,19 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         _ -> nil
       end
 
+    # Generate SVG preview from version data
+    version_preview =
+      if version do
+        QrLabelSystem.Designs.SvgPreview.generate(version, max_width: 260, max_height: 180)
+      else
+        nil
+      end
+
     {:noreply,
      socket
      |> assign(:selected_version, version)
-     |> assign(:version_diff, diff)}
+     |> assign(:version_diff, diff)
+     |> assign(:version_preview_svg, version_preview)}
   end
 
   defp navigate_to_preview_row(socket, new_index) do
@@ -3291,6 +3302,15 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   </div>
                 <% end %>
               </div>
+
+              <%= if @version_preview_svg do %>
+                <div class="bg-white rounded-lg border border-gray-200 p-3 mb-4">
+                  <h4 class="text-xs font-medium text-gray-500 mb-2">PREVIEW</h4>
+                  <div class="flex justify-center bg-gray-50 rounded p-2">
+                    <%= Phoenix.HTML.raw(@version_preview_svg) %>
+                  </div>
+                </div>
+              <% end %>
 
               <%= if @version_diff do %>
                 <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
