@@ -78,6 +78,15 @@ defmodule QrLabelSystem.Designs.Versioning do
   end
 
   @doc """
+  Returns the latest version number for a design (0 if none exist).
+  """
+  def latest_version_number(design_id) do
+    from(v in DesignVersion, where: v.design_id == ^design_id, select: max(v.version_number))
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
+  @doc """
   Lists versions for a design, most recent first.
   Preloads user association for display.
   """

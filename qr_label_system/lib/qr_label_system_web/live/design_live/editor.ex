@@ -127,6 +127,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:zpl_dpi, 203)
        |> assign(:show_versions, false)
        |> assign(:versions, [])
+       |> assign(:version_count, Versioning.latest_version_number(design.id))
        |> assign(:selected_version, nil)
        |> assign(:version_diff, nil)
        |> assign(:approval_required, Settings.approval_required?())
@@ -905,6 +906,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
              socket
              |> assign(:design, updated_design)
              |> assign(:versions, versions)
+             |> assign(:version_count, if(v = List.first(versions), do: v.version_number, else: 0))
              |> assign(:selected_version, nil)
              |> assign(:version_diff, nil)
              |> push_event("load_design", %{design: Design.to_json(updated_design)})
@@ -1653,6 +1655,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         socket = if show_flash do
           socket
           |> assign(:has_unsaved_changes, false)
+          |> assign(:version_count, Versioning.latest_version_number(updated_design.id))
           |> put_flash(:info, "Diseño guardado")
         else
           socket
@@ -2078,78 +2081,142 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp can_undo?(assigns), do: assigns.history_index > 0
   defp can_redo?(assigns), do: assigns.history_index < length(assigns.history) - 1
 
-  defp status_badge(assigns) do
-    {label, classes} = case assigns.status do
-      "draft" -> {"Borrador", "bg-gray-100 text-gray-600"}
-      "pending_review" -> {"En revision", "bg-amber-100 text-amber-700"}
-      "approved" -> {"Aprobado", "bg-green-100 text-green-700"}
-      "archived" -> {"Archivado", "bg-red-100 text-red-700"}
-      _ -> {"Desconocido", "bg-gray-100 text-gray-600"}
+  defp unified_status_bar(assigns) do
+    standards = Compliance.available_standards()
+
+    {status_label, status_dot, status_bg} = case assigns.design.status do
+      "draft" -> {"Borrador", "bg-gray-400", "bg-gray-50 text-gray-700"}
+      "pending_review" -> {"En revision", "bg-amber-400", "bg-amber-50 text-amber-700"}
+      "approved" -> {"Aprobado", "bg-green-500", "bg-green-50 text-green-700"}
+      "archived" -> {"Archivado", "bg-red-400", "bg-red-50 text-red-700"}
+      _ -> {"Desconocido", "bg-gray-400", "bg-gray-50 text-gray-700"}
     end
 
-    assigns = assign(assigns, :label, label)
-    assigns = assign(assigns, :classes, classes)
+    assigns = assigns
+      |> assign(:standards, standards)
+      |> assign(:status_label, status_label)
+      |> assign(:status_dot, status_dot)
+      |> assign(:status_bg, status_bg)
 
     ~H"""
-    <span class={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium #{@classes}"}>
-      <%= @label %>
-    </span>
-    """
-  end
-
-  defp compliance_status_bar(assigns) do
-    standards = Compliance.available_standards()
-    assigns = assign(assigns, :standards, standards)
-
-    ~H"""
-    <div class="mt-2 flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 px-3 h-8 text-sm">
-      <!-- Left: semaphore + standard name + counts -->
-      <div class="flex items-center gap-2">
+    <div class="mt-2 flex items-center bg-white rounded-lg shadow-sm border border-gray-200 px-3 h-9 text-sm">
+      <%!-- Zone 1: Compliance (left) --%>
+      <div class="flex items-center gap-2 min-w-0 flex-1">
         <%= if @standard do %>
           <%= cond do %>
             <% @counts.errors > 0 -> %>
-              <span class="w-3 h-3 rounded-full bg-red-500"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0"></span>
             <% @counts.warnings > 0 -> %>
-              <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-400 flex-shrink-0"></span>
             <% true -> %>
-              <span class="w-3 h-3 rounded-full bg-green-500"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0"></span>
           <% end %>
           <button
             phx-click="toggle_compliance_panel"
-            class="text-gray-700 hover:text-blue-600 font-medium transition"
+            class="text-gray-700 hover:text-blue-600 font-medium transition truncate"
           >
             <%= @standard_name %>
           </button>
           <%= if @counts.errors > 0 || @counts.warnings > 0 do %>
-            <span :if={@counts.errors > 0} class="text-xs text-red-600 font-medium"><%= @counts.errors %> error<%= if @counts.errors != 1, do: "es" %></span>
-            <span :if={@counts.warnings > 0} class="text-xs text-amber-600 font-medium"><%= @counts.warnings %> aviso<%= if @counts.warnings != 1, do: "s" %></span>
-            <span :if={@counts.infos > 0} class="text-xs text-blue-500"><%= @counts.infos %> info</span>
+            <span :if={@counts.errors > 0} class="text-xs text-red-600 font-medium whitespace-nowrap"><%= @counts.errors %> error<%= if @counts.errors != 1, do: "es" %></span>
+            <span :if={@counts.warnings > 0} class="text-xs text-amber-600 font-medium whitespace-nowrap"><%= @counts.warnings %> aviso<%= if @counts.warnings != 1, do: "s" %></span>
+            <span :if={@counts.infos > 0} class="text-xs text-blue-500 whitespace-nowrap"><%= @counts.infos %> info</span>
           <% else %>
             <span class="text-xs text-green-600 font-medium">Cumple</span>
           <% end %>
-          <button phx-click="run_compliance_check" class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition" title="Re-validar">
+          <button phx-click="run_compliance_check" class="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition flex-shrink-0" title="Re-validar">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         <% else %>
-          <span class="w-3 h-3 rounded-full bg-gray-300"></span>
-          <span class="text-gray-400">Sin norma seleccionada</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0"></span>
+          <span class="text-gray-400 truncate">Sin norma seleccionada</span>
         <% end %>
+        <form phx-change="set_compliance_standard" class="flex items-center flex-shrink-0">
+          <select
+            name="standard"
+            class="text-xs border-0 bg-transparent text-gray-500 focus:ring-0 py-0 pr-6 pl-1 cursor-pointer"
+          >
+            <option value="">— Ninguna —</option>
+            <%= for {code, name, _desc} <- @standards do %>
+              <option value={code} selected={@standard == code}><%= name %></option>
+            <% end %>
+          </select>
+        </form>
       </div>
 
-      <!-- Right: standard selector -->
-      <form phx-change="set_compliance_standard" class="flex items-center gap-1">
-        <select
-          name="standard"
-          class="text-xs border-0 bg-transparent text-gray-500 focus:ring-0 py-0 pr-6 pl-1 cursor-pointer"
-        >
-          <option value="">— Ninguna —</option>
-          <%= for {code, name, _desc} <- @standards do %>
-            <option value={code} selected={@standard == code}><%= name %></option>
+      <%!-- Zone 2: Workflow (center) — only if approval is required --%>
+      <%= if @approval_required do %>
+        <div class="w-px h-5 bg-gray-200 mx-3 flex-shrink-0"></div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <span class={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium #{@status_bg}"}>
+            <span class={"w-2 h-2 rounded-full #{@status_dot}"}></span>
+            <%= @status_label %>
+          </span>
+          <%= cond do %>
+            <% @design.status == "draft" && @design.user_id == @current_user.id -> %>
+              <button
+                phx-click="request_review"
+                class="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-md transition text-xs font-medium"
+                title="Enviar a revision"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Enviar
+              </button>
+            <% @design.status == "pending_review" && @is_admin -> %>
+              <input
+                type="text"
+                placeholder="Comentario..."
+                value={@approval_comment}
+                phx-change="update_approval_comment"
+                phx-debounce="300"
+                name="value"
+                class="w-28 px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                phx-click="approve_design"
+                class="inline-flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md transition text-xs font-medium"
+                title="Aprobar"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Aprobar
+              </button>
+              <button
+                phx-click="reject_design"
+                class="inline-flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md transition text-xs font-medium"
+                title="Rechazar"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Rechazar
+              </button>
+            <% @design.status == "pending_review" -> %>
+              <span class="text-xs text-amber-600">En espera de aprobacion</span>
+            <% true -> %>
           <% end %>
-        </select>
-      </form>
+        </div>
+      <% end %>
+
+      <%!-- Zone 3: Historial + Versions (right) --%>
+      <div class="w-px h-5 bg-gray-200 mx-3 flex-shrink-0"></div>
+      <div class="flex items-center flex-shrink-0">
+        <button
+          phx-click="toggle_versions"
+          class="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition text-xs font-medium"
+          title="Historial de versiones"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Historial · v<%= @version_count %>
+        </button>
+      </div>
     </div>
     """
   end
@@ -2326,7 +2393,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                   </svg>
                 </button>
-                <.status_badge status={@design.status} />
               </div>
             <% end %>
           </div>
@@ -2416,116 +2482,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <div class="w-px h-6 bg-gray-300"></div>
 
           <!-- Save split button (hover dropdown, pure CSS) -->
-          <div class="relative group/save flex">
-            <button
-              phx-click="save_design"
-              class="flex items-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-l-lg transition text-sm font-medium"
-              title="Guardar diseño"
-            >
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              <span>Guardar</span>
-            </button>
-            <button type="button" class="flex items-center px-1.5 py-2 bg-blue-600 group-hover/save:bg-blue-700 border-l border-blue-500 rounded-r-lg transition text-white" aria-haspopup="true" aria-label="Opciones de guardado">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            <!-- Dropdown: shown on hover or keyboard focus -->
-            <div class="invisible opacity-0 group-hover/save:visible group-hover/save:opacity-100 group-focus-within/save:visible group-focus-within/save:opacity-100 transition-all duration-150 absolute right-0 top-full pt-1 z-50">
-              <div class="w-64 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-                <button
-                  phx-click="save_design"
-                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left"
-                >
-                  <svg class="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-                  <div>
-                    <p class="text-sm font-medium text-gray-900">Guardar</p>
-                    <p class="text-xs text-gray-500">Guardar cambios del diseño</p>
-                  </div>
-                </button>
-                <button
-                  phx-click="toggle_versions"
-                  class="w-full flex items-center space-x-3 px-4 py-3 hover:bg-gray-50 transition text-left border-t border-gray-100"
-                >
-                  <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <p class="text-sm font-medium text-gray-900">Versiones</p>
-                    <p class="text-xs text-gray-500">Ver historial de cambios</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Approval buttons -->
-          <%= if @approval_required do %>
-            <div class="w-px h-6 bg-gray-300"></div>
-            <%= cond do %>
-              <% @design.status == "draft" && @design.user_id == @current_user.id -> %>
-                <button
-                  phx-click="request_review"
-                  class="flex items-center space-x-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition text-sm font-medium"
-                  title="Enviar a revision"
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Enviar a revision</span>
-                </button>
-              <% @design.status == "pending_review" && @is_admin -> %>
-                <div class="flex items-center space-x-1">
-                  <input
-                    type="text"
-                    placeholder="Comentario..."
-                    value={@approval_comment}
-                    phx-change="update_approval_comment"
-                    phx-debounce="300"
-                    name="value"
-                    class="w-40 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    phx-click="approve_design"
-                    class="flex items-center space-x-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition text-sm font-medium"
-                    title="Aprobar"
-                  >
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>Aprobar</span>
-                  </button>
-                  <button
-                    phx-click="reject_design"
-                    class="flex items-center space-x-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm font-medium"
-                    title="Rechazar"
-                  >
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    <span>Rechazar</span>
-                  </button>
-                </div>
-              <% @design.status == "pending_review" -> %>
-                <span class="flex items-center px-3 py-2 text-sm text-amber-700 bg-amber-50 rounded-lg border border-amber-200">
-                  En espera de aprobacion
-                </span>
-              <% true -> %>
-            <% end %>
-            <button
-              phx-click="toggle_approval_history"
-              class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition"
-              title="Historial de aprobaciones"
-            >
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-          <% end %>
+          <button
+            phx-click="save_design"
+            class="flex items-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm font-medium"
+            title="Guardar diseño (Ctrl+S)"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            <span>Guardar</span>
+          </button>
 
           <div class="w-px h-6 bg-gray-300"></div>
 
@@ -2630,7 +2596,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       </div>
 
       <!-- Main Content -->
-      <div class="flex-1 flex overflow-hidden">
+      <div class="flex-1 flex overflow-hidden relative">
         <!-- Left Sidebar - Element Tools (fixed width, won't shrink) -->
         <div class="w-20 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col py-4" id="element-toolbar" phx-hook="DraggableElements">
           <div class="px-2 mb-4">
@@ -2776,12 +2742,17 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             <!-- Note: This hint is shown only when there are no elements, but the canvas is always interactive -->
           </div>
 
-          <!-- Compliance Status Bar -->
-          <.compliance_status_bar
+          <!-- Unified Status Bar: Compliance + Workflow + Versions -->
+          <.unified_status_bar
             standard={@design.compliance_standard}
             standard_name={@compliance_standard_name}
             counts={@compliance_counts}
-            show_panel={@show_compliance_panel}
+            approval_required={@approval_required}
+            design={@design}
+            current_user={@current_user}
+            is_admin={@is_admin}
+            approval_comment={@approval_comment}
+            version_count={@version_count}
           />
         </div>
 
@@ -3019,7 +2990,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
 
         <!-- Versions Panel (overlay) -->
-        <div :if={@show_versions} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
+        <div :if={@show_versions} class="absolute right-72 top-0 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
           <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
             <h3 class="font-semibold text-gray-900">Historial de versiones</h3>
             <button phx-click="toggle_versions" class="text-gray-400 hover:text-gray-600">
@@ -3170,7 +3141,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
 
         <!-- Approval History Panel (overlay) -->
-        <div :if={@show_approval_history} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
+        <div :if={@show_approval_history} class="absolute right-72 top-0 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
           <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
             <h3 class="font-semibold text-gray-900">Historial de aprobaciones</h3>
             <button phx-click="toggle_approval_history" class="text-gray-400 hover:text-gray-600">
@@ -3219,7 +3190,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         </div>
 
         <!-- Compliance Detail Panel (overlay) -->
-        <div :if={@show_compliance_panel && @design.compliance_standard} class="absolute right-72 top-16 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
+        <div :if={@show_compliance_panel && @design.compliance_standard} class="absolute right-72 top-0 bottom-0 w-80 bg-gray-50 border-l border-gray-200 flex flex-col shadow-lg z-20">
           <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
             <h3 class="font-semibold text-gray-900">Cumplimiento: <%= @compliance_standard_name %></h3>
             <button phx-click="toggle_compliance_panel" class="text-gray-400 hover:text-gray-600">
