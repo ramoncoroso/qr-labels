@@ -2338,8 +2338,8 @@ const CanvasDesigner = {
         needsTranslation = isNonDefault && !hasTranslation && data.text_content && data.text_content.trim() !== ''
 
         if (needsTranslation) {
-          // Show base text in gray with small pending hint
-          obj.set('text', data.text_content + '  ⟡')
+          // Show base text in gray with pending hint
+          obj.set('text', data.text_content + ' · traducir')
           obj.set('fill', '#9CA3AF')
           obj.set('fontStyle', data.font_style || 'normal')
         } else {
