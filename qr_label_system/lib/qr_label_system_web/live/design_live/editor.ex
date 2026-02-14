@@ -929,26 +929,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
-  defp do_save_rename_version(socket, design_id, version_number, name) do
-
-    case Versioning.rename_version(design_id, version_number, name) do
-      {:ok, _updated} ->
-        versions = Versioning.list_versions_light(design_id)
-
-        {:noreply,
-         socket
-         |> assign(:versions, versions)
-         |> assign(:renaming_version_id, nil)
-         |> assign(:rename_version_value, "")}
-
-      {:error, _} ->
-        {:noreply,
-         socket
-         |> assign(:renaming_version_id, nil)
-         |> put_flash(:error, "Error al renombrar versión")}
-    end
-  end
-
   @impl true
   def handle_event("cancel_rename_version", _params, socket) do
     {:noreply,
@@ -1709,6 +1689,25 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, socket}
   end
 
+  defp do_save_rename_version(socket, design_id, version_number, name) do
+    case Versioning.rename_version(design_id, version_number, name) do
+      {:ok, _updated} ->
+        versions = Versioning.list_versions_light(design_id)
+
+        {:noreply,
+         socket
+         |> assign(:versions, versions)
+         |> assign(:renaming_version_id, nil)
+         |> assign(:rename_version_value, "")}
+
+      {:error, _} ->
+        {:noreply,
+         socket
+         |> assign(:renaming_version_id, nil)
+         |> put_flash(:error, "Error al renombrar versión")}
+    end
+  end
+
   defp print_blocked?(socket) do
     socket.assigns.approval_required && socket.assigns.design.status != "approved"
   end
@@ -1872,7 +1871,16 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
   defp compliance_roles_for("gs1") do
     [
-      {"gs1_barcode", "Código de barras GS1"}
+      {"gs1_barcode", "Código de barras GS1"},
+      {"gs1_product", "Producto"},
+      {"gs1_recipient", "Destinatario"},
+      {"gs1_sender", "Remitente / origen"},
+      {"gs1_address", "Dirección"},
+      {"gs1_reference", "Referencia / tracking"},
+      {"gs1_quantity", "Cantidad / bultos"},
+      {"gs1_weight", "Peso"},
+      {"gs1_lot", "Lote"},
+      {"gs1_date", "Fecha"}
     ]
   end
 
