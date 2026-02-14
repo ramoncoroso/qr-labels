@@ -784,12 +784,26 @@ const CanvasDesigner = {
       }
     })
 
-    // Force reload design (used for undo/redo)
+    // Force reload design (used for undo/redo and version restore)
     // Preserves existing images when receiving a light design (image_data: null)
     this.handleEvent("reload_design", ({ design }) => {
+      console.log("[reload_design] received, design:", design ? `${design.elements?.length || 0} elements` : "null", "destroyed:", this._isDestroyed)
       if (design && !this._isDestroyed) {
+        // Cancel any pending debounced save to prevent old data from overwriting
+        // the reloaded design on the server
+        if (this._saveTimeout) {
+          clearTimeout(this._saveTimeout)
+          this._saveTimeout = null
+        }
+
         this._restoreImageDataFromCanvas(design)
+        console.log("[reload_design] calling loadDesign...")
         this.loadDesign(design)
+
+        // Mark save time to prevent load_design from reverting and to give the
+        // canvas time to settle before any autosave fires
+        this._lastSaveTime = Date.now()
+        console.log("[reload_design] done, canvas elements:", this.elements.size)
       }
     })
 
@@ -1047,9 +1061,12 @@ const CanvasDesigner = {
   },
 
   loadDesign(design) {
-    // Remove existing elements and overlays
+    // Remove existing elements, their format badges, and overlays
     this.clearDepthOverlays()
-    this.elements.forEach((obj) => this.canvas.remove(obj))
+    this.elements.forEach((obj) => {
+      this.removeFormatBadge(obj)
+      this.canvas.remove(obj)
+    })
     this.elements.clear()
 
     // Load groups

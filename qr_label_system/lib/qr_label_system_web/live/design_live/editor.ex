@@ -868,8 +868,20 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
         case Versioning.restore_version(design, version_number, user_id) do
           {:ok, updated_design} ->
+            Logger.info("[RESTORE] OK: v#{version_number} → elements=#{length(updated_design.elements || [])}, name=#{updated_design.name}")
             # Reload versions list (light — elements not needed for panel display)
             versions = Versioning.list_versions_light(design.id)
+
+            # Build the canvas size update in case the restored version has
+            # different dimensions/styling than the current design
+            canvas_props = %{
+              width_mm: updated_design.width_mm,
+              height_mm: updated_design.height_mm,
+              background_color: updated_design.background_color,
+              border_width: updated_design.border_width,
+              border_color: updated_design.border_color,
+              border_radius: updated_design.border_radius
+            }
 
             {:noreply,
              socket
@@ -879,10 +891,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
              |> assign(:selected_version, nil)
              |> assign(:version_diff, nil)
              |> assign(:has_unsaved_changes, false)
+             |> assign(:pending_deletes, MapSet.new())
+             |> assign(:selected_element, nil)
              |> assign(:history, [%{elements: strip_binary_data(updated_design.elements || []), groups: updated_design.groups || []}])
              |> assign(:history_index, 0)
              |> assign(:image_cache, extract_image_cache(updated_design.elements || [], %{}))
              |> assign(:rename_value, updated_design.name)
+             |> push_event("update_canvas_size", canvas_props)
              |> push_event("reload_design", %{design: Design.to_json(updated_design)})
              |> put_flash(:info, "Restaurado desde v#{version_number}")}
 
@@ -1467,19 +1482,29 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       case Designs.update_design(design, %{elements: new_elements}) do
         {:ok, updated_design} ->
+          Logger.info("add_compliance_element OK: added #{type} '#{element[:name]}' (id=#{element[:id]}) to design #{design.id}")
+
+          # Use reload_design instead of add_element — the canvas hook
+          # needs a full reload to reliably show compliance-added elements
+          new_element_id = element[:id]
+
           socket = socket
             |> push_to_history(design)
             |> assign(:design, updated_design)
             |> assign(:selected_element, element)
-            |> push_event("add_element", %{element: element})
+            |> push_event("reload_design", %{design: Design.to_json(updated_design)})
+            |> push_event("select_element", %{id: new_element_id})
             |> maybe_run_compliance()
+            |> put_flash(:info, "Elemento \"#{element[:name]}\" añadido")
 
           {:noreply, socket}
 
-        {:error, _changeset} ->
+        {:error, changeset} ->
+          Logger.error("add_compliance_element FAILED: #{inspect(changeset.errors)}")
           {:noreply, put_flash(socket, :error, "Error al crear elemento")}
       end
     else
+      Logger.warning("add_compliance_element: invalid type '#{inspect(type)}'")
       {:noreply, socket}
     end
   end
@@ -3276,50 +3301,77 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               </div>
             <% else %>
               <div class="divide-y divide-gray-200">
-                <%= for issue <- @compliance_issues do %>
-                  <div
-                    class={"px-4 py-3 hover:bg-gray-100 transition" <> if(issue.element_id, do: " cursor-pointer", else: "")}
-                    phx-click={if issue.element_id, do: "focus_compliance_issue"}
-                    phx-value-element_id={issue.element_id}
-                  >
-                    <div class="flex items-start gap-2">
-                      <span class={"flex-shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold " <>
-                        case issue.severity do
-                          :error -> "bg-red-100 text-red-600"
-                          :warning -> "bg-amber-100 text-amber-600"
-                          :info -> "bg-blue-100 text-blue-600"
-                        end}>
-                        <%= case issue.severity do
-                          :error -> "!"
-                          :warning -> "?"
-                          :info -> "i"
-                        end %>
-                      </span>
-                      <div class="flex-1 min-w-0">
-                        <p class="text-sm text-gray-900"><%= issue.message %></p>
-                        <p :if={issue.fix_hint} class="text-xs text-gray-500 mt-0.5"><%= issue.fix_hint %></p>
-                        <div class="flex items-center justify-between mt-1">
-                          <p class="text-xs text-gray-400 font-mono"><%= issue.code %></p>
-                          <button
-                            :if={issue.fix_action && !issue.element_id}
-                            phx-click="add_compliance_element"
-                            phx-value-type={issue.fix_action.type}
-                            phx-value-name={issue.fix_action.name}
-                            phx-value-text_content={issue.fix_action[:text_content]}
-                            phx-value-font_size={issue.fix_action[:font_size]}
-                            phx-value-font_weight={issue.fix_action[:font_weight]}
-                            phx-value-barcode_format={issue.fix_action[:barcode_format]}
-                            class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded text-xs font-medium transition"
-                          >
-                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                            </svg>
-                            Agregar
-                          </button>
+                <%= for {issue, idx} <- Enum.with_index(@compliance_issues) do %>
+                  <%= if issue.fix_action && !issue.element_id do %>
+                    <%# Missing field: entire row is clickable to add the element %>
+                    <div
+                      id={"compliance-issue-#{idx}"}
+                      class="px-4 py-3 hover:bg-blue-50 transition cursor-pointer group"
+                      phx-click="add_compliance_element"
+                      phx-value-type={issue.fix_action.type}
+                      phx-value-name={issue.fix_action.name}
+                      phx-value-text_content={issue.fix_action[:text_content]}
+                      phx-value-font_size={issue.fix_action[:font_size]}
+                      phx-value-font_weight={issue.fix_action[:font_weight]}
+                      phx-value-barcode_format={issue.fix_action[:barcode_format]}
+                    >
+                      <div class="flex items-start gap-2">
+                        <span class={"flex-shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold " <>
+                          case issue.severity do
+                            :error -> "bg-red-100 text-red-600"
+                            :warning -> "bg-amber-100 text-amber-600"
+                            :info -> "bg-blue-100 text-blue-600"
+                          end}>
+                          <%= case issue.severity do
+                            :error -> "!"
+                            :warning -> "?"
+                            :info -> "i"
+                          end %>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <p class="text-sm text-gray-900"><%= issue.message %></p>
+                          <p :if={issue.fix_hint} class="text-xs text-gray-500 mt-0.5"><%= issue.fix_hint %></p>
+                          <div class="flex items-center justify-between mt-1">
+                            <p class="text-xs text-gray-400 font-mono"><%= issue.code %></p>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 group-hover:bg-blue-200 text-blue-700 rounded text-xs font-medium transition">
+                              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                              </svg>
+                              Agregar campo
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  <% else %>
+                    <%# Existing element issue: click focuses the element %>
+                    <div
+                      id={"compliance-issue-#{idx}"}
+                      class={"px-4 py-3 hover:bg-gray-100 transition" <> if(issue.element_id, do: " cursor-pointer", else: "")}
+                      phx-click={if issue.element_id, do: "focus_compliance_issue"}
+                      phx-value-element_id={issue.element_id}
+                    >
+                      <div class="flex items-start gap-2">
+                        <span class={"flex-shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold " <>
+                          case issue.severity do
+                            :error -> "bg-red-100 text-red-600"
+                            :warning -> "bg-amber-100 text-amber-600"
+                            :info -> "bg-blue-100 text-blue-600"
+                          end}>
+                          <%= case issue.severity do
+                            :error -> "!"
+                            :warning -> "?"
+                            :info -> "i"
+                          end %>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <p class="text-sm text-gray-900"><%= issue.message %></p>
+                          <p :if={issue.fix_hint} class="text-xs text-gray-500 mt-0.5"><%= issue.fix_hint %></p>
+                          <p class="text-xs text-gray-400 font-mono mt-1"><%= issue.code %></p>
+                        </div>
+                      </div>
+                    </div>
+                  <% end %>
                 <% end %>
               </div>
             <% end %>
