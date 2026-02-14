@@ -31,9 +31,17 @@ defmodule QrLabelSystem.Audit do
   Creates an audit log entry asynchronously (non-blocking).
   """
   def log_async(action, resource_type, resource_id \\ nil, opts \\ []) do
-    Task.start(fn ->
+    if Application.get_env(:qr_label_system, :env) == :test do
       log(action, resource_type, resource_id, opts)
-    end)
+    else
+      Task.Supervisor.start_child(QrLabelSystem.TaskSupervisor, fn ->
+        try do
+          log(action, resource_type, resource_id, opts)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+    end
     :ok
   end
 

@@ -2267,3 +2267,110 @@ printPdfBlob(blob)                   pdf.save(filename)
 ```
 
 **Nota**: El usuario configura el tamaño de papel en el diálogo de impresión para que coincida con su impresora (térmica, etiquetas, A4, etc.).
+
+---
+
+## Sesión 2026-02-14: Correcciones de calidad y revisión cruzada
+
+### Contexto
+
+Se realizó una sesión conjunta sobre dos proyectos:
+- **FieldApp** (`/Users/coroso/ia/business/plan/plan`) — briefing técnico de FSM
+- **QR Label System** (`/Users/coroso/ia/qr/qr_label_system`) — sistema de etiquetas
+
+### Cambios en QR Label System
+
+#### 1. Fix: Async DB tasks causan errores en tests (P0)
+
+**Problema:** `Audit.log_async/4` y `Versioning.cleanup_async/1` usaban `Task.start` sin supervisión. En tests con Ecto Sandbox, el proceso owner del test terminaba antes que el Task, causando 12 errores `DBConnection.ConnectionError` en cada ejecución.
+
+**Solución (3 archivos):**
+- `lib/qr_label_system/application.ex` — añadido `{Task.Supervisor, name: QrLabelSystem.TaskSupervisor}` al árbol de supervisión
+- `lib/qr_label_system/audit.ex` — `log_async` usa `Task.Supervisor.start_child` en prod, ejecución síncrona en test
+- `lib/qr_label_system/designs/versioning.ex` — `cleanup_async` mismo patrón; lógica extraída a `cleanup_old_versions/1` privada
+
+**Antes:** 12 `[error]` logs por ejecución de tests
+**Después:** 0 errores
+
+#### 2. Fix: 4 warnings de compilación en editor.ex (P1)
+
+**Problema:** 4 cláusulas `handle_event/3` no estaban agrupadas consecutivamente — separadas por funciones privadas intercaladas. El TODO.md marcaba esto como "Completado" pero era una regresión.
+
+**Solución:** Movidas 5 funciones privadas a la sección "Helper Functions" al final del módulo:
+- `extract_simple_column_ref/1` (estaba en línea ~539)
+- `handle_select_version/2` (estaba en línea ~862)
+- `navigate_to_preview_row/2` (estaba en línea ~1305)
+- `maybe_put/4` (estaba en línea ~1538)
+- `parse_number/1` (estaba en línea ~1549)
+
+**Antes:** `mix compile --warnings-as-errors` fallaba
+**Después:** Compilación limpia
+
+#### 3. Fix: 10 warnings en tests (P2)
+
+**7 archivos modificados:**
+- `test/qr_label_system/export/zpl_generator_test.exs` — default param no usado en `build_element/2`
+- `test/qr_label_system_web/live/admin/users_live_test.exs` — `user` y `html` sin usar
+- `test/qr_label_system_web/user_auth_test.exs` — `user_token` sin usar
+- `test/qr_label_system_web/live/design_live/index_test.exs` — `design` y `template` sin usar
+- `test/qr_label_system/accounts/user_notifier_test.exs` — `import Swoosh.TestAssertions` sin usar
+- `test/qr_label_system_web/live/user_settings_live_test.exs` — `user` sin usar
+- `test/qr_label_system/soft_delete_test.exs` — `alias Repo` sin usar
+- `test/qr_label_system/audit_test.exs` — `old_log` sin usar
+
+### Estado final QR Label System
+
+```
+mix compile --warnings-as-errors  → OK (0 warnings)
+mix test                          → 1031 tests, 0 failures, 3 skipped, 0 error logs
+```
+
+### Hallazgo pendiente: Carga progresiva del editor
+
+Al crear una etiqueta nueva, el editor muestra primero una zona en blanco que se va llenando poco a poco. Esto es **comportamiento normal** del flujo LiveView + Fabric.js:
+
+1. LiveView renderiza el HTML (~4881 líneas de template)
+2. Hook `CanvasDesigner.mounted()` inicializa Fabric.js
+3. Push `canvas_ready` al servidor
+4. Servidor responde con `load_design` (JSON del diseño)
+5. Browser renderiza los elementos en el canvas
+
+El doble roundtrip es inherente a la arquitectura. **Mejora sugerida:** añadir un skeleton/spinner en el `<div id="canvas-container">` que se reemplace cuando Fabric.js se inicialice (el `phx-update="ignore"` lo permite).
+
+### Cambios en FieldApp (plan técnico)
+
+Archivo: `/Users/coroso/ia/business/plan/plan`
+
+1. **`sequence_skip` y `sequence_reset` añadidos al catálogo formal de operaciones** (línea ~2591) — antes solo aparecían en la narrativa de recuperación de huecos
+2. **`UNIQUE(company_id, LOWER(email))`** — normalización case-insensitive para evitar duplicados lógicos como `Juan@x.com` vs `juan@x.com`
+3. **Nota DST en `scheduled_time_start/end`** — documenta el edge case de cambio de hora (España, 2 cambios/año) y la mitigación con `DateTime.new/4`
+
+### Revisión de hallazgos externos sobre el plan
+
+Se revisaron 9 hallazgos de una auditoría externa contra el plan actual:
+
+| Hallazgo | Veredicto |
+|----------|-----------|
+| [P0] RLS multi-tenant | Ya resuelto (líneas 259-282, Fase 3+ con SQL) |
+| [P0] Refresh token reuse | Ya resuelto (doble hash + 30s grace window) |
+| [P0] Sync causal ordering | Ya resuelto (tabla `sync_sequence_state`) |
+| [P1] Dead-letter via sync_log | Incorrecto (usa tabla separada `dead_letter_operations`) |
+| [P1] portal_token en claro | Ya resuelto (`portal_token_hash`) |
+| [P1] sequence_skip fuera de catálogo | **Corregido** |
+| [P1] DATE+TIME sin TIMESTAMPTZ | **Documentado** con mitigación |
+| [P2] UNIQUE email case-sensitive | **Corregido** |
+| [P2] work_order_sequence INTEGER | Riesgo negligible (2.1B OTs) |
+
+**5 de 9 hallazgos ya estaban resueltos.** La auditoría se hizo sobre una versión anterior del plan.
+
+### Referencia al plan de FieldApp para continuar
+
+El plan completo está en `/Users/coroso/ia/business/plan/plan` (3681 líneas). El desarrollo se organiza en fases:
+
+- **Fase 0** (MVP Backend + Mobile Setup): Phoenix, PostgreSQL, JWT auth, Flutter+Drift, seeds
+- **Fase 1** (Web Panel): CRUD completo, OTs, calendario, CSV import, full-text search
+- **Fase 2** (Mobile App): Checklists, fotos, firma, sync offline, dead-letter queue
+- **Fase 3** (Advanced): Reporting, billing/Stripe, RLS, public API, inventario
+- **Fase 4** (Scale & AI): OCR, voz, diagnóstico IA
+
+Las 213 tareas están definidas como checklists en las secciones 10-15 del plan. El stack es Elixir/Phoenix + Flutter + PostgreSQL.

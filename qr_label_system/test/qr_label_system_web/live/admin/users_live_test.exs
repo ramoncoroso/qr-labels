@@ -46,11 +46,11 @@ defmodule QrLabelSystemWeb.Admin.UsersLiveTest do
     end
 
     test "searches by email", %{conn: conn} do
-      user = user_fixture(%{email: "searchable@example.com"})
+      _user = user_fixture(%{email: "searchable@example.com"})
 
       {:ok, view, _html} = live(conn, ~p"/admin/users")
 
-      html = view
+      _html = view
         |> form("form[phx-submit=search]", %{search: "searchable"})
         |> render_submit()
 

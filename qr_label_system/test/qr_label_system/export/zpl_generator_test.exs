@@ -13,7 +13,7 @@ defmodule QrLabelSystem.Export.ZplGeneratorTest do
     }
   end
 
-  defp build_element(type, opts \\ []) do
+  defp build_element(type, opts) do
     %{
       id: Keyword.get(opts, :id, "el_1"),
       type: type,

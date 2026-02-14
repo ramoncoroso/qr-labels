@@ -1,8 +1,6 @@
 defmodule QrLabelSystem.Accounts.UserNotifierTest do
   use ExUnit.Case, async: true
 
-  import Swoosh.TestAssertions
-
   alias QrLabelSystem.Accounts.UserNotifier
 
   describe "deliver_magic_link_instructions/2" do

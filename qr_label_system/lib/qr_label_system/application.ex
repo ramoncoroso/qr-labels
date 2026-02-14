@@ -8,6 +8,7 @@ defmodule QrLabelSystem.Application do
     children = [
       QrLabelSystemWeb.Telemetry,
       QrLabelSystem.Repo,
+      {Task.Supervisor, name: QrLabelSystem.TaskSupervisor},
       {DNSCluster, query: Application.get_env(:qr_label_system, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: QrLabelSystem.PubSub},
       {Finch, name: QrLabelSystem.Finch},

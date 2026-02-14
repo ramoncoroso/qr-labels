@@ -95,7 +95,7 @@ defmodule QrLabelSystemWeb.UserAuthTest do
       logged_in_conn =
         conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
 
-      user_token = logged_in_conn.cookies[@remember_me_cookie]
+      _user_token = logged_in_conn.cookies[@remember_me_cookie]
       %{value: signed_token} = logged_in_conn.resp_cookies[@remember_me_cookie]
 
       conn =

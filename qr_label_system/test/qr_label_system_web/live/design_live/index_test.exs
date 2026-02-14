@@ -13,7 +13,7 @@ defmodule QrLabelSystemWeb.DesignLive.IndexTest do
     end
 
     test "lists user's designs", %{conn: conn, user: user} do
-      design = design_fixture(%{user_id: user.id, name: "Product Label"})
+      _design = design_fixture(%{user_id: user.id, name: "Product Label"})
 
       {:ok, _view, html} = live(conn, ~p"/designs")
 
@@ -53,7 +53,7 @@ defmodule QrLabelSystemWeb.DesignLive.IndexTest do
 
     test "shows templates to all users", %{conn: conn, user: user} do
       # Create a template (without user_id it may not show in user's designs)
-      template = design_fixture(%{name: "Template Design", is_template: true, user_id: user.id})
+      _template = design_fixture(%{name: "Template Design", is_template: true, user_id: user.id})
 
       {:ok, _view, html} = live(conn, ~p"/designs")
 

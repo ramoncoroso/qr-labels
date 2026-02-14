@@ -274,30 +274,41 @@ defmodule QrLabelSystem.Designs.Versioning do
   end
 
   defp cleanup_async(design_id) do
-    Task.start(fn ->
-      count = version_count(design_id)
-
-      if count > @max_versions do
-        # Find the version_number cutoff to keep only @max_versions most recent
-        cutoff =
-          Repo.one(
-            from(v in DesignVersion,
-              where: v.design_id == ^design_id,
-              order_by: [desc: v.version_number],
-              offset: ^@max_versions,
-              limit: 1,
-              select: v.version_number
-            )
-          )
-
-        if cutoff do
-          from(v in DesignVersion,
-            where: v.design_id == ^design_id and v.version_number <= ^cutoff
-          )
-          |> Repo.delete_all()
+    if Application.get_env(:qr_label_system, :env) == :test do
+      cleanup_old_versions(design_id)
+    else
+      Task.Supervisor.start_child(QrLabelSystem.TaskSupervisor, fn ->
+        try do
+          cleanup_old_versions(design_id)
+        catch
+          :exit, _ -> :ok
         end
+      end)
+    end
+  end
+
+  defp cleanup_old_versions(design_id) do
+    count = version_count(design_id)
+
+    if count > @max_versions do
+      cutoff =
+        Repo.one(
+          from(v in DesignVersion,
+            where: v.design_id == ^design_id,
+            order_by: [desc: v.version_number],
+            offset: ^@max_versions,
+            limit: 1,
+            select: v.version_number
+          )
+        )
+
+      if cutoff do
+        from(v in DesignVersion,
+          where: v.design_id == ^design_id and v.version_number <= ^cutoff
+        )
+        |> Repo.delete_all()
       end
-    end)
+    end
   end
 
   # Field diff: compare scalar design fields between two versions

@@ -2,7 +2,6 @@ defmodule QrLabelSystem.SoftDeleteTest do
   use QrLabelSystem.DataCase
 
   alias QrLabelSystem.SoftDelete
-  alias QrLabelSystem.Repo
 
   # Define a test schema with deleted_at for testing soft delete functionality
   # In real usage, you would add deleted_at field to your actual schemas

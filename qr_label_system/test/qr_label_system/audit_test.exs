@@ -113,7 +113,7 @@ defmodule QrLabelSystem.AuditTest do
     end
 
     test "filters by from_date" do
-      old_log = audit_log_fixture()
+      _old_log = audit_log_fixture()
       _new_log = audit_log_fixture()
 
       # Update old log to have old timestamp (this is a simplification)

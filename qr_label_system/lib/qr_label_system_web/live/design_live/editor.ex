@@ -535,14 +535,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
-  # Extracts column name from a simple reference like "{{col_name}}"
-  defp extract_simple_column_ref(binding) do
-    case Regex.run(~r/^\{\{([a-zA-Z0-9_\s]+)\}\}$/, String.trim(binding || "")) do
-      [_, col_name] -> {:ok, String.trim(col_name)}
-      _ -> :none
-    end
-  end
-
   @impl true
   def handle_event("select_expression_pattern", %{"pattern" => pattern_str}, socket) do
     pattern_id = String.to_existing_atom(pattern_str)
@@ -857,29 +849,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       _ ->
         {:noreply, socket}
     end
-  end
-
-  defp handle_select_version(socket, version_number) do
-    version = Versioning.get_version(socket.assigns.design.id, version_number)
-
-    # Compute diff against current (most recent) version
-    versions = socket.assigns.versions
-    latest = List.first(versions)
-
-    diff =
-      if latest && latest.version_number != version_number do
-        case Versioning.diff_versions(socket.assigns.design.id, version_number, latest.version_number) do
-          {:ok, d} -> d
-          _ -> nil
-        end
-      else
-        nil
-      end
-
-    {:noreply,
-     socket
-     |> assign(:selected_version, version)
-     |> assign(:version_diff, diff)}
   end
 
   @impl true
@@ -1302,31 +1271,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     {:noreply, socket}
   end
 
-  defp navigate_to_preview_row(socket, new_index) do
-    sample_rows = socket.assigns.upload_sample_rows
-
-    if new_index < length(sample_rows) do
-      # Row is in sample_rows — respond directly
-      new_preview_data = Enum.at(sample_rows, new_index)
-      socket =
-       socket
-       |> assign(:preview_row_index, new_index)
-       |> assign(:preview_data, new_preview_data)
-       |> push_preview_update()
-
-      {:noreply, socket}
-    else
-      # Row beyond sample_rows — request from IndexedDB via JS
-      # preview_row_loaded will push_preview_update when data arrives
-      user_id = socket.assigns.current_user.id
-      design_id = socket.assigns.design.id
-      {:noreply,
-       socket
-       |> assign(:preview_row_index, new_index)
-       |> push_event("fetch_preview_row", %{index: new_index, user_id: user_id, design_id: design_id})}
-    end
-  end
-
   # ============================================================================
   # Print / PDF Generation Handlers
   # ============================================================================
@@ -1535,25 +1479,6 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
-  defp maybe_put(element, params, key, transform \\ &Function.identity/1) do
-    case params[key] do
-      nil -> element
-      "" -> element
-      value ->
-        atom_key = String.to_existing_atom(key)
-        transformed = transform.(value)
-        element |> Map.put(atom_key, transformed) |> Map.put(key, transformed)
-    end
-  end
-
-  defp parse_number(value) when is_binary(value) do
-    case Float.parse(value) do
-      {num, _} -> num
-      :error -> value
-    end
-  end
-  defp parse_number(value), do: value
-
   @impl true
   def handle_event("generation_complete", _params, socket) do
     case socket.assigns[:pending_print_action] do
@@ -1656,6 +1581,78 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   # ============================================================================
   # Helper Functions
   # ============================================================================
+
+  # Extracts column name from a simple reference like "{{col_name}}"
+  defp extract_simple_column_ref(binding) do
+    case Regex.run(~r/^\{\{([a-zA-Z0-9_\s]+)\}\}$/, String.trim(binding || "")) do
+      [_, col_name] -> {:ok, String.trim(col_name)}
+      _ -> :none
+    end
+  end
+
+  defp handle_select_version(socket, version_number) do
+    version = Versioning.get_version(socket.assigns.design.id, version_number)
+
+    # Compute diff against current (most recent) version
+    versions = socket.assigns.versions
+    latest = List.first(versions)
+
+    diff =
+      if latest && latest.version_number != version_number do
+        case Versioning.diff_versions(socket.assigns.design.id, version_number, latest.version_number) do
+          {:ok, d} -> d
+          _ -> nil
+        end
+      else
+        nil
+      end
+
+    {:noreply,
+     socket
+     |> assign(:selected_version, version)
+     |> assign(:version_diff, diff)}
+  end
+
+  defp navigate_to_preview_row(socket, new_index) do
+    sample_rows = socket.assigns.upload_sample_rows
+
+    if new_index < length(sample_rows) do
+      new_preview_data = Enum.at(sample_rows, new_index)
+      socket =
+       socket
+       |> assign(:preview_row_index, new_index)
+       |> assign(:preview_data, new_preview_data)
+       |> push_preview_update()
+
+      {:noreply, socket}
+    else
+      user_id = socket.assigns.current_user.id
+      design_id = socket.assigns.design.id
+      {:noreply,
+       socket
+       |> assign(:preview_row_index, new_index)
+       |> push_event("fetch_preview_row", %{index: new_index, user_id: user_id, design_id: design_id})}
+    end
+  end
+
+  defp maybe_put(element, params, key, transform \\ &Function.identity/1) do
+    case params[key] do
+      nil -> element
+      "" -> element
+      value ->
+        atom_key = String.to_existing_atom(key)
+        transformed = transform.(value)
+        element |> Map.put(atom_key, transformed) |> Map.put(key, transformed)
+    end
+  end
+
+  defp parse_number(value) when is_binary(value) do
+    case Float.parse(value) do
+      {num, _} -> num
+      :error -> value
+    end
+  end
+  defp parse_number(value), do: value
 
   defp do_save_elements(socket, design, elements_json, groups_json) do
     # Debug: Log what we're about to save

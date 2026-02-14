@@ -32,7 +32,7 @@ defmodule QrLabelSystemWeb.UserSettingsLiveTest do
       %{conn: log_in_user(conn, user), user: user, password: password}
     end
 
-    test "updates the user email", %{conn: conn, password: password, user: user} do
+    test "updates the user email", %{conn: conn, password: password, user: _user} do
       new_email = unique_user_email()
 
       {:ok, lv, _html} = live(conn, ~p"/users/settings")
