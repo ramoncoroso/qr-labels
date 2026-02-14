@@ -6,9 +6,132 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Thumbnails, deseleccion DataMatrix, compliance_role, GS1 HRI
+## Sesion Actual (14 febrero 2026) - Auditoria de seguridad y robustez
 
 ### Resumen Ejecutivo
+
+| # | Tarea | Estado |
+|---|-------|--------|
+| 1 | Auditoria completa de seguridad y bugs (auth, input, JS, data) | Completado |
+| 2 | CRITICAL: Race condition en `create_snapshot` version_number | Completado |
+| 3 | CRITICAL: `String.to_integer` sin guard en `new.ex` | Completado |
+| 4 | HIGH: Ownership check faltante en `data_source_live/show.ex` | Completado |
+| 5 | HIGH: Ownership check faltante en duplicate de `index.ex` | Completado |
+| 6 | HIGH: 13 instancias de `Integer.parse` inseguro en `index.ex` | Completado |
+| 7 | HIGH: Cache no invalidado en operaciones de tags | Completado |
+| 8 | HIGH: Memory leak en `sortable_layers.js` (handlers no limpiados) | Completado |
+| 9 | Fix: Warning de compilacion por agrupacion de clausulas en `editor.ex` | Completado |
+
+---
+
+### Cambios por Area
+
+#### Auditoria de seguridad
+
+Se lanzaron 4 agentes de auditoria en paralelo cubriendo:
+- Autenticacion y control de acceso
+- Validacion de inputs y sanitizacion
+- Seguridad client-side (JS)
+- Integridad de datos y race conditions
+
+Se identificaron ~50 issues clasificados como CRITICAL, HIGH, MEDIUM, LOW. Se corrigieron todos los CRITICAL y HIGH.
+
+#### CRITICAL: Race condition en version_number (`versioning.ex`)
+
+**Problema:** `next_version_number` + `Repo.insert` no estaban dentro de una transaccion. Dos llamadas concurrentes a `create_snapshot` podian obtener el mismo numero de version.
+
+**Solucion:** Envolver la creacion de version en `Repo.transaction` con `FOR UPDATE` row lock en la tabla `designs`. El cleanup async se ejecuta fuera de la transaccion.
+
+#### CRITICAL: String.to_integer sin guard (`new.ex`)
+
+**Problema:** `String.to_integer(template_id)` en `handle_event("select_template")` crashea con input invalido.
+
+**Solucion:** Reemplazado por `Integer.parse` + pattern match. Input invalido retorna `{:noreply, socket}`. Logica extraida a `defp do_select_template/2` con clausula nil.
+
+#### HIGH: Ownership checks faltantes
+
+**`data_source_live/show.ex`:**
+- Añadido check `data_source.user_id != current_user.id` en `mount/3`
+- Redirige a `/data-sources` con flash de error si no es propietario
+
+**`design_live/index.ex` (duplicate):**
+- Añadida clausula guard `design when design.user_id != current_user.id` en handler `"duplicate"`
+- Retorna flash de error "No tienes permiso para duplicar este diseño"
+
+#### HIGH: Integer.parse inseguro (`index.ex`)
+
+**Problema:** 13 instancias de `{id_int, ""} = Integer.parse(id)` que crashean con `MatchError` si el input no es un entero valido. Un atacante podria enviar valores arbitrarios via WebSocket.
+
+**Solucion:**
+- Añadido helper `defp safe_int/1` que retorna `nil` en lugar de crashear
+- Todos los handlers restructurados con `case`/`if` para manejar `nil` gracefully
+- Handlers afectados: `start_rename`, `cancel_rename`, `start_edit_desc`, `cancel_edit_desc`, `toggle_import_selection`, `toggle_tag_filter`, `open_tag_input`, `close_tag_input`, `select_tag_suggestion`, `remove_tag_from_design`, `do_add_tag`
+
+#### HIGH: Cache invalidation en tags (`designs.ex`)
+
+**Problema:** `add_tag_to_design` y `remove_tag_from_design` no invalidaban el cache del diseno, causando datos stale si el diseno se accedia via cache despues de modificar tags.
+
+**Solucion:** Añadido `Cache.delete(:designs, {:design, design.id})` en ambas funciones.
+
+#### HIGH: Memory leak en sortable_layers.js
+
+**Problema:** `initSortable()` (llamado en cada `updated()`) añadia handlers `mousedown` a los drag handles sin remover los anteriores. Solo los handlers `document`-level (mousemove/mouseup) se limpiaban.
+
+**Solucion:** Los handlers de mousedown se almacenan en `this._handleListeners` y se remueven en `cleanup()` junto con los handlers de documento.
+
+#### Fix: Warning de compilacion en editor.ex
+
+`defp do_save_rename_version` estaba entre clausulas de `handle_event/3`, rompiendo el agrupamiento. Movida despues del ultimo `handle_event`.
+
+### Issues evaluados y descartados
+
+| Issue | Razon |
+|-------|-------|
+| Debug route `/debug/editor/:id` sin auth | Ya esta dentro de `if dev_routes`, solo existe en dev |
+| `user_id` requerido en audit log | Eventos de sistema podrian no tener user_id, cambio riesgoso |
+| Memory leak en `draggable_elements.js` | Ya tiene cleanup correcto con `_cleanupFns` pattern |
+| Race condition load_design vs save en canvas_designer.js | Complejo, bajo impacto real |
+
+### Commits de Esta Sesion
+
+```
+c92681e Fix CRITICAL and HIGH security/robustness issues from audit
+```
+
+---
+
+## Plan Pendiente: Refactor Version History System
+
+> **Archivo del plan:** `~/.claude/plans/polymorphic-moseying-shannon.md`
+
+### Estado del Plan
+
+El plan describe un refactor completo del sistema de versiones. **La mayoria de los pasos ya estan implementados** de sesiones anteriores:
+
+| Step | Descripcion | Estado |
+|------|-------------|--------|
+| 1 | Migracion `custom_name` en `design_versions` | Completado (`20260214120000`) |
+| 2 | Schema: campo `custom_name` + `rename_changeset` | Completado |
+| 3A | `restore_version/3` simplificado (sin crear version) | Completado |
+| 3B | `rename_version/3` | Completado |
+| 3C | `generate_change_summary/2` | Completado |
+| 3D | `diff_against_previous/2` | Completado |
+| 3E | `compute_hash` cleanup | Completado |
+| 4 | Eliminar auto-snapshot de `update_design/3` | Completado |
+| 5A | Assigns: `has_unversioned_changes`, `current_version_number`, `restored_from_version` | Completado |
+| 5B | `do_save_elements`: autosave vs explicit save paths | Completado |
+| 5C | `restore_version` handler sin crear version | Completado |
+| 5D | Version rename handlers (start/save/cancel/update) | Completado |
+| 5E | `handle_select_version` con `diff_against_previous` | Completado |
+| 5F | Undo/redo marcan `has_unversioned_changes` | Completado |
+| 5G | Template: indicador `v3 *`, badge "actual", custom_name, rename UI | Completado |
+| 6 | Tests | **Pendiente de verificar** |
+
+**Todo el plan esta implementado.** Falta verificar que los tests cubran los nuevos escenarios (ver Step 6 del plan).
+
+---
+
+## Sesion Anterior (14 febrero 2026) - Thumbnails, DataMatrix, compliance_role, GS1 HRI
 
 | # | Tarea | Estado |
 |---|-------|--------|
@@ -25,76 +148,6 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-### Cambios por Area
-
-#### Fix DataMatrix deseleccion al mover
-
-**Problema:** Al mover un DataMatrix en el canvas, se deseleccionaba al soltar. No ocurria con QR.
-
-**Causa raiz:** bwip-js genera imagenes a dimensiones nativas → `scaleX/Y != 1` siempre. El codigo en `saveElementsImmediate` activaba `_pendingRecreate` en CADA guardado (incluso moves), destruyendo y recreando el objeto, lo que disparaba `selection:cleared`.
-
-**Solucion (canvas_designer.js):**
-- `createBarcode`: almacena `_creationScaleX/Y` en la imagen
-- `saveElementsImmediate`: compara scale contra `_creationScaleX/Y` (no contra 1) para detectar resize real
-- `recreateGroupWithoutSave`: flag `_isRecreatingElement` + `wasActive` tracking para restaurar seleccion
-- `applyZIndexOrdering` / `updateDepthOverlays`: flag `_isSavingElements` para suprimir `selection:cleared`
-
-#### Thumbnail real en historial de versiones
-
-**Problema:** El preview de version usaba SVG simplificado server-side (patrones simulados, texto truncado).
-
-**Solucion:**
-- **Migracion** `20260214150000`: columna `thumbnail :text` en `design_versions`
-- **Schema** (`design_version.ex`): campo `thumbnail` añadido
-- **Versioning** (`versioning.ex`): nueva funcion `update_version_thumbnail/3`
-- **JS** (`canvas_designer.js`): `captureCanvasThumbnail()` exporta solo el area de la etiqueta via `canvas.toDataURL()`, escala a JPEG max 320x220px
-- **Editor** (`editor.ex`): tras crear version, push `capture_thumbnail` → JS responde con `canvas_thumbnail` → server almacena
-- **Template**: `<img>` con thumbnail almacenado en lugar de `Phoenix.HTML.raw(svg)`
-- Eliminado `version_preview_svg` assign y dependencia de `SvgPreview`
-
-#### Info de cambios sin duplicar
-
-- Eliminado `change_message` del recuadro de version en la lista Y del panel de detalle
-- La info de cambios queda solo en la seccion "CAMBIOS EN ESTA VERSION" (diff detallado)
-
-#### Campo `compliance_role`
-
-**Element schema (`element.ex`):**
-- `field :compliance_role, :string` + cast
-
-**Validadores (EU1169, FMD, GS1):**
-- Deteccion primero por `compliance_role`, fallback a regex
-- `fix_action` maps incluyen `compliance_role` para auto-asignar
-
-**Editor (`editor.ex`):**
-- Dropdown "Rol normativo" condicional a normativa activa
-- Checkmark en roles ya asignados a otros elementos
-
-**Templates (`templates.exs`):**
-- 10 plantillas con roles auto-asignados
-
-#### GS1 Checksum — formato HRI
-
-**`gs1/checksum.ex`:**
-- `parse_gs1_128/1` soporta formato HRI: `(01)value(17)value...`
-- `looks_like_gs1?/1` detecta formato HRI
-- FMD DataMatrix placeholder actualizado con GS1 valido
-
-#### Export/Import fix
-
-**`designs.ex`:**
-- 11 campos faltantes en `export_element/1` e `import_element/1`
-
-### Commits de Esta Sesion
-
-```
-58a201f Fix DataMatrix deselection on move and add compliance_role field
-c95eccd Replace SVG preview with canvas thumbnail in version history
-2854d8c Support GS1 HRI format with parentheses and complete element serialization
-```
-
----
-
 ## Arquitectura Clave
 
 ### Flujo de Versiones (refactorizado)
@@ -103,7 +156,7 @@ c95eccd Replace SVG preview with canvas thumbnail in version history
 Autosave (cada cambio)         Guardar (boton explicito)
        │                              │
   update_design()               update_design()
-  sin crear version             + create_snapshot()
+  sin crear version             + create_snapshot() [con FOR UPDATE lock]
        │                        + generate_change_summary()
   has_unversioned_changes=true         │
        │                        current_version_number=N+1
@@ -156,6 +209,10 @@ Sin normativa asignada          Con normativa asignada
 - **export/import de elementos**: cualquier campo nuevo en el schema debe añadirse a AMBAS funciones `export_element/1` e `import_element/1` en designs.ex, no solo al schema
 - **Seeds de templates**: despues de modificar `templates.exs`, hay que re-ejecutar `mix run priv/repo/seeds/templates.exs` para que se actualicen en la DB (son idempotentes: delete+insert)
 - **GS1 HRI format**: los DataMatrix FMD usan formato HRI con parentesis `(01)value(17)value...`, no el raw format con FNC1 separators. El parser debe soportar ambos
+- **Integer.parse seguro**: nunca usar `{id, ""} = Integer.parse(str)` con input de usuario. Usar un helper `safe_int/1` que retorna `nil` en lugar de crashear con MatchError
+- **Cache en tags**: al modificar relaciones many-to-many (tags), invalidar el cache de la entidad padre (design) explicitamente
+- **Clausulas agrupadas**: en LiveView, todas las clausulas de `handle_event/3` deben estar juntas sin `defp` intermedias, o el compilador da warning con `--warnings-as-errors`
+- **Transacciones en version creation**: usar `FOR UPDATE` lock en la fila del design para serializar creacion concurrente de versiones
 
 ---
 
@@ -177,8 +234,8 @@ mix test test/qr_label_system/compliance/
 # Tests completos
 mix test
 
-# Compilar
-mix compile
+# Compilar (con warnings como errores)
+mix compile --warnings-as-errors
 ```
 
 ---
@@ -187,6 +244,7 @@ mix compile
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 14 feb 2026 | 19 | Auditoria seguridad: race condition fix, ownership checks, safe Integer.parse, cache tags |
 | 14 feb 2026 | 18 | Canvas thumbnails, DataMatrix deselect fix, GS1 HRI, change info dedup |
 | 14 feb 2026 | 17 | Campo compliance_role, HRI parsing, export/import fix, template roles |
 | 14 feb 2026 | 16 | Fix 2D barcode square rendering (render, format change, compliance) |
@@ -198,4 +256,4 @@ mix compile
 
 ---
 
-*Handoff actualizado: 14 febrero 2026 (sesion 18)*
+*Handoff actualizado: 14 febrero 2026 (sesion 19)*
