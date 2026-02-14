@@ -6,7 +6,62 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Multi-idioma en etiquetas
+## Sesion Actual (14 febrero 2026) - UX traducciones en canvas
+
+> **Plan de producto:** `PLAN_PRODUCTO.md` seccion 2.3 "Multi-idioma en etiquetas"
+
+### Resumen Ejecutivo
+
+Mejoras de UX para traducciones directamente en el canvas. Reemplaza el panel overlay "Traducir" por un flujo inline: al seleccionar un idioma no-default, los elementos sin traducir se muestran en gris con un badge "2 click para traducir", y el doble-click edita directamente la traduccion. Sidebar muestra campo de traduccion + boton "Siguiente" para navegar entre pendientes.
+
+| # | Tarea | Estado |
+|---|-------|--------|
+| 1 | Simplificar columnas de traduccion: flags junto a columna base | Completado |
+| 2 | Reemplazar panel overlay "Traducir" por sidebar inline | Completado |
+| 3 | Indicadores visuales en canvas para elementos sin traducir | Completado |
+| 4 | Edicion de traduccion via doble-click en canvas | Completado |
+| 5 | Boton "Siguiente" para navegar entre pendientes | Completado |
+| 6 | Badge estilo barcode ("2 click para traducir") en amber | Completado |
+| 7 | Fix doble-click: sincronizar hiddenTextarea de Fabric.js | Completado |
+
+### Cambios por Area
+
+#### Editor (`editor.ex`)
+
+- **`columns_with_flags/2`**: Reemplaza `translation_column_info/2`. Agrupa columnas base con banderas de idiomas traducidos (ej: `nombre 🇬🇧🇫🇷`)
+- **Seccion traduccion en sidebar**: Cuando idioma no-default + elemento texto sin binding, muestra input de traduccion con bandera, referencia al texto original, y boton "Siguiente sin traducir" con contador
+- **`handle_event("select_element")`**: Nuevo handler que cambia sidebar a "properties" y pushea `select_element` al canvas JS
+- **Eliminados**: `show_translations_panel` assign, `toggle_translations_panel` handler, panel overlay de traducciones, boton "Traducir" de status bar
+- **`preview_language`** añadido como assign al componente `element_properties`
+
+#### Canvas (`canvas_designer.js`)
+
+- **`_translationHints` Map**: Almacena badges decoradores por elementId
+- **`_isTranslationEditMode(obj)`**: Detecta si el doble-click debe editar traduccion (elemento texto, sin binding, idioma no-default)
+- **`text:editing:entered`**: En modo traduccion, muestra la traduccion actual para editar, sincroniza `hiddenTextarea.value`
+- **`text:editing:exited`**: Guarda traduccion via `pushEvent("update_translation")`, re-aplica indicadores visuales
+- **`_addTranslationHint(obj)`**: Crea badge `fabric.Group([Rect, Text])` debajo del elemento (amber, "2 click para traducir")
+- **`_clearTranslationHints()`**: Limpia todos los badges del canvas
+- **`_updateCanvasLanguage()`**: Reescrito para mostrar texto gris + badges en elementos sin traducir
+- **Fix hiddenTextarea**: Sincroniza `obj.hiddenTextarea.value` al cambiar texto en `text:editing:entered` (tanto traduccion como placeholder)
+
+### Commits de Esta Sesion
+
+```
+63f992d Fix double-click text editing: sync Fabric.js hiddenTextarea
+4fe7b7a Make translation badge clearer: "2 click para traducir" in amber bold
+d547a17 Style translation hint as badge matching barcode format labels
+43eecf1 Show "traducir" as small label below untranslated elements
+788d24a Change untranslated hint from diamond symbol to "· traducir" text
+195c425 Fix 3 translation UX issues: canvas editing, visual style, navigation
+3ed8a48 Replace translation overlay with inline sidebar + canvas indicators
+125fd98 Simplify translation columns: show flags next to base column name
+54903ce Visually distinguish translation columns from base columns in all selects
+```
+
+---
+
+## Sesion Anterior (14 febrero 2026) - Multi-idioma en etiquetas
 
 > **Plan de referencia:** `~/.claude/plans/quirky-fluttering-zebra.md`
 > **Plan de producto:** `PLAN_PRODUCTO.md` seccion 2.3 "Multi-idioma en etiquetas"
@@ -361,10 +416,42 @@ mix compile --warnings-as-errors
 
 ---
 
+## Pendiente: Optimizacion de consumo de datos en servidor
+
+Analisis exhaustivo realizado en sesion 20. Las tareas estan ordenadas por prioridad de implementacion.
+
+### Rapidas (5-10 min)
+
+| # | Tarea | Archivo(s) | Ahorro estimado |
+|---|-------|------------|-----------------|
+| 1 | Reducir historial undo/redo de 10 a 5 | `editor.ex:2457` — cambiar `@max_history_size 10` a `5` | 50% RAM historial |
+| 2 | Usar `to_json_light()` en todos los push_event | `editor.ex` lineas 195, 1015, 1593, 1621, 1653, 1746, 1830 — cambiar 7 llamadas `to_json()` a `to_json_light()`. Para `download_template` crear `to_json_minimal()` | 1-3MB por recarga |
+| 3 | Debounce 50ms al zoom wheel | `canvas_designer.js:1018-1027` — debounce antes de pushEvent, zoom visual inmediato | Reduce eventos 10x |
+
+### Medias (20-40 min)
+
+| # | Tarea | Archivo(s) | Ahorro estimado |
+|---|-------|------------|-----------------|
+| 4 | Cachear tags de workspace (TTL 10 min) | `designs.ex` — `Cache.fetch(:designs, {:tags, wid})`, invalidar en create/delete tag. Afecta `index.ex` lineas 17, 608, 702 | 3 queries menos/interaccion |
+| 5 | Excluir snapshot en `list_versions_light()` | `versioning.ex:109-134` — SELECT sin columna `snapshot`, solo cargar cuando diff/restore | 50-100ms/carga historial |
+| 6 | Cachear diseno en preview (enviar solo fila) | `editor.ex:2857-2860`, `label_preview.js:25-34` — enviar diseno solo una vez, despues solo `{row, row_index}` | 20-50KB/fila |
+| 7 | Indices BD faltantes | Migracion: `design_approvals(design_id, inserted_at DESC)`, `audit_logs(resource_type, resource_id)`, `audit_logs(inserted_at DESC)` | 100-200ms en queries |
+| 8 | Excluir elements JSONB en queries de listado | `designs.ex:61-64` — `select: %{d \| elements: []}` en lugar de cargar y strip en Elixir | 80-90% payload query |
+
+### Complejas (1-2h)
+
+| # | Tarea | Archivo(s) | Ahorro estimado |
+|---|-------|------------|-----------------|
+| 9 | Separar `image_data` de `element_modified` | `canvas_designer.js:2820-2845` — trackear elementos con cambio de imagen, enviar binarios por separado | 50-70% payload guardado |
+| 10 | Mover `image_cache` a IndexedDB del cliente | `editor.ex:131, 2459-2485` — servidor solo guarda IDs, cliente inyecta binarios | 10-20MB RAM/sesion |
+
+---
+
 ## Historial de Sesiones Recientes
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 14 feb 2026 | 21 | UX traducciones canvas: badge "2 click para traducir", sidebar inline, fix hiddenTextarea |
 | 14 feb 2026 | 20 | Multi-idioma completo: translations, expression engine, editor UI, preview, generacion, tests |
 | 14 feb 2026 | 19 | Auditoria seguridad: race condition fix, ownership checks, safe Integer.parse, cache tags |
 | 14 feb 2026 | 18 | Canvas thumbnails, DataMatrix deselect fix, GS1 HRI, change info dedup |
@@ -378,4 +465,4 @@ mix compile --warnings-as-errors
 
 ---
 
-*Handoff actualizado: 14 febrero 2026 (sesion 20)*
+*Handoff actualizado: 14 febrero 2026 (sesion 21 — UX traducciones en canvas)*
