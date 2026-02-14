@@ -128,6 +128,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:show_versions, false)
        |> assign(:versions, [])
        |> assign(:version_count, Versioning.latest_version_number(design.id))
+       |> assign(:current_version_number, Versioning.latest_version_number(design.id))
+       |> assign(:has_unversioned_changes, false)
+       |> assign(:restored_from_version, nil)
+       |> assign(:renaming_version_id, nil)
+       |> assign(:rename_version_value, "")
        |> assign(:selected_version, nil)
        |> assign(:version_diff, nil)
        |> assign(:approval_required, Settings.approval_required?())
@@ -860,6 +865,55 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   end
 
   @impl true
+  def handle_event("start_rename_version", %{"version" => version_str}, socket) do
+    {version_number, ""} = Integer.parse(version_str)
+    version = Enum.find(socket.assigns.versions, &(&1.version_number == version_number))
+    current_name = if version, do: version.custom_name || "", else: ""
+
+    {:noreply,
+     socket
+     |> assign(:renaming_version_id, version_number)
+     |> assign(:rename_version_value, current_name)}
+  end
+
+  @impl true
+  def handle_event("save_rename_version", %{"version" => version_str}, socket) do
+    {version_number, ""} = Integer.parse(version_str)
+    design_id = socket.assigns.design.id
+    name = String.trim(socket.assigns.rename_version_value)
+
+    case Versioning.rename_version(design_id, version_number, name) do
+      {:ok, _updated} ->
+        versions = Versioning.list_versions_light(design_id)
+
+        {:noreply,
+         socket
+         |> assign(:versions, versions)
+         |> assign(:renaming_version_id, nil)
+         |> assign(:rename_version_value, "")}
+
+      {:error, _} ->
+        {:noreply,
+         socket
+         |> assign(:renaming_version_id, nil)
+         |> put_flash(:error, "Error al renombrar versión")}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_rename_version", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:renaming_version_id, nil)
+     |> assign(:rename_version_value, "")}
+  end
+
+  @impl true
+  def handle_event("update_rename_version_value", %{"value" => value}, socket) do
+    {:noreply, assign(socket, :rename_version_value, value)}
+  end
+
+  @impl true
   def handle_event("restore_version", %{"version" => version_str}, socket) do
     case Integer.parse(version_str) do
       {version_number, ""} ->
@@ -888,6 +942,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
              |> assign(:design, updated_design)
              |> assign(:versions, versions)
              |> assign(:version_count, if(v = List.first(versions), do: v.version_number, else: 0))
+             |> assign(:current_version_number, version_number)
+             |> assign(:has_unversioned_changes, false)
+             |> assign(:restored_from_version, version_number)
              |> assign(:selected_version, nil)
              |> assign(:version_diff, nil)
              |> assign(:has_unsaved_changes, false)
@@ -1461,16 +1518,31 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     if type in @valid_element_types do
       design = socket.assigns.design
       current_elements = design.elements || []
-      element = create_default_element(type, current_elements)
 
-      # Override defaults with compliance-specific values
-      element = element
-        |> Map.put(:name, params["name"] || element.name)
-        |> Map.put("name", params["name"] || element.name)
-        |> maybe_put(params, "text_content")
-        |> maybe_put(params, "font_size", &parse_number/1)
-        |> maybe_put(params, "font_weight")
-        |> maybe_put(params, "barcode_format")
+      # Try to recover the original element from undo history
+      {element, restored?} =
+        case find_deleted_element_in_history(socket, type, params["name"]) do
+          nil ->
+            # No history match: create new element with compliance defaults
+            new_el = create_default_element(type, current_elements)
+            new_el = new_el
+              |> Map.put(:name, params["name"] || new_el[:name])
+              |> maybe_put(params, "text_content")
+              |> maybe_put(params, "font_size", &parse_number/1)
+              |> maybe_put(params, "font_weight")
+              |> maybe_put(params, "barcode_format")
+            {new_el, false}
+
+          found ->
+            # Restore from history: convert struct to map, keep all original properties
+            restored_el = case found do
+              %QrLabelSystem.Designs.Element{} = struct -> Map.from_struct(struct)
+              map -> map
+            end
+            # Assign a new ID so it doesn't conflict with pending_deletes
+            restored_el = Map.put(restored_el, :id, Ecto.UUID.generate())
+            {restored_el, true}
+        end
 
       current_elements_as_maps = Enum.map(current_elements, fn el ->
         case el do
@@ -1482,20 +1554,28 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
       case Designs.update_design(design, %{elements: new_elements}) do
         {:ok, updated_design} ->
-          Logger.info("add_compliance_element OK: added #{type} '#{element[:name]}' (id=#{element[:id]}) to design #{design.id}")
+          action = if restored?, do: "restored", else: "created"
+          Logger.info("add_compliance_element OK: #{action} #{type} '#{element[:name]}' (id=#{element[:id]}) to design #{design.id}")
 
-          # Use reload_design instead of add_element — the canvas hook
-          # needs a full reload to reliably show compliance-added elements
+          # Find the saved Element struct (not the raw map) to avoid KeyError
+          # on template fields like .group_id that only exist on structs
           new_element_id = element[:id]
+          saved_element = Enum.find(updated_design.elements || [], fn el ->
+            (Map.get(el, :id) || Map.get(el, "id")) == new_element_id
+          end)
+
+          flash_msg = if restored?,
+            do: "Elemento \"#{element[:name]}\" restaurado desde historial",
+            else: "Elemento \"#{element[:name]}\" añadido"
 
           socket = socket
             |> push_to_history(design)
             |> assign(:design, updated_design)
-            |> assign(:selected_element, element)
+            |> assign(:selected_element, saved_element)
             |> push_event("reload_design", %{design: Design.to_json(updated_design)})
             |> push_event("select_element", %{id: new_element_id})
             |> maybe_run_compliance()
-            |> put_flash(:info, "Elemento \"#{element[:name]}\" añadido")
+            |> put_flash(:info, flash_msg)
 
           {:noreply, socket}
 
@@ -1623,18 +1703,11 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp handle_select_version(socket, version_number) do
     version = Versioning.get_version(socket.assigns.design.id, version_number)
 
-    # Compute diff against current (most recent) version
-    versions = socket.assigns.versions
-    latest = List.first(versions)
-
+    # Compute diff against previous version (not against latest)
     diff =
-      if latest && latest.version_number != version_number do
-        case Versioning.diff_versions(socket.assigns.design.id, version_number, latest.version_number) do
-          {:ok, d} -> d
-          _ -> nil
-        end
-      else
-        nil
+      case Versioning.diff_against_previous(socket.assigns.design.id, version_number) do
+        {:ok, d} -> d
+        _ -> nil
       end
 
     {:noreply,
@@ -1665,6 +1738,40 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
     end
   end
 
+  # Search undo history for a deleted element that matches the compliance field being re-added.
+  # Returns the element map if found, or nil.
+  defp find_deleted_element_in_history(socket, type, name) do
+    history = socket.assigns[:history] || []
+    current_ids =
+      (socket.assigns.design.elements || [])
+      |> Enum.map(fn el -> Map.get(el, :id) || Map.get(el, "id") end)
+      |> MapSet.new()
+
+    name_words =
+      (name || "")
+      |> String.downcase()
+      |> String.split(~r/[\s,.:;]+/, trim: true)
+      |> Enum.reject(&(&1 in ~w(del de la el los las un una)))
+
+    # Search history backwards (most recent state first) for a deleted element
+    history
+    |> Enum.reverse()
+    |> Enum.find_value(fn entry ->
+      {elements, _groups} = history_entry(entry)
+
+      elements
+      |> Enum.find(fn el ->
+        el_id = Map.get(el, :id) || Map.get(el, "id")
+        el_type = to_string(Map.get(el, :type) || Map.get(el, "type"))
+        el_name = String.downcase(to_string(Map.get(el, :name) || Map.get(el, "name") || ""))
+
+        not MapSet.member?(current_ids, el_id) &&
+          el_type == type &&
+          Enum.any?(name_words, &String.contains?(el_name, &1))
+      end)
+    end)
+  end
+
   defp maybe_put(element, params, key, transform \\ &Function.identity/1) do
     case params[key] do
       nil -> element
@@ -1672,7 +1779,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       value ->
         atom_key = String.to_existing_atom(key)
         transformed = transform.(value)
-        element |> Map.put(atom_key, transformed) |> Map.put(key, transformed)
+        Map.put(element, atom_key, transformed)
     end
   end
 
@@ -1743,12 +1850,36 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
         end
 
         socket = if show_flash do
-          socket
-          |> assign(:has_unsaved_changes, false)
-          |> assign(:version_count, Versioning.latest_version_number(updated_design.id))
-          |> put_flash(:info, "Diseño guardado")
+          # Explicit save: create a version snapshot
+          change_summary = Versioning.generate_change_summary(updated_design,
+            restored_from: socket.assigns.restored_from_version)
+
+          case Versioning.create_snapshot(updated_design, socket.assigns.current_user.id,
+                 change_message: change_summary) do
+            {:ok, version} ->
+              socket
+              |> assign(:has_unsaved_changes, false)
+              |> assign(:has_unversioned_changes, false)
+              |> assign(:current_version_number, version.version_number)
+              |> assign(:version_count, version.version_number)
+              |> assign(:restored_from_version, nil)
+              |> assign(:versions, Versioning.list_versions_light(updated_design.id))
+              |> put_flash(:info, "Diseño guardado")
+
+            {:duplicate, :no_changes} ->
+              socket
+              |> assign(:has_unsaved_changes, false)
+              |> assign(:has_unversioned_changes, false)
+              |> put_flash(:info, "Sin cambios para versionar")
+
+            {:error, _} ->
+              socket
+              |> assign(:has_unsaved_changes, false)
+              |> put_flash(:warning, "Guardado, pero error al crear versión")
+          end
         else
-          socket
+          # Autosave: no version created, mark unversioned changes
+          assign(socket, :has_unversioned_changes, true)
         end
 
         # Update preview panel with new design state
@@ -2131,6 +2262,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
+       |> assign(:has_unversioned_changes, true)
        |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})
        |> push_preview_update()
 
@@ -2159,6 +2291,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
        |> assign(:design, updated_design)
        |> assign(:history_index, new_index)
        |> assign(:has_unsaved_changes, true)
+       |> assign(:has_unversioned_changes, true)
        |> push_event("reload_design", %{design: Design.to_json_light(updated_design)})
        |> push_preview_update()
 
@@ -2303,7 +2436,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Historial · v<%= @version_count %>
+          Historial<%= if @current_version_number > 0 do %> · v<%= @current_version_number %><%= if @has_unversioned_changes, do: " *" %><% end %>
         </button>
       </div>
     </div>
@@ -2842,6 +2975,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             is_admin={@is_admin}
             approval_comment={@approval_comment}
             version_count={@version_count}
+            current_version_number={@current_version_number}
+            has_unversioned_changes={@has_unversioned_changes}
           />
         </div>
 
@@ -3106,6 +3241,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <%= Calendar.strftime(@selected_version.inserted_at, "%d/%m/%Y %H:%M") %>
                   </span>
                 </div>
+                <%= if @selected_version.custom_name do %>
+                  <p class="text-sm font-medium text-indigo-700 mb-1"><%= @selected_version.custom_name %></p>
+                <% end %>
                 <p class="text-sm text-gray-600"><%= @selected_version.name %></p>
                 <div class="flex items-center mt-2 text-xs text-gray-500">
                   <svg class="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3128,7 +3266,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
 
               <%= if @version_diff do %>
                 <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-                  <h4 class="text-xs font-medium text-gray-500 mb-3">CAMBIOS VS ACTUAL</h4>
+                  <h4 class="text-xs font-medium text-gray-500 mb-3">CAMBIOS EN ESTA VERSION</h4>
 
                   <%= if map_size(@version_diff.fields) > 0 do %>
                     <div class="mb-3">
@@ -3165,7 +3303,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <button
                 phx-click="restore_version"
                 phx-value-version={@selected_version.version_number}
-                data-confirm={"Restaurar el diseño a la versión v#{@selected_version.version_number}? Se creará una nueva versión con el estado actual antes de restaurar."}
+                data-confirm={"Restaurar el diseño a la versión v#{@selected_version.version_number}?"}
                 class="w-full py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white text-sm"
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3183,24 +3321,81 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <p>No hay versiones guardadas aún.</p>
-                  <p class="text-xs text-gray-400 mt-1">Se creará una versión automáticamente al guardar.</p>
+                  <p class="text-xs text-gray-400 mt-1">Pulsa Guardar para crear la primera versión.</p>
                 </div>
               <% else %>
                 <div class="divide-y divide-gray-200">
                   <%= for version <- @versions do %>
                     <div class="px-4 py-3 hover:bg-gray-100 transition">
                       <div class="flex items-center justify-between mb-1">
-                        <span class="text-sm font-bold text-gray-900">v<%= version.version_number %></span>
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-bold text-gray-900">v<%= version.version_number %></span>
+                          <%= if version.version_number == @current_version_number do %>
+                            <span class="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">actual</span>
+                          <% end %>
+                        </div>
                         <span class="text-xs text-gray-500">
                           <%= Calendar.strftime(version.inserted_at, "%d/%m %H:%M") %>
                         </span>
                       </div>
+                      <%= if @renaming_version_id == version.version_number do %>
+                        <div class="flex items-center gap-1 mb-1">
+                          <input
+                            type="text"
+                            value={@rename_version_value}
+                            phx-keyup="update_rename_version_value"
+                            phx-key="Enter"
+                            phx-keydown="save_rename_version"
+                            phx-value-version={version.version_number}
+                            class="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Nombre personalizado"
+                            autofocus
+                          />
+                          <button
+                            phx-click="save_rename_version"
+                            phx-value-version={version.version_number}
+                            class="text-xs text-green-600 hover:text-green-800 font-medium"
+                          >OK</button>
+                          <button
+                            phx-click="cancel_rename_version"
+                            class="text-xs text-gray-400 hover:text-gray-600"
+                          >X</button>
+                        </div>
+                      <% else %>
+                        <%= if version.custom_name do %>
+                          <div class="flex items-center gap-1 mb-1">
+                            <span class="text-xs font-medium text-indigo-700"><%= version.custom_name %></span>
+                            <button
+                              phx-click="start_rename_version"
+                              phx-value-version={version.version_number}
+                              class="text-gray-400 hover:text-gray-600"
+                              title="Renombrar"
+                            >
+                              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                          </div>
+                        <% end %>
+                      <% end %>
                       <div class="text-xs text-gray-500 mb-1">
                         <%= if version.user, do: version.user.email, else: "Sistema" %>
                       </div>
                       <div class="flex items-center justify-between">
                         <span class="text-xs text-gray-400"><%= version.element_count %> elementos</span>
                         <div class="flex gap-2">
+                          <%= unless version.custom_name || @renaming_version_id == version.version_number do %>
+                            <button
+                              phx-click="start_rename_version"
+                              phx-value-version={version.version_number}
+                              class="text-xs text-gray-400 hover:text-gray-600"
+                              title="Renombrar"
+                            >
+                              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                          <% end %>
                           <button
                             phx-click="select_version"
                             phx-value-version={version.version_number}
@@ -3303,7 +3498,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
               <div class="divide-y divide-gray-200">
                 <%= for {issue, idx} <- Enum.with_index(@compliance_issues) do %>
                   <%= if issue.fix_action && !issue.element_id do %>
-                    <%# Missing field: entire row is clickable to add the element %>
+                    <%!-- Missing field: entire row is clickable to add the element --%>
                     <div
                       id={"compliance-issue-#{idx}"}
                       class="px-4 py-3 hover:bg-blue-50 transition cursor-pointer group"
@@ -3344,7 +3539,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                       </div>
                     </div>
                   <% else %>
-                    <%# Existing element issue: click focuses the element %>
+                    <%!-- Existing element issue: click focuses the element --%>
                     <div
                       id={"compliance-issue-#{idx}"}
                       class={"px-4 py-3 hover:bg-gray-100 transition" <> if(issue.element_id, do: " cursor-pointer", else: "")}

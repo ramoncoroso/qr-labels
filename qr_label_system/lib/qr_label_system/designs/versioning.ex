@@ -2,8 +2,9 @@ defmodule QrLabelSystem.Designs.Versioning do
   @moduledoc """
   Handles design version history: snapshots, diffs, and restoration.
 
-  Snapshots are created automatically on each save. Deduplication via MD5 hash
-  prevents storing identical consecutive versions. Maximum 50 versions per design.
+  Snapshots are created only on explicit user saves (not autosaves).
+  Deduplication via MD5 hash prevents storing identical consecutive versions.
+  Maximum 50 versions per design.
   """
 
   import Ecto.Query, warn: false
@@ -135,8 +136,8 @@ defmodule QrLabelSystem.Designs.Versioning do
   @doc """
   Restores a design to a previous version.
 
-  This is non-destructive: it updates the design to match the version's state,
-  then creates a new version with a "Restored from vN" message.
+  Updates the design to match the version's state without creating a new version.
+  A version will be created on the next explicit save.
 
   Returns `{:ok, updated_design}` or `{:error, reason}`.
   """
@@ -160,26 +161,105 @@ defmodule QrLabelSystem.Designs.Versioning do
           groups: version.groups || []
         }
 
-        Repo.transaction(fn ->
-          case design |> Design.changeset(restore_attrs) |> Repo.update() do
-            {:ok, updated_design} ->
-              # Create a new version documenting the restoration
-              create_snapshot(updated_design, user_id,
-                change_message: "Restaurado desde v#{version_number}")
+        case design |> Design.changeset(restore_attrs) |> Repo.update() do
+          {:ok, updated_design} ->
+            QrLabelSystem.Cache.delete(:designs, {:design, design.id})
 
-              # Invalidate cache
-              QrLabelSystem.Cache.delete(:designs, {:design, design.id})
+            Audit.log_async("restore_version", "design", design.id,
+              user_id: user_id,
+              metadata: %{restored_from: version_number})
 
-              Audit.log_async("restore_version", "design", design.id,
-                user_id: user_id,
-                metadata: %{restored_from: version_number})
+            {:ok, updated_design}
 
-              updated_design
+          {:error, changeset} ->
+            {:error, changeset}
+        end
+    end
+  end
 
-            {:error, changeset} ->
-              Repo.rollback(changeset)
-          end
-        end)
+  @doc """
+  Renames a version by setting its custom_name.
+  Pass nil or empty string to clear the custom name.
+  """
+  def rename_version(design_id, version_number, custom_name) do
+    case get_version(design_id, version_number) do
+      nil ->
+        {:error, :version_not_found}
+
+      version ->
+        name = if custom_name == "", do: nil, else: custom_name
+
+        version
+        |> DesignVersion.rename_changeset(%{custom_name: name})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Generates a human-readable change summary by diffing the current design
+  state against the latest version.
+
+  Options:
+  - `:restored_from` — version number to prepend "Restaurado desde vN." prefix
+  """
+  def generate_change_summary(%Design{} = design, opts \\ []) do
+    case get_latest_version(design.id) do
+      nil ->
+        "Version inicial"
+
+      latest_version ->
+        parts = []
+
+        # Restore prefix
+        parts = case Keyword.get(opts, :restored_from) do
+          nil -> parts
+          v -> ["Restaurado desde v#{v}" | parts]
+        end
+
+        # Field changes
+        field_changes = diff_fields_against_design(latest_version, design)
+        parts = if map_size(field_changes) > 0 do
+          labels = field_changes |> Map.keys() |> Enum.map(&field_label/1) |> Enum.join(", ")
+          parts ++ ["Cambiados: #{labels}"]
+        else
+          parts
+        end
+
+        # Element changes — normalize keys via JSON round-trip to match DB format
+        current_elements = design.elements |> serialize_elements() |> Jason.encode!() |> Jason.decode!()
+        elem_diff = diff_elements(latest_version.elements || [], current_elements)
+
+        elem_parts = []
+        elem_parts = if length(elem_diff.added) > 0, do: elem_parts ++ ["+#{length(elem_diff.added)} elementos"], else: elem_parts
+        elem_parts = if length(elem_diff.removed) > 0, do: elem_parts ++ ["-#{length(elem_diff.removed)} elementos"], else: elem_parts
+        elem_parts = if length(elem_diff.modified) > 0, do: elem_parts ++ ["~#{length(elem_diff.modified)} modificado#{if length(elem_diff.modified) > 1, do: "s", else: ""}"], else: elem_parts
+
+        parts = parts ++ elem_parts
+
+        case parts do
+          [] -> "Sin cambios"
+          _ -> Enum.join(parts, ". ")
+        end
+    end
+  end
+
+  @doc """
+  Computes a diff between a version and its predecessor.
+  Returns `{:ok, diff}` or `nil` if it's the first version.
+  """
+  def diff_against_previous(design_id, version_number) do
+    previous = Repo.one(
+      from(v in DesignVersion,
+        where: v.design_id == ^design_id and v.version_number < ^version_number,
+        order_by: [desc: v.version_number],
+        limit: 1,
+        select: v.version_number
+      )
+    )
+
+    case previous do
+      nil -> nil
+      prev_number -> diff_versions(design_id, prev_number, version_number)
     end
   end
 
@@ -232,9 +312,7 @@ defmodule QrLabelSystem.Designs.Versioning do
 
   defp serialize_groups(_), do: []
 
-  defp compute_hash(design, elements_json, groups_json, opts) do
-    # Hash includes elements + groups + key design fields to detect any change
-    # change_message is included so restores always create a new version
+  defp compute_hash(design, elements_json, groups_json, _opts) do
     data = Jason.encode!(%{
       name: design.name,
       width_mm: design.width_mm,
@@ -244,8 +322,7 @@ defmodule QrLabelSystem.Designs.Versioning do
       border_color: design.border_color,
       border_radius: design.border_radius,
       elements: elements_json,
-      groups: groups_json,
-      change_message: Keyword.get(opts, :change_message)
+      groups: groups_json
     })
 
     :crypto.hash(:md5, data) |> Base.encode16(case: :lower)
@@ -363,4 +440,38 @@ defmodule QrLabelSystem.Designs.Versioning do
   defp element_id(element) do
     Map.get(element, "id") || Map.get(element, :id)
   end
+
+  defp get_latest_version(design_id) do
+    Repo.one(
+      from(v in DesignVersion,
+        where: v.design_id == ^design_id,
+        order_by: [desc: v.version_number],
+        limit: 1
+      )
+    )
+  end
+
+  defp diff_fields_against_design(version, design) do
+    Enum.reduce(@diff_fields, %{}, fn field, acc ->
+      old_val = Map.get(version, field)
+      new_val = Map.get(design, field)
+
+      if old_val != new_val do
+        Map.put(acc, field, %{from: old_val, to: new_val})
+      else
+        acc
+      end
+    end)
+  end
+
+  defp field_label(:name), do: "nombre"
+  defp field_label(:description), do: "descripcion"
+  defp field_label(:width_mm), do: "ancho"
+  defp field_label(:height_mm), do: "alto"
+  defp field_label(:background_color), do: "color de fondo"
+  defp field_label(:border_width), do: "grosor de borde"
+  defp field_label(:border_color), do: "color de borde"
+  defp field_label(:border_radius), do: "radio de borde"
+  defp field_label(:label_type), do: "tipo de etiqueta"
+  defp field_label(field), do: to_string(field)
 end

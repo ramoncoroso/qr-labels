@@ -49,6 +49,12 @@ defmodule QrLabelSystem.Designs.VersioningTest do
         change_message: "Initial version")
       assert version.change_message == "Initial version"
     end
+
+    test "same content with different change_message deduplicates", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id, change_message: "First")
+      assert {:duplicate, :no_changes} = Versioning.create_snapshot(design, user.id, change_message: "Second")
+      assert Versioning.version_count(design.id) == 1
+    end
   end
 
   describe "list_versions/2" do
@@ -89,34 +95,102 @@ defmodule QrLabelSystem.Designs.VersioningTest do
 
   describe "restore_version/3" do
     test "restores design to a previous version's state", %{design: design, user: user} do
-      # Create v1 snapshot
       {:ok, _v1} = Versioning.create_snapshot(design, user.id)
       original_name = design.name
 
-      # Change design
       {:ok, updated} = Designs.update_design(design, %{name: "Modified name"})
       {:ok, _v2} = Versioning.create_snapshot(updated, user.id)
 
-      # Restore to v1
       {:ok, restored} = Versioning.restore_version(updated, 1, user.id)
       assert restored.name == original_name
     end
 
-    test "creates a new version with restore message", %{design: design, user: user} do
+    test "does not create a new version on restore", %{design: design, user: user} do
       {:ok, _v1} = Versioning.create_snapshot(design, user.id)
       {:ok, updated} = Designs.update_design(design, %{name: "Modified"})
       {:ok, _v2} = Versioning.create_snapshot(updated, user.id)
 
       {:ok, _restored} = Versioning.restore_version(updated, 1, user.id)
 
+      # Should still only have 2 versions (no v3 created by restore)
+      assert Versioning.version_count(design.id) == 2
       versions = Versioning.list_versions(design.id)
-      latest = hd(versions)
-      assert latest.version_number == 3
-      assert latest.change_message == "Restaurado desde v1"
+      assert hd(versions).version_number == 2
     end
 
     test "returns error for nonexistent version", %{design: design, user: user} do
       assert {:error, :version_not_found} = Versioning.restore_version(design, 999, user.id)
+    end
+  end
+
+  describe "rename_version/3" do
+    test "sets custom_name on a version", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      {:ok, updated} = Versioning.rename_version(design.id, 1, "Mi version favorita")
+      assert updated.custom_name == "Mi version favorita"
+    end
+
+    test "clears custom_name when set to empty string", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      {:ok, _} = Versioning.rename_version(design.id, 1, "Temp name")
+      {:ok, updated} = Versioning.rename_version(design.id, 1, "")
+      assert updated.custom_name == nil
+    end
+
+    test "returns error for nonexistent version", %{design: design} do
+      assert {:error, :version_not_found} = Versioning.rename_version(design.id, 999, "Name")
+    end
+
+    test "validates max length of 100 characters", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      long_name = String.duplicate("a", 101)
+      assert {:error, _changeset} = Versioning.rename_version(design.id, 1, long_name)
+    end
+  end
+
+  describe "generate_change_summary/2" do
+    test "returns 'Version inicial' when no prior versions exist", %{design: design} do
+      assert Versioning.generate_change_summary(design) == "Version inicial"
+    end
+
+    test "detects field changes vs latest version", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      {:ok, updated} = Designs.update_design(design, %{name: "Nuevo nombre", width_mm: 200.0})
+
+      summary = Versioning.generate_change_summary(updated)
+      assert summary =~ "nombre"
+      assert summary =~ "ancho"
+    end
+
+    test "prepends restore prefix when option given", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      {:ok, updated} = Designs.update_design(design, %{name: "Changed"})
+
+      summary = Versioning.generate_change_summary(updated, restored_from: 1)
+      assert summary =~ "Restaurado desde v1"
+      assert summary =~ "nombre"
+    end
+
+    test "returns 'Sin cambios' when design matches latest version", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      summary = Versioning.generate_change_summary(design)
+      assert summary == "Sin cambios"
+    end
+  end
+
+  describe "diff_against_previous/2" do
+    test "returns nil for the first version", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      assert Versioning.diff_against_previous(design.id, 1) == nil
+    end
+
+    test "returns diff against previous version", %{design: design, user: user} do
+      {:ok, _v1} = Versioning.create_snapshot(design, user.id)
+      {:ok, updated} = Designs.update_design(design, %{name: "New Name"})
+      {:ok, _v2} = Versioning.create_snapshot(updated, user.id)
+
+      {:ok, diff} = Versioning.diff_against_previous(design.id, 2)
+      assert diff.fields.name == %{from: design.name, to: "New Name"}
     end
   end
 
@@ -188,23 +262,15 @@ defmodule QrLabelSystem.Designs.VersioningTest do
   end
 
   describe "integration with update_design" do
-    test "update_design with user_id creates snapshot async", %{design: design, user: user} do
-      {:ok, _updated} = Designs.update_design(design, %{name: "Auto snapshot"}, user_id: user.id)
-
-      # Wait for async Task.start
+    test "update_design with user_id does not create snapshot", %{design: design, user: user} do
+      {:ok, _updated} = Designs.update_design(design, %{name: "No auto snapshot"}, user_id: user.id)
       Process.sleep(100)
-
-      assert Versioning.version_count(design.id) == 1
-      [version] = Versioning.list_versions(design.id)
-      assert version.name == "Auto snapshot"
-      assert version.user_id == user.id
+      assert Versioning.version_count(design.id) == 0
     end
 
     test "update_design without user_id does not create snapshot", %{design: design} do
       {:ok, _updated} = Designs.update_design(design, %{name: "No snapshot"})
-
       Process.sleep(100)
-
       assert Versioning.version_count(design.id) == 0
     end
   end

@@ -227,14 +227,6 @@ defmodule QrLabelSystem.Designs do
         Cache.delete(:designs, {:design, design.id})
         Cache.put(:designs, {:design, updated_design.id}, updated_design, ttl: @cache_ttl)
 
-        # Create version snapshot in background if user_id provided
-        user_id = Keyword.get(opts, :user_id)
-        if user_id do
-          Task.start(fn ->
-            QrLabelSystem.Designs.Versioning.create_snapshot(updated_design, user_id)
-          end)
-        end
-
         {:ok, updated_design}
 
       error ->

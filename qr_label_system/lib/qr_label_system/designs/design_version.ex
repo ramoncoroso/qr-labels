@@ -25,6 +25,7 @@ defmodule QrLabelSystem.Designs.DesignVersion do
     field :change_message, :string
     field :element_count, :integer, default: 0
     field :snapshot_hash, :string
+    field :custom_name, :string
 
     belongs_to :design, QrLabelSystem.Designs.Design
     belongs_to :user, QrLabelSystem.Accounts.User
@@ -42,10 +43,19 @@ defmodule QrLabelSystem.Designs.DesignVersion do
       :name, :description, :width_mm, :height_mm,
       :background_color, :border_width, :border_color, :border_radius,
       :label_type, :elements, :groups,
-      :change_message, :element_count, :snapshot_hash
+      :change_message, :element_count, :snapshot_hash, :custom_name
     ])
     |> validate_required([:design_id, :version_number, :name, :width_mm, :height_mm])
     |> unique_constraint([:design_id, :version_number])
     |> foreign_key_constraint(:design_id)
+  end
+
+  @doc """
+  Changeset for renaming a version. Only allows updating custom_name.
+  """
+  def rename_changeset(version, attrs) do
+    version
+    |> cast(attrs, [:custom_name])
+    |> validate_length(:custom_name, max: 100)
   end
 end
