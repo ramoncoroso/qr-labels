@@ -2551,23 +2551,37 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
   defp can_undo?(assigns), do: assigns.history_index > 0
   defp can_redo?(assigns), do: assigns.history_index < length(assigns.history) - 1
 
-  # Detect if a column is a translation column (ends with _xx where xx is a language code)
-  defp translation_column_info(col, languages) do
-    case Regex.run(~r/^(.+)_([a-z]{2})$/, col) do
-      [_, base, lang_code] ->
-        if lang_code in languages do
-          lang_info = Enum.find(@available_languages, fn {c, _, _} -> c == lang_code end)
-          {flag, name} = case lang_info do
-            {_, name, flag} -> {flag, name}
-            nil -> {"", lang_code}
-          end
-          {:translation, base, lang_code, flag, name}
-        else
-          :base
+  # Group columns: base columns with their translation flags appended.
+  # Returns [{col_name, flags_string}] where flags_string is empty for columns
+  # without translations, or "🇬🇧🇫🇷" etc for base columns that have translations.
+  # Translation-only columns (e.g. nombre_en) are excluded from the list.
+  defp columns_with_flags(columns, languages) do
+    # Find which columns are translations of a base column
+    {translations, bases} =
+      Enum.split_with(columns, fn col ->
+        case Regex.run(~r/^(.+)_([a-z]{2})$/, col) do
+          [_, base, lang] -> lang in languages and base in columns
+          _ -> false
         end
-      _ ->
-        :base
-    end
+      end)
+
+    # Build a map: base_col => [flag1, flag2, ...]
+    flag_map =
+      Enum.reduce(translations, %{}, fn col, acc ->
+        [_, base, lang] = Regex.run(~r/^(.+)_([a-z]{2})$/, col)
+        flag = case Enum.find(@available_languages, fn {c, _, _} -> c == lang end) do
+          {_, _, f} -> f
+          nil -> ""
+        end
+        Map.update(acc, base, [flag], &(&1 ++ [flag]))
+      end)
+
+    # Return base columns (non-translation) with flags
+    bases
+    |> Enum.map(fn col ->
+      flags = Map.get(flag_map, col, []) |> Enum.join("")
+      {col, flags}
+    end)
   end
 
   defp unified_status_bar(assigns) do
@@ -3380,18 +3394,10 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   Columnas Disponibles
                 </h4>
                 <div class="flex flex-wrap gap-1.5">
-                  <%= for col <- @available_columns do %>
-                    <% col_info = translation_column_info(col, @design.languages || ["es"]) %>
-                    <%= case col_info do %>
-                      <% {:translation, _base, _lang, flag, _name} -> %>
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-500 text-xs font-mono rounded border border-violet-200">
-                          <span class="text-[10px]"><%= flag %></span><%= col %>
-                        </span>
-                      <% :base -> %>
-                        <span class="inline-block px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-mono rounded">
-                          <%= col %>
-                        </span>
-                    <% end %>
+                  <%= for {col, flags} <- columns_with_flags(@available_columns, @design.languages || ["es"]) do %>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-mono rounded">
+                      <%= col %><%= if flags != "", do: " " <> flags %>
+                    </span>
                   <% end %>
                 </div>
                 <p class="mt-2 text-xs text-indigo-600">
@@ -4400,24 +4406,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                   <%= if length(@available_columns) > 0 do %>
                     <form phx-change="update_element">
                       <input type="hidden" name="field" value="binding" />
-                      <% {base_cols, trans_cols} = Enum.split_with(@available_columns, fn col ->
-                        translation_column_info(col, @design.languages || ["es"]) == :base
-                      end) %>
                       <select
                         name="value"
                         class="block w-full rounded-md border-gray-300 shadow-sm text-sm"
                       >
                         <option value="">Seleccionar columna...</option>
-                        <%= for col <- base_cols do %>
-                          <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %></option>
-                        <% end %>
-                        <%= if length(trans_cols) > 0 do %>
-                          <optgroup label="Traducciones">
-                            <%= for col <- trans_cols do %>
-                              <% {:translation, _base, _lang, flag, _name} = translation_column_info(col, @design.languages || ["es"]) %>
-                              <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= flag %> <%= col %></option>
-                            <% end %>
-                          </optgroup>
+                        <%= for {col, flags} <- columns_with_flags(@available_columns, @design.languages || ["es"]) do %>
+                          <option value={col} selected={(Map.get(@element, :binding) || "") == col}><%= col %><%= if flags != "", do: " " <> flags %></option>
                         <% end %>
                       </select>
                     </form>
@@ -4545,20 +4540,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                               <div>
                                 <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
                                 <%= if length(@available_columns) > 0 do %>
-                                  <% {base_cols, trans_cols} = Enum.split_with(@available_columns, fn col ->
-                                    translation_column_info(col, @design.languages || ["es"]) == :base
-                                  end) %>
                                   <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                    <%= for col <- base_cols do %>
-                                      <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
-                                    <% end %>
-                                    <%= if length(trans_cols) > 0 do %>
-                                      <optgroup label="Traducciones">
-                                        <%= for col <- trans_cols do %>
-                                          <% {:translation, _base, _lang, flag, _name} = translation_column_info(col, @design.languages || ["es"]) %>
-                                          <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= flag %> <%= col %></option>
-                                        <% end %>
-                                      </optgroup>
+                                    <%= for {col, flags} <- columns_with_flags(@available_columns, @design.languages || ["es"]) do %>
+                                      <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %><%= if flags != "", do: " " <> flags %></option>
                                     <% end %>
                                   </select>
                                 <% else %>
@@ -4619,20 +4603,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                                 <div>
                                   <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
                                   <%= if length(@available_columns) > 0 do %>
-                                    <% {base_cols, trans_cols} = Enum.split_with(@available_columns, fn col ->
-                                      translation_column_info(col, @design.languages || ["es"]) == :base
-                                    end) %>
                                     <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                      <%= for col <- base_cols do %>
-                                        <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
-                                      <% end %>
-                                      <%= if length(trans_cols) > 0 do %>
-                                        <optgroup label="Traducciones">
-                                          <%= for col <- trans_cols do %>
-                                            <% {:translation, _base, _lang, flag, _name} = translation_column_info(col, @design.languages || ["es"]) %>
-                                            <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= flag %> <%= col %></option>
-                                          <% end %>
-                                        </optgroup>
+                                      <%= for {col, flags} <- columns_with_flags(@available_columns, @design.languages || ["es"]) do %>
+                                        <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %><%= if flags != "", do: " " <> flags %></option>
                                       <% end %>
                                     </select>
                                   <% else %>
@@ -4650,20 +4623,9 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                                 <div>
                                   <label class="block text-xs font-medium text-gray-600 mb-1">Columna</label>
                                   <%= if length(@available_columns) > 0 do %>
-                                    <% {base_cols, trans_cols} = Enum.split_with(@available_columns, fn col ->
-                                      translation_column_info(col, @design.languages || ["es"]) == :base
-                                    end) %>
                                     <select name="column" class="block w-full rounded-md border-gray-300 shadow-sm text-sm">
-                                      <%= for col <- base_cols do %>
-                                        <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %></option>
-                                      <% end %>
-                                      <%= if length(trans_cols) > 0 do %>
-                                        <optgroup label="Traducciones">
-                                          <%= for col <- trans_cols do %>
-                                            <% {:translation, _base, _lang, flag, _name} = translation_column_info(col, @design.languages || ["es"]) %>
-                                            <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= flag %> <%= col %></option>
-                                          <% end %>
-                                        </optgroup>
+                                      <%= for {col, flags} <- columns_with_flags(@available_columns, @design.languages || ["es"]) do %>
+                                        <option value={col} selected={Map.get(@expression_builder, "column") == col}><%= col %><%= if flags != "", do: " " <> flags %></option>
                                       <% end %>
                                     </select>
                                   <% else %>
@@ -4772,24 +4734,13 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                         <div class="space-y-1">
                           <p class="text-xs font-medium text-gray-500">Insertar columna:</p>
                           <div class="flex flex-wrap gap-1">
-                            <%= for col <- @available_columns do %>
-                              <% col_info = translation_column_info(col, @design.languages || ["es"]) %>
-                              <%= case col_info do %>
-                                <% {:translation, _base, _lang, flag, _name} -> %>
-                                  <button
-                                    type="button"
-                                    phx-click="insert_expression_function"
-                                    phx-value-template={"{{#{col}}}"}
-                                    class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-violet-50 text-violet-600 rounded border border-violet-200 hover:bg-violet-100 font-mono"
-                                  ><span class="text-[10px]"><%= flag %></span><%= col %></button>
-                                <% :base -> %>
-                                  <button
-                                    type="button"
-                                    phx-click="insert_expression_function"
-                                    phx-value-template={"{{#{col}}}"}
-                                    class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
-                                  ><%= col %></button>
-                              <% end %>
+                            <%= for {col, flags} <- columns_with_flags(@available_columns, @design.languages || ["es"]) do %>
+                              <button
+                                type="button"
+                                phx-click="insert_expression_function"
+                                phx-value-template={"{{#{col}}}"}
+                                class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 font-mono"
+                              ><%= col %><%= if flags != "", do: " " <> flags %></button>
                             <% end %>
                           </div>
                         </div>
