@@ -397,16 +397,31 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
                      Map.get(socket.assigns.selected_element, "type")
 
       # For QR codes, width and height must be equal (square)
-      updated_element = if element_type == "qr" and field in ["width", "height"] do
-        socket.assigns.selected_element
-        |> Map.put(:width, value)
-        |> Map.put("width", value)
-        |> Map.put(:height, value)
-        |> Map.put("height", value)
-      else
-        socket.assigns.selected_element
-        |> Map.put(key, value)
-        |> Map.put(field, value)
+      updated_element = cond do
+        element_type == "qr" and field in ["width", "height"] ->
+          socket.assigns.selected_element
+          |> Map.put(:width, value)
+          |> Map.put("width", value)
+          |> Map.put(:height, value)
+          |> Map.put("height", value)
+
+        # When switching barcode format to 2D, force square dimensions
+        field == "barcode_format" and value in ~w(DATAMATRIX AZTEC MAXICODE) ->
+          current_w = Map.get(socket.assigns.selected_element, :width) || Map.get(socket.assigns.selected_element, "width") || 20.0
+          current_h = Map.get(socket.assigns.selected_element, :height) || Map.get(socket.assigns.selected_element, "height") || 20.0
+          side = max(min(current_w, current_h), 20.0)
+          socket.assigns.selected_element
+          |> Map.put(key, value)
+          |> Map.put(field, value)
+          |> Map.put(:width, side)
+          |> Map.put("width", side)
+          |> Map.put(:height, side)
+          |> Map.put("height", side)
+
+        true ->
+          socket.assigns.selected_element
+          |> Map.put(key, value)
+          |> Map.put(field, value)
       end
 
       # Get element ID (handle both atom and string keys)
@@ -450,14 +465,24 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
             |> assign(:selected_element, updated_element)
             |> assign(:pending_selection_id, element_id)
 
-          # For QR/barcode in fixed mode, send binding: nil first to ensure
-          # the canvas doesn't overwrite it with text_content value
-          socket = if field == "text_content" and is_fixed_mode and is_code_element do
-            socket
-            |> push_event("update_element_property", %{id: element_id, field: "binding", value: nil})
-            |> push_event("update_element_property", %{id: element_id, field: field, value: value})
-          else
-            push_event(socket, "update_element_property", %{id: element_id, field: field, value: value})
+          socket = cond do
+            # When switching to 2D format, push square dimensions before the format change
+            field == "barcode_format" and value in ~w(DATAMATRIX AZTEC MAXICODE) ->
+              side = Map.get(updated_element, :width) || Map.get(updated_element, "width") || 20.0
+              socket
+              |> push_event("update_element_property", %{id: element_id, field: "width", value: side})
+              |> push_event("update_element_property", %{id: element_id, field: "height", value: side})
+              |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+
+            # For QR/barcode in fixed mode, send binding: nil first to ensure
+            # the canvas doesn't overwrite it with text_content value
+            field == "text_content" and is_fixed_mode and is_code_element ->
+              socket
+              |> push_event("update_element_property", %{id: element_id, field: "binding", value: nil})
+              |> push_event("update_element_property", %{id: element_id, field: field, value: value})
+
+            true ->
+              push_event(socket, "update_element_property", %{id: element_id, field: field, value: value})
           end
 
           socket

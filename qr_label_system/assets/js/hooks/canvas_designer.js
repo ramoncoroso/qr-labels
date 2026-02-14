@@ -10,7 +10,7 @@
  */
 
 import { fabric } from 'fabric'
-import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent, getFormatInfo } from './barcode_generator'
+import { generateQR as sharedGenerateQR, generateBarcode as sharedGenerateBarcode, validateBarcodeContent as sharedValidateBarcodeContent, getFormatInfo, is2DFormat as sharedIs2DFormat } from './barcode_generator'
 import { isExpression, evaluate } from './expression_engine'
 import { calcAutoFitFontSize } from './text_utils'
 
@@ -1428,11 +1428,20 @@ const CanvasDesigner = {
   },
 
   createBarcode(element, x, y) {
-    const w = (element.width || 40) * PX_PER_MM
-    const h = (element.height || 15) * PX_PER_MM
+    let w = (element.width || 40) * PX_PER_MM
+    let h = (element.height || 15) * PX_PER_MM
     // Use text_content for single labels, binding for multiple labels with data
     const content = element.text_content || element.binding || ''
     const format = element.barcode_format || 'CODE128'
+
+    // 2D formats (DataMatrix, Aztec, MaxiCode) must be square
+    if (sharedIs2DFormat(format) && Math.abs(w - h) > 1) {
+      // Use the shorter side, but ensure minimum 20mm for readability
+      const minSidePx = 20 * PX_PER_MM
+      const side = Math.max(Math.min(w, h), minSidePx)
+      w = side
+      h = side
+    }
 
     // If we have content, generate real barcode
     if (content) {
