@@ -47,6 +47,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     {:ok,
      socket
      |> assign(:page_title, "Cargar Datos - #{design.name}")
+     |> assign(:design, design)
      |> assign(:design_id, design.id)
      |> assign(:design_name, design.name)
      |> assign(:element_id, element_id)
@@ -63,6 +64,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
     {:ok,
      socket
      |> assign(:page_title, "Cargar Datos")
+     |> assign(:design, nil)
      |> assign(:design_id, nil)
      |> assign(:design_name, nil)
      |> assign(:element_id, nil)
@@ -164,6 +166,12 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   end
 
   @impl true
+  def handle_event("download_template_excel", _params, socket) do
+    design = socket.assigns.design
+    {:noreply, push_event(socket, "download_template", Designs.Design.to_json(design))}
+  end
+
+  @impl true
   def handle_event("back", _params, socket) do
     if socket.assigns.design_id do
       {:noreply, push_navigate(socket, to: ~p"/designs")}
@@ -176,6 +184,7 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
   def render(assigns) do
     ~H"""
     <div id="data-first-page" class="max-w-4xl mx-auto" phx-hook="ScrollTo">
+      <div :if={@design} id="template-download-hook" phx-hook="TemplateDownload" class="hidden"></div>
       <.header>
         <%= if @design_name do %>
           Cargar datos para "<%= @design_name %>"
@@ -225,6 +234,30 @@ defmodule QrLabelSystemWeb.GenerateLive.DataFirst do
               </div>
             <% end %>
           </div>
+        </div>
+
+        <!-- Download template tip (only when we have a design) -->
+        <div :if={@design} class="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
+          <div class="flex items-start space-x-3">
+            <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <p class="text-sm font-medium text-blue-800">Descarga una plantilla con las columnas de tu diseño</p>
+              <p class="text-xs text-blue-600 mt-0.5">
+                El archivo Excel incluye los nombres de columna que necesitas rellenar, con instrucciones.
+              </p>
+            </div>
+          </div>
+          <button
+            phx-click="download_template_excel"
+            class="ml-4 flex-shrink-0 inline-flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Descargar plantilla</span>
+          </button>
         </div>
 
         <!-- Method Selection Cards -->

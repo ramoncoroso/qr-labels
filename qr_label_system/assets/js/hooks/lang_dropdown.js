@@ -25,14 +25,14 @@ const LangDropdown = {
     const menu = this.el.querySelector('#lang-dropdown-menu')
     if (menu) {
       const observer = new MutationObserver(() => {
-        if (!menu.classList.contains('hidden')) {
+        if (menu.style.display !== 'none') {
           input.value = ''
           input.dispatchEvent(new Event('input'))
           // Small delay so the DOM settles before focusing
           requestAnimationFrame(() => input.focus())
         }
       })
-      observer.observe(menu, { attributes: true, attributeFilter: ['class'] })
+      observer.observe(menu, { attributes: true, attributeFilter: ['style'] })
       this._observer = observer
     }
   },
