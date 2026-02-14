@@ -878,7 +878,12 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
              |> assign(:version_count, if(v = List.first(versions), do: v.version_number, else: 0))
              |> assign(:selected_version, nil)
              |> assign(:version_diff, nil)
-             |> push_event("load_design", %{design: Design.to_json(updated_design)})
+             |> assign(:has_unsaved_changes, false)
+             |> assign(:history, [%{elements: strip_binary_data(updated_design.elements || []), groups: updated_design.groups || []}])
+             |> assign(:history_index, 0)
+             |> assign(:image_cache, extract_image_cache(updated_design.elements || [], %{}))
+             |> assign(:rename_value, updated_design.name)
+             |> push_event("reload_design", %{design: Design.to_json(updated_design)})
              |> put_flash(:info, "Restaurado desde v#{version_number}")}
 
           {:error, :version_not_found} ->
