@@ -57,22 +57,26 @@ defmodule QrLabelSystemWeb.WorkspaceLive.Settings do
 
   @impl true
   def handle_event("save", %{"workspace" => workspace_params}, socket) do
-    case Workspaces.update_workspace(socket.assigns.workspace, workspace_params) do
-      {:ok, workspace} ->
-        changeset = Workspaces.Workspace.changeset(workspace, %{})
+    if not verify_still_admin(socket) do
+      {:noreply, socket |> put_flash(:error, "Ya no tienes permisos de administrador") |> push_navigate(to: ~p"/workspaces")}
+    else
+      case Workspaces.update_workspace(socket.assigns.workspace, workspace_params) do
+        {:ok, workspace} ->
+          changeset = Workspaces.Workspace.changeset(workspace, %{})
 
-        {:noreply,
-         socket
-         |> assign(:workspace, workspace)
-         |> assign(:page_title, "Configurar - #{workspace.name}")
-         |> assign_form(changeset)
-         |> put_flash(:info, "Espacio actualizado correctamente")}
+          {:noreply,
+           socket
+           |> assign(:workspace, workspace)
+           |> assign(:page_title, "Configurar - #{workspace.name}")
+           |> assign_form(changeset)
+           |> put_flash(:info, "Espacio actualizado correctamente")}
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        {:error, %Ecto.Changeset{} = changeset} ->
+          {:noreply, assign_form(socket, changeset)}
 
-      {:error, :personal_workspace_immutable} ->
-        {:noreply, put_flash(socket, :error, "No se puede modificar el espacio personal")}
+        {:error, :personal_workspace_immutable} ->
+          {:noreply, put_flash(socket, :error, "No se puede modificar el espacio personal")}
+      end
     end
   end
 
@@ -88,6 +92,111 @@ defmodule QrLabelSystemWeb.WorkspaceLive.Settings do
 
   @impl true
   def handle_event("send_invitation", _params, socket) do
+    if not verify_still_admin(socket) do
+      {:noreply, socket |> put_flash(:error, "Ya no tienes permisos de administrador") |> push_navigate(to: ~p"/workspaces")}
+    else
+      send_invitation_impl(socket)
+    end
+  end
+
+  def handle_event("cancel_invitation", %{"id" => invitation_id}, socket) do
+    if not verify_still_admin(socket) do
+      {:noreply, socket |> put_flash(:error, "Ya no tienes permisos de administrador") |> push_navigate(to: ~p"/workspaces")}
+    else
+      workspace = socket.assigns.workspace
+
+      invitation =
+        Enum.find(socket.assigns.invitations, fn inv ->
+          to_string(inv.id) == invitation_id
+        end)
+
+      if invitation do
+        case Workspaces.cancel_invitation(invitation) do
+          {:ok, _} ->
+            invitations = Workspaces.list_pending_invitations(workspace.id)
+
+            {:noreply,
+             socket
+             |> assign(:invitations, invitations)
+             |> put_flash(:info, "Invitacion cancelada")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Error al cancelar la invitacion")}
+        end
+      else
+        {:noreply, put_flash(socket, :error, "Invitacion no encontrada")}
+      end
+    end
+  end
+
+  @impl true
+  def handle_event("change_role", %{"membership-id" => membership_id, "role" => new_role}, socket) do
+    if not verify_still_admin(socket) do
+      {:noreply, socket |> put_flash(:error, "Ya no tienes permisos de administrador") |> push_navigate(to: ~p"/workspaces")}
+    else
+      membership =
+        Enum.find(socket.assigns.members, fn m ->
+          to_string(m.id) == membership_id
+        end)
+
+      if membership do
+        case Workspaces.update_member_role(membership, new_role) do
+          {:ok, _} ->
+            members = Workspaces.list_members(socket.assigns.workspace.id)
+
+            {:noreply,
+             socket
+             |> assign(:members, members)
+             |> put_flash(:info, "Rol actualizado correctamente")}
+
+          {:error, :cannot_demote_owner} ->
+            {:noreply, put_flash(socket, :error, "No se puede cambiar el rol del propietario")}
+
+          {:error, :last_admin} ->
+            {:noreply, put_flash(socket, :error, "Debe haber al menos un administrador")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Error al actualizar el rol")}
+        end
+      else
+        {:noreply, put_flash(socket, :error, "Miembro no encontrado")}
+      end
+    end
+  end
+
+  @impl true
+  def handle_event("remove_member", %{"membership-id" => membership_id}, socket) do
+    if not verify_still_admin(socket) do
+      {:noreply, socket |> put_flash(:error, "Ya no tienes permisos de administrador") |> push_navigate(to: ~p"/workspaces")}
+    else
+      membership =
+        Enum.find(socket.assigns.members, fn m ->
+          to_string(m.id) == membership_id
+        end)
+
+      if membership do
+        case Workspaces.remove_member(membership) do
+          {:ok, _} ->
+            members = Workspaces.list_members(socket.assigns.workspace.id)
+
+            {:noreply,
+             socket
+             |> assign(:members, members)
+             |> put_flash(:info, "Miembro eliminado del espacio")}
+
+          {:error, :cannot_remove_owner} ->
+            {:noreply, put_flash(socket, :error, "No se puede eliminar al propietario")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Error al eliminar miembro")}
+        end
+      else
+        {:noreply, put_flash(socket, :error, "Miembro no encontrado")}
+      end
+    end
+  end
+
+  defp send_invitation_impl(socket) do
     email = String.trim(socket.assigns.invite_email)
     role = socket.assigns.invite_role
     workspace = socket.assigns.workspace
@@ -113,6 +222,9 @@ defmodule QrLabelSystemWeb.WorkspaceLive.Settings do
         {:error, :already_member} ->
           {:noreply, put_flash(socket, :error, "Este usuario ya es miembro del espacio")}
 
+        {:error, :already_invited} ->
+          {:noreply, put_flash(socket, :error, "Ya existe una invitacion pendiente para este email")}
+
         {:error, %Ecto.Changeset{} = changeset} ->
           message = changeset_error_message(changeset)
           {:noreply, put_flash(socket, :error, "Error al crear la invitacion: #{message}")}
@@ -120,90 +232,9 @@ defmodule QrLabelSystemWeb.WorkspaceLive.Settings do
     end
   end
 
-  @impl true
-  def handle_event("cancel_invitation", %{"id" => invitation_id}, socket) do
-    workspace = socket.assigns.workspace
-
-    invitation =
-      Enum.find(socket.assigns.invitations, fn inv ->
-        to_string(inv.id) == invitation_id
-      end)
-
-    if invitation do
-      case Workspaces.cancel_invitation(invitation) do
-        {:ok, _} ->
-          invitations = Workspaces.list_pending_invitations(workspace.id)
-
-          {:noreply,
-           socket
-           |> assign(:invitations, invitations)
-           |> put_flash(:info, "Invitacion cancelada")}
-
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Error al cancelar la invitacion")}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Invitacion no encontrada")}
-    end
-  end
-
-  @impl true
-  def handle_event("change_role", %{"membership-id" => membership_id, "role" => new_role}, socket) do
-    membership =
-      Enum.find(socket.assigns.members, fn m ->
-        to_string(m.id) == membership_id
-      end)
-
-    if membership do
-      case Workspaces.update_member_role(membership, new_role) do
-        {:ok, _} ->
-          members = Workspaces.list_members(socket.assigns.workspace.id)
-
-          {:noreply,
-           socket
-           |> assign(:members, members)
-           |> put_flash(:info, "Rol actualizado correctamente")}
-
-        {:error, :cannot_demote_owner} ->
-          {:noreply, put_flash(socket, :error, "No se puede cambiar el rol del propietario")}
-
-        {:error, :last_admin} ->
-          {:noreply, put_flash(socket, :error, "Debe haber al menos un administrador")}
-
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Error al actualizar el rol")}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Miembro no encontrado")}
-    end
-  end
-
-  @impl true
-  def handle_event("remove_member", %{"membership-id" => membership_id}, socket) do
-    membership =
-      Enum.find(socket.assigns.members, fn m ->
-        to_string(m.id) == membership_id
-      end)
-
-    if membership do
-      case Workspaces.remove_member(membership) do
-        {:ok, _} ->
-          members = Workspaces.list_members(socket.assigns.workspace.id)
-
-          {:noreply,
-           socket
-           |> assign(:members, members)
-           |> put_flash(:info, "Miembro eliminado del espacio")}
-
-        {:error, :cannot_remove_owner} ->
-          {:noreply, put_flash(socket, :error, "No se puede eliminar al propietario")}
-
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Error al eliminar miembro")}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Miembro no encontrado")}
-    end
+  # Re-verify admin role before mutating actions (guards against role changes in other sessions)
+  defp verify_still_admin(socket) do
+    Workspaces.workspace_admin?(socket.assigns.workspace.id, socket.assigns.current_user.id)
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

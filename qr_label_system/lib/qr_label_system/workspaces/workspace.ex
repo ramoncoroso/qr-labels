@@ -28,6 +28,7 @@ defmodule QrLabelSystem.Workspaces.Workspace do
     timestamps(type: :utc_datetime)
   end
 
+  @doc "Full changeset for creation (includes type, owner_id, slug)."
   def changeset(workspace, attrs) do
     workspace
     |> cast(attrs, [:name, :slug, :type, :description, :owner_id])
@@ -37,6 +38,15 @@ defmodule QrLabelSystem.Workspaces.Workspace do
     |> validate_inclusion(:type, @types)
     |> maybe_generate_slug()
     |> unique_constraint(:slug)
+  end
+
+  @doc "Restricted changeset for updates (only name and description)."
+  def update_changeset(workspace, attrs) do
+    workspace
+    |> cast(attrs, [:name, :description])
+    |> validate_required([:name])
+    |> validate_length(:name, min: 1, max: 100)
+    |> validate_length(:description, max: 500)
   end
 
   def personal?(%__MODULE__{type: "personal"}), do: true

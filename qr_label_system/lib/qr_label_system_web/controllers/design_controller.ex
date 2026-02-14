@@ -37,7 +37,8 @@ defmodule QrLabelSystemWeb.DesignController do
         |> redirect(to: ~p"/designs")
 
       design ->
-        if design.user_id == conn.assigns.current_user.id do
+        if design.user_id == conn.assigns.current_user.id and
+           design.workspace_id == conn.assigns.current_workspace.id do
           {:ok, _} = Designs.delete_design(design)
 
           conn

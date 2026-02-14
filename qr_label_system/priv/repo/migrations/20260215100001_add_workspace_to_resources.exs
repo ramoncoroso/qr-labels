@@ -19,6 +19,7 @@ defmodule QrLabelSystem.Repo.Migrations.AddWorkspaceToResources do
 
     # Step 2: Data migration — create personal workspaces for existing users
     # and assign all their resources to those workspaces
+    # Idempotent: skip users who already have a personal workspace
     execute """
     DO $$
     DECLARE
@@ -26,31 +27,36 @@ defmodule QrLabelSystem.Repo.Migrations.AddWorkspaceToResources do
       ws_id BIGINT;
     BEGIN
       FOR u IN SELECT id, email FROM users LOOP
-        -- Create personal workspace
-        INSERT INTO workspaces (name, slug, type, owner_id, inserted_at, updated_at)
-        VALUES (
-          'Personal',
-          'personal-' || u.id,
-          'personal',
-          u.id,
-          NOW(),
-          NOW()
-        )
-        RETURNING id INTO ws_id;
+        -- Check if personal workspace already exists for this user
+        SELECT id INTO ws_id FROM workspaces WHERE slug = 'personal-' || u.id LIMIT 1;
 
-        -- Create admin membership
-        INSERT INTO workspace_memberships (workspace_id, user_id, role, inserted_at, updated_at)
-        VALUES (ws_id, u.id, 'admin', NOW(), NOW());
+        IF ws_id IS NULL THEN
+          -- Create personal workspace
+          INSERT INTO workspaces (name, slug, type, owner_id, inserted_at, updated_at)
+          VALUES (
+            'Personal',
+            'personal-' || u.id,
+            'personal',
+            u.id,
+            NOW(),
+            NOW()
+          )
+          RETURNING id INTO ws_id;
 
-        -- Assign user's designs (not system templates)
+          -- Create admin membership
+          INSERT INTO workspace_memberships (workspace_id, user_id, role, inserted_at, updated_at)
+          VALUES (ws_id, u.id, 'admin', NOW(), NOW());
+        END IF;
+
+        -- Assign user's resources that are not yet assigned to any workspace
         UPDATE label_designs SET workspace_id = ws_id WHERE user_id = u.id AND workspace_id IS NULL;
-
-        -- Assign data sources
         UPDATE data_sources SET workspace_id = ws_id WHERE user_id = u.id AND workspace_id IS NULL;
-
-        -- Assign tags
         UPDATE design_tags SET workspace_id = ws_id WHERE user_id = u.id AND workspace_id IS NULL;
       END LOOP;
+
+      -- Clean up orphaned records (user_id IS NULL) before NOT NULL enforcement
+      DELETE FROM data_sources WHERE user_id IS NULL AND workspace_id IS NULL;
+      DELETE FROM design_tags WHERE user_id IS NULL AND workspace_id IS NULL;
     END $$;
     """
 

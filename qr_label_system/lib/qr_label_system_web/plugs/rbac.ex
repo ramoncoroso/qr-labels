@@ -32,7 +32,7 @@ defmodule QrLabelSystemWeb.Plugs.RBAC do
   Requires the current user to be an admin or operator.
   """
   def require_operator(conn, _opts) do
-    if has_role?(conn, :operator) do
+    if has_role?(conn, :operator) and has_workspace_role?(conn, :operator) do
       conn
     else
       unauthorized(conn, "Se requieren permisos de operador")
@@ -132,6 +132,15 @@ defmodule QrLabelSystemWeb.Plugs.RBAC do
   defp has_role?(conn, :admin), do: User.admin?(conn.assigns[:current_user])
   defp has_role?(conn, :operator), do: User.operator?(conn.assigns[:current_user])
   defp has_role?(conn, :viewer), do: User.viewer?(conn.assigns[:current_user])
+
+  defp has_workspace_role?(conn, :operator) do
+    case conn.assigns[:current_workspace] do
+      nil -> true
+      workspace ->
+        role = QrLabelSystem.Workspaces.get_user_role(workspace.id, conn.assigns[:current_user].id)
+        role in ["admin", "operator"]
+    end
+  end
 
   defp can_access_resource?(user, %{user_id: owner_id}, action) when action in [:edit, :update, :delete] do
     # Users can modify their own resources

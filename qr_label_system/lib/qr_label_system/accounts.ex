@@ -232,10 +232,17 @@ defmodule QrLabelSystem.Accounts do
   end
 
   @doc """
-  Deletes a user.
+  Deletes a user and invalidates all active sessions.
   """
   def delete_user(%User{} = user) do
-    Repo.delete(user)
+    Ecto.Multi.new()
+    |> Ecto.Multi.delete_all(:tokens, UserToken.by_user_and_contexts_query(user, :all))
+    |> Ecto.Multi.delete(:user, user)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, :user, changeset, _} -> {:error, changeset}
+    end
   end
 
   ## Session

@@ -484,8 +484,16 @@ defmodule QrLabelSystem.Designs do
   @doc """
   Returns the count of designs pending approval.
   """
-  def count_pending_approvals do
-    Repo.one(from d in Design, where: d.status == "pending_review", select: count(d.id))
+  def count_pending_approvals(workspace_id \\ nil) do
+    query = from d in Design, where: d.status == "pending_review", select: count(d.id)
+
+    query = if workspace_id do
+      from d in query, where: d.workspace_id == ^workspace_id
+    else
+      query
+    end
+
+    Repo.one(query)
   end
 
   @doc """
@@ -779,7 +787,7 @@ defmodule QrLabelSystem.Designs do
   def import_designs_from_json(json_string, user_id) when is_binary(json_string) do
     case Jason.decode(json_string) do
       {:ok, %{"type" => "backup", "designs" => designs_data}} ->
-        import_backup_designs(designs_data, user_id)
+        import_backup_designs(designs_data, user_id, nil)
 
       {:ok, %{"design" => _} = single_design} ->
         # Handle single design export format
@@ -799,14 +807,14 @@ defmodule QrLabelSystem.Designs do
   @doc """
   Imports a list of design data maps directly (used by the import modal).
   """
-  def import_designs_list(designs_data, user_id) when is_list(designs_data) do
-    import_backup_designs(designs_data, user_id)
+  def import_designs_list(designs_data, user_id, workspace_id \\ nil) when is_list(designs_data) do
+    import_backup_designs(designs_data, user_id, workspace_id)
   end
 
-  defp import_backup_designs(designs_data, user_id) when is_list(designs_data) do
+  defp import_backup_designs(designs_data, user_id, workspace_id) when is_list(designs_data) do
     results =
       Enum.reduce_while(designs_data, {:ok, []}, fn design_data, {:ok, acc} ->
-        case import_single_backup_design(design_data, user_id) do
+        case import_single_backup_design(design_data, user_id, workspace_id) do
           {:ok, design} -> {:cont, {:ok, [design | acc]}}
           {:error, reason} -> {:halt, {:error, reason}}
         end
@@ -818,7 +826,7 @@ defmodule QrLabelSystem.Designs do
     end
   end
 
-  defp import_single_backup_design(design_data, user_id) do
+  defp import_single_backup_design(design_data, user_id, workspace_id) do
     elements =
       (design_data["elements"] || [])
       |> Enum.map(&import_element/1)
@@ -833,10 +841,11 @@ defmodule QrLabelSystem.Designs do
       border_color: design_data["border_color"] || "#000000",
       border_radius: design_data["border_radius"] || 0,
       label_type: design_data["label_type"] || "single",
-      is_template: design_data["is_template"] || false,
-      template_source: design_data["template_source"],
+      is_template: false,
+      template_source: nil,
       template_category: design_data["template_category"],
       user_id: user_id,
+      workspace_id: workspace_id,
       elements: elements
     }
 

@@ -86,10 +86,12 @@ defmodule QrLabelSystem.DataSources.DbConnector do
   def execute_query(type, config, query, opts \\ []) do
     max_rows = Keyword.get(opts, :max_rows, 10_000)
 
-    with {:ok, conn} <- connect(type, config),
-         {:ok, result} <- run_query(type, conn, query, max_rows) do
-      disconnect(type, conn)
-      {:ok, result}
+    with {:ok, conn} <- connect(type, config) do
+      try do
+        run_query(type, conn, query, max_rows)
+      after
+        disconnect(type, conn)
+      end
     end
   end
 

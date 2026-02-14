@@ -32,7 +32,7 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
      |> assign(:status_filter, "all")
      |> assign(:approval_required, Settings.approval_required?())
      |> assign(:is_admin, User.admin?(socket.assigns.current_user))
-     |> assign(:pending_count, if(User.admin?(socket.assigns.current_user), do: Designs.count_pending_approvals(), else: 0))
+     |> assign(:pending_count, if(User.admin?(socket.assigns.current_user), do: Designs.count_pending_approvals(workspace.id), else: 0))
      # Tag state
      |> assign(:tags, tags)
      |> assign(:active_tag_ids, [])
@@ -66,7 +66,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       nil ->
         {:noreply, put_flash(socket, :error, "El diseño ya no existe")}
 
-      design when design.user_id == socket.assigns.current_user.id ->
+      design when design.user_id == socket.assigns.current_user.id
+               and design.workspace_id == socket.assigns.current_workspace.id ->
         {:ok, _} = Designs.delete_design(design)
         user_id = socket.assigns.current_user.id
         UploadDataStore.clear(user_id, design.id)
@@ -89,7 +90,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       nil ->
         {:noreply, put_flash(socket, :error, "El diseño ya no existe")}
 
-      design when design.user_id != socket.assigns.current_user.id ->
+      design when design.user_id != socket.assigns.current_user.id
+               or design.workspace_id != socket.assigns.current_workspace.id ->
         {:noreply, put_flash(socket, :error, "No tienes permiso para duplicar este diseño")}
 
       design ->
@@ -154,7 +156,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
          |> assign(:rename_value, "")
          |> put_flash(:error, "El diseño ya no existe")}
 
-      design when design.user_id == socket.assigns.current_user.id and new_name != "" ->
+      design when design.user_id == socket.assigns.current_user.id
+               and design.workspace_id == socket.assigns.current_workspace.id
+               and new_name != "" ->
         case Designs.update_design(design, %{name: new_name}) do
           {:ok, updated_design} ->
             updated_design = Designs.preload_tags(updated_design)
@@ -221,7 +225,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
          |> assign(:desc_value, "")
          |> put_flash(:error, "El diseño ya no existe")}
 
-      design when design.user_id == socket.assigns.current_user.id ->
+      design when design.user_id == socket.assigns.current_user.id
+               and design.workspace_id == socket.assigns.current_workspace.id ->
         case Designs.update_design(design, %{description: new_desc}) do
           {:ok, updated_design} ->
             updated_design = Designs.preload_tags(updated_design)
@@ -325,7 +330,9 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       |> Enum.filter(fn {_design, idx} -> MapSet.member?(selected_ids, idx) end)
       |> Enum.map(fn {design, _idx} -> design end)
 
-    case Designs.import_designs_list(selected_designs, user_id) do
+    workspace_id = socket.assigns.current_workspace.id
+
+    case Designs.import_designs_list(selected_designs, user_id, workspace_id) do
       {:ok, imported_designs} ->
         {:noreply,
          socket
@@ -358,7 +365,8 @@ defmodule QrLabelSystemWeb.DesignLive.Index do
       nil ->
         {:noreply, put_flash(socket, :error, "El diseño ya no existe")}
 
-      design when design.user_id != user_id ->
+      design when design.user_id != user_id
+               or design.workspace_id != socket.assigns.current_workspace.id ->
         {:noreply, put_flash(socket, :error, "No tienes permiso para editar este diseño")}
 
       design ->

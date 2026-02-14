@@ -415,8 +415,8 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       value = if field == "qr_logo_data" and value == "", do: nil, else: value
 
       # Update selected_element locally to keep UI in sync
-      # Handle both atom and string keys
-      key = String.to_atom(field)
+      # Handle both atom and string keys (field is already validated by guard clause)
+      key = String.to_existing_atom(field)
 
       # Get element type
       element_type = Map.get(socket.assigns.selected_element, :type) ||

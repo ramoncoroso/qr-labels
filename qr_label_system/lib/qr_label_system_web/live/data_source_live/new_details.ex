@@ -96,11 +96,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.NewDetails do
           </div>
         </div>
 
-        <form action={~p"/data-sources/new"} method="post" class="space-y-6">
-          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-          <input type="hidden" name="data_source[type]" value={@detected_type} />
-          <input type="hidden" name="data_source[file_path]" value={@file_path} />
-          <input type="hidden" name="data_source[file_name]" value={@file_name} />
+        <.simple_form for={@form} id="data-source-details-form" phx-submit="save" class="space-y-6">
 
           <div>
             <label for="name" class="block text-sm font-medium text-gray-700">
@@ -127,7 +123,7 @@ defmodule QrLabelSystemWeb.DataSourceLive.NewDetails do
               Guardar
             </button>
           </div>
-        </form>
+        </.simple_form>
       </div>
     </div>
     """

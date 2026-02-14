@@ -11,15 +11,23 @@ defmodule QrLabelSystemWeb.WorkspaceController do
   def switch(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    if Workspaces.member?(id, user.id) do
-      conn
-      |> put_session(:current_workspace_id, String.to_integer(id))
-      |> put_flash(:info, "Espacio de trabajo cambiado")
-      |> redirect(to: ~p"/designs")
-    else
-      conn
-      |> put_flash(:error, "No tienes acceso a ese espacio de trabajo")
-      |> redirect(to: ~p"/designs")
+    case Integer.parse(id) do
+      {int_id, ""} when int_id > 0 ->
+        if Workspaces.member?(int_id, user.id) do
+          conn
+          |> put_session(:current_workspace_id, int_id)
+          |> put_flash(:info, "Espacio de trabajo cambiado")
+          |> redirect(to: ~p"/designs")
+        else
+          conn
+          |> put_flash(:error, "No tienes acceso a ese espacio de trabajo")
+          |> redirect(to: ~p"/designs")
+        end
+
+      _ ->
+        conn
+        |> put_flash(:error, "ID de espacio invalido")
+        |> redirect(to: ~p"/designs")
     end
   end
 end

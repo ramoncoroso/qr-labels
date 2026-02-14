@@ -70,9 +70,15 @@ defmodule QrLabelSystem.Workspaces do
   Creates a team workspace. The creating user becomes admin.
   """
   def create_workspace(%User{} = user, attrs) do
+    # Ensure type/owner cannot be overridden by user input (handle both atom and string keys)
+    safe_attrs = attrs
+      |> Map.drop(["type", :type, "owner_id", :owner_id])
+      |> Map.put(:type, "team")
+      |> Map.put(:owner_id, user.id)
+
     Ecto.Multi.new()
     |> Ecto.Multi.insert(:workspace, fn _changes ->
-      Workspace.changeset(%Workspace{}, Map.merge(attrs, %{type: "team", owner_id: user.id}))
+      Workspace.changeset(%Workspace{}, safe_attrs)
     end)
     |> Ecto.Multi.insert(:membership, fn %{workspace: workspace} ->
       Membership.changeset(%Membership{}, %{
@@ -126,7 +132,7 @@ defmodule QrLabelSystem.Workspaces do
 
   def update_workspace(%Workspace{} = workspace, attrs) do
     workspace
-    |> Workspace.changeset(attrs)
+    |> Workspace.update_changeset(attrs)
     |> Repo.update()
   end
 
@@ -206,23 +212,29 @@ defmodule QrLabelSystem.Workspaces do
       workspace.owner_id == membership.user_id && new_role != "admin" ->
         {:error, :cannot_demote_owner}
 
-      true ->
-        # Check we won't remove the last admin
-        if membership.role == "admin" && new_role != "admin" do
-          admin_count = Repo.one(
+      membership.role == "admin" && new_role != "admin" ->
+        # Use transaction with row-level lock to prevent race condition on last-admin check
+        Repo.transaction(fn ->
+          # Lock admin membership rows first, then count
+          admin_ids = Repo.all(
             from m in Membership,
               where: m.workspace_id == ^membership.workspace_id and m.role == "admin",
-              select: count()
+              lock: "FOR UPDATE",
+              select: m.id
           )
 
-          if admin_count <= 1 do
-            {:error, :last_admin}
+          if length(admin_ids) <= 1 do
+            Repo.rollback(:last_admin)
           else
-            do_update_role(membership, new_role)
+            case do_update_role(membership, new_role) do
+              {:ok, updated} -> updated
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
           end
-        else
-          do_update_role(membership, new_role)
-        end
+        end)
+
+      true ->
+        do_update_role(membership, new_role)
     end
   end
 
@@ -253,21 +265,34 @@ defmodule QrLabelSystem.Workspaces do
   Creates an invitation to join a workspace.
   """
   def create_invitation(%Workspace{} = workspace, %User{} = inviter, email, role \\ "operator") do
-    # Check if user is already a member
     existing_user = QrLabelSystem.Accounts.get_user_by_email(email)
 
-    if existing_user && member?(workspace.id, existing_user.id) do
-      {:error, :already_member}
-    else
-      %Invitation{}
-      |> Invitation.changeset(%{
-        workspace_id: workspace.id,
-        email: email,
-        role: role,
-        invited_by_id: inviter.id
-      })
-      |> Repo.insert()
+    cond do
+      existing_user && member?(workspace.id, existing_user.id) ->
+        {:error, :already_member}
+
+      has_pending_invitation?(workspace.id, email) ->
+        {:error, :already_invited}
+
+      true ->
+        %Invitation{}
+        |> Invitation.changeset(%{
+          workspace_id: workspace.id,
+          email: email,
+          role: role,
+          invited_by_id: inviter.id
+        })
+        |> Repo.insert()
     end
+  end
+
+  defp has_pending_invitation?(workspace_id, email) do
+    Repo.exists?(
+      from i in Invitation,
+        where: i.workspace_id == ^workspace_id and
+               i.email == ^email and
+               i.status == "pending"
+    )
   end
 
   @doc """

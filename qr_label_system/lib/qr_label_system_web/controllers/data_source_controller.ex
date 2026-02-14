@@ -161,9 +161,20 @@ defmodule QrLabelSystemWeb.DataSourceController do
   Deletes a data source.
   """
   def delete(conn, %{"id" => id}) do
-    data_source = DataSources.get_data_source!(id)
+    case DataSources.get_data_source(id) do
+      nil ->
+        conn
+        |> put_flash(:error, "Datos no encontrados")
+        |> redirect(to: ~p"/data-sources")
 
-    if data_source.user_id == conn.assigns.current_user.id do
+      data_source ->
+        delete_data_source(conn, data_source)
+    end
+  end
+
+  defp delete_data_source(conn, data_source) do
+    if data_source.user_id == conn.assigns.current_user.id and
+       data_source.workspace_id == conn.assigns.current_workspace.id do
       {:ok, _} = DataSources.delete_data_source(data_source)
 
       conn
