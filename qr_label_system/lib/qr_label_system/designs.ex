@@ -543,6 +543,7 @@ defmodule QrLabelSystem.Designs do
       rotation: element.rotation,
       binding: element.binding,
       qr_error_level: element.qr_error_level,
+      qr_logo_size: element.qr_logo_size,
       barcode_format: element.barcode_format,
       barcode_show_text: element.barcode_show_text,
       font_size: element.font_size,
@@ -550,12 +551,21 @@ defmodule QrLabelSystem.Designs do
       font_weight: element.font_weight,
       text_align: element.text_align,
       text_content: element.text_content,
+      text_auto_fit: element.text_auto_fit,
+      text_min_font_size: element.text_min_font_size,
       color: element.color,
       background_color: element.background_color,
       border_width: element.border_width,
       border_color: element.border_color,
+      border_radius: element.border_radius,
       image_url: element.image_url,
-      group_id: element.group_id
+      image_filename: element.image_filename,
+      z_index: element.z_index,
+      visible: element.visible,
+      locked: element.locked,
+      name: element.name,
+      group_id: element.group_id,
+      compliance_role: element.compliance_role
     }
   end
 
@@ -642,6 +652,7 @@ defmodule QrLabelSystem.Designs do
       rotation: element_data["rotation"] || 0,
       binding: element_data["binding"],
       qr_error_level: element_data["qr_error_level"] || "M",
+      qr_logo_size: element_data["qr_logo_size"],
       barcode_format: element_data["barcode_format"] || "CODE128",
       barcode_show_text: element_data["barcode_show_text"] || false,
       font_size: element_data["font_size"] || 10,
@@ -649,12 +660,21 @@ defmodule QrLabelSystem.Designs do
       font_weight: element_data["font_weight"] || "normal",
       text_align: element_data["text_align"] || "left",
       text_content: element_data["text_content"],
+      text_auto_fit: element_data["text_auto_fit"] || false,
+      text_min_font_size: element_data["text_min_font_size"],
       color: element_data["color"] || "#000000",
       background_color: element_data["background_color"],
       border_width: element_data["border_width"] || 0,
       border_color: element_data["border_color"] || "#000000",
+      border_radius: element_data["border_radius"],
       image_url: element_data["image_url"],
-      group_id: element_data["group_id"]
+      image_filename: element_data["image_filename"],
+      z_index: element_data["z_index"] || 0,
+      visible: if(is_nil(element_data["visible"]), do: true, else: element_data["visible"]),
+      locked: element_data["locked"] || false,
+      name: element_data["name"],
+      group_id: element_data["group_id"],
+      compliance_role: element_data["compliance_role"]
     }
   end
 

@@ -2920,7 +2920,7 @@ defmodule QrLabelSystemWeb.DesignLive.Editor do
       <!-- Main Content -->
       <div class="flex-1 flex overflow-hidden relative">
         <!-- Left Sidebar - Element Tools (fixed width, won't shrink) -->
-        <div class="w-20 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col py-4" id="element-toolbar" phx-hook="DraggableElements">
+        <div class="w-24 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col py-4 overflow-hidden" id="element-toolbar" phx-hook="DraggableElements">
           <div class="px-2 mb-4">
             <p class="text-xs font-medium text-gray-400 text-center mb-3">ELEMENTOS</p>
             <div class="space-y-2">

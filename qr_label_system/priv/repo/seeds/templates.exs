@@ -34,6 +34,7 @@ defmodule SeedEl do
       font_family: "Arial", text_align: opts[:a] || "left",
       color: opts[:c] || "#000000",
       z_index: opts[:z] || 10, name: opts[:n] || "Texto",
+      compliance_role: opts[:cr],
       visible: true, locked: false, rotation: 0.0}
   end
 
@@ -58,6 +59,7 @@ defmodule SeedEl do
       barcode_show_text: if(opts[:st] == false, do: false, else: true),
       color: "#000000",
       z_index: opts[:z] || 8, name: opts[:n] || "Código de barras",
+      compliance_role: opts[:cr],
       visible: true, locked: false, rotation: 0.0}
   end
 
@@ -88,20 +90,20 @@ templates = [
     compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
-      SeedEl.t(SeedEl.id(1,1), 5.0, 4.0, 90.0, 8.0, b: "nombre", s: 17.0, w: "bold", a: "center", n: "Nombre producto"),
+      SeedEl.t(SeedEl.id(1,1), 5.0, 4.0, 90.0, 8.0, b: "nombre", s: 17.0, w: "bold", a: "center", n: "Nombre producto", cr: "product_name"),
       SeedEl.l(SeedEl.id(1,2), 5.0, 13.0, 90.0, c: "#000000"),
-      SeedEl.t(SeedEl.id(1,3), 5.0, 16.0, 90.0, 10.0, b: "ingredientes", s: 9.0, n: "Ingredientes"),
-      SeedEl.t(SeedEl.id(1,30), 5.0, 27.0, 90.0, 5.0, b: "alergenos", s: 9.0, w: "bold", n: "Alérgenos"),
+      SeedEl.t(SeedEl.id(1,3), 5.0, 16.0, 90.0, 10.0, b: "ingredientes", s: 9.0, n: "Ingredientes", cr: "ingredients"),
+      SeedEl.t(SeedEl.id(1,30), 5.0, 27.0, 90.0, 5.0, b: "alergenos", s: 9.0, w: "bold", n: "Alérgenos", cr: "allergens"),
       SeedEl.l(SeedEl.id(1,31), 5.0, 33.0, 90.0),
       SeedEl.t(SeedEl.id(1,4), 5.0, 35.0, 24.0, 5.0, t: "Peso neto:", s: 11.0, c: "#666666", n: "Label peso"),
-      SeedEl.t(SeedEl.id(1,5), 30.0, 35.0, 25.0, 5.5, b: "peso_neto", s: 12.0, w: "bold", n: "Peso neto"),
+      SeedEl.t(SeedEl.id(1,5), 30.0, 35.0, 25.0, 5.5, b: "peso_neto", s: 12.0, w: "bold", n: "Peso neto", cr: "net_quantity"),
       SeedEl.t(SeedEl.id(1,6), 5.0, 42.0, 14.0, 5.0, t: "Lote:", s: 11.0, c: "#666666", n: "Label lote"),
-      SeedEl.t(SeedEl.id(1,7), 20.0, 42.0, 25.0, 5.0, b: "lote", s: 11.0, w: "bold", n: "Lote"),
+      SeedEl.t(SeedEl.id(1,7), 20.0, 42.0, 25.0, 5.0, b: "lote", s: 11.0, w: "bold", n: "Lote", cr: "lot"),
       SeedEl.t(SeedEl.id(1,8), 52.0, 42.0, 13.0, 5.0, t: "Cad.:", s: 11.0, c: "#666666", n: "Label caducidad"),
-      SeedEl.t(SeedEl.id(1,9), 66.0, 42.0, 29.0, 5.0, b: "fecha_caducidad", s: 11.0, w: "bold", n: "Caducidad"),
-      SeedEl.t(SeedEl.id(1,32), 5.0, 49.0, 90.0, 5.0, b: "fabricante", s: 9.0, c: "#555555", n: "Fabricante"),
-      SeedEl.t(SeedEl.id(1,33), 5.0, 55.0, 90.0, 5.0, b: "origen", s: 9.0, c: "#555555", n: "País de origen"),
-      SeedEl.bc(SeedEl.id(1,10), 15.0, 63.0, 70.0, 28.0, b: "ean13", f: "EAN13", n: "EAN-13")
+      SeedEl.t(SeedEl.id(1,9), 66.0, 42.0, 29.0, 5.0, b: "fecha_caducidad", s: 11.0, w: "bold", n: "Caducidad", cr: "best_before"),
+      SeedEl.t(SeedEl.id(1,32), 5.0, 49.0, 90.0, 5.0, b: "fabricante", s: 9.0, c: "#555555", n: "Fabricante", cr: "manufacturer"),
+      SeedEl.t(SeedEl.id(1,33), 5.0, 55.0, 90.0, 5.0, b: "origen", s: 9.0, c: "#555555", n: "País de origen", cr: "origin"),
+      SeedEl.bc(SeedEl.id(1,10), 15.0, 63.0, 70.0, 28.0, b: "ean13", f: "EAN13", n: "EAN-13", cr: "eu1169_barcode")
     ]
   },
 
@@ -165,7 +167,7 @@ templates = [
     elements: [
       SeedEl.t(SeedEl.id(3,1), 5.0, 6.0, 90.0, 10.0, b: "bodega", s: 21.0, w: "bold", a: "center", n: "Bodega"),
       SeedEl.l(SeedEl.id(3,2), 15.0, 18.0, 70.0, h: 0.5, c: "#999999"),
-      SeedEl.t(SeedEl.id(3,3), 5.0, 22.0, 90.0, 9.0, b: "nombre_vino", s: 19.0, w: "bold", a: "center", n: "Nombre vino"),
+      SeedEl.t(SeedEl.id(3,3), 5.0, 22.0, 90.0, 9.0, b: "nombre_vino", s: 19.0, w: "bold", a: "center", n: "Nombre vino", cr: "product_name"),
       SeedEl.t(SeedEl.id(3,4), 5.0, 34.0, 90.0, 6.0, b: "denominacion", s: 13.0, a: "center", c: "#555555", n: "D.O."),
       SeedEl.t(SeedEl.id(3,5), 5.0, 44.0, 90.0, 8.0, b: "anada", s: 17.0, w: "bold", a: "center", n: "Añada"),
       SeedEl.l(SeedEl.id(3,6), 20.0, 54.0, 60.0, c: "#CCCCCC"),
@@ -174,19 +176,19 @@ templates = [
       SeedEl.t(SeedEl.id(3,9), 5.0, 66.0, 30.0, 5.5, t: "Vol. alcohol:", s: 13.0, c: "#666666", n: "Label alcohol"),
       SeedEl.t(SeedEl.id(3,10), 36.0, 66.0, 25.0, 5.5, b: "alcohol", s: 13.0, w: "bold", n: "Alcohol"),
       SeedEl.t(SeedEl.id(3,11), 5.0, 74.0, 25.0, 5.0, t: "Contenido:", s: 13.0, c: "#666666", n: "Label volumen"),
-      SeedEl.t(SeedEl.id(3,12), 31.0, 74.0, 20.0, 5.0, b: "volumen_cl", s: 13.0, n: "Volumen"),
+      SeedEl.t(SeedEl.id(3,12), 31.0, 74.0, 20.0, 5.0, b: "volumen_cl", s: 13.0, n: "Volumen", cr: "net_quantity"),
       SeedEl.l(SeedEl.id(3,13), 10.0, 82.0, 80.0, c: "#CCCCCC"),
-      SeedEl.t(SeedEl.id(3,18), 5.0, 85.0, 90.0, 8.0, b: "ingredientes", s: 9.0, n: "Ingredientes"),
-      SeedEl.t(SeedEl.id(3,19), 5.0, 94.0, 90.0, 5.0, b: "alergenos", s: 9.0, w: "bold", n: "Alérgenos"),
+      SeedEl.t(SeedEl.id(3,18), 5.0, 85.0, 90.0, 8.0, b: "ingredientes", s: 9.0, n: "Ingredientes", cr: "ingredients"),
+      SeedEl.t(SeedEl.id(3,19), 5.0, 94.0, 90.0, 5.0, b: "alergenos", s: 9.0, w: "bold", n: "Alérgenos", cr: "allergens"),
       SeedEl.l(SeedEl.id(3,20), 10.0, 100.0, 80.0, c: "#CCCCCC"),
       SeedEl.t(SeedEl.id(3,14), 5.0, 103.0, 12.0, 5.0, t: "Lote:", s: 11.0, c: "#666666", n: "Label lote"),
-      SeedEl.t(SeedEl.id(3,15), 18.0, 103.0, 30.0, 5.0, b: "lote", s: 11.0, n: "Lote"),
+      SeedEl.t(SeedEl.id(3,15), 18.0, 103.0, 30.0, 5.0, b: "lote", s: 11.0, n: "Lote", cr: "lot"),
       SeedEl.t(SeedEl.id(3,21), 52.0, 103.0, 13.0, 5.0, t: "Cad.:", s: 11.0, c: "#666666", n: "Label caducidad"),
-      SeedEl.t(SeedEl.id(3,22), 66.0, 103.0, 29.0, 5.0, b: "fecha_caducidad", s: 11.0, w: "bold", n: "Caducidad"),
-      SeedEl.t(SeedEl.id(3,23), 5.0, 110.0, 90.0, 5.0, b: "fabricante", s: 9.0, c: "#555555", n: "Envasador"),
-      SeedEl.t(SeedEl.id(3,24), 5.0, 116.0, 90.0, 5.0, b: "origen", s: 9.0, c: "#555555", n: "País de origen"),
+      SeedEl.t(SeedEl.id(3,22), 66.0, 103.0, 29.0, 5.0, b: "fecha_caducidad", s: 11.0, w: "bold", n: "Caducidad", cr: "best_before"),
+      SeedEl.t(SeedEl.id(3,23), 5.0, 110.0, 90.0, 5.0, b: "fabricante", s: 9.0, c: "#555555", n: "Envasador", cr: "manufacturer"),
+      SeedEl.t(SeedEl.id(3,24), 5.0, 116.0, 90.0, 5.0, b: "origen", s: 9.0, c: "#555555", n: "País de origen", cr: "origin"),
       SeedEl.q(SeedEl.id(3,16), 5.0, 123.0, 20.0, b: "url_producto", n: "QR producto"),
-      SeedEl.bc(SeedEl.id(3,17), 30.0, 125.0, 65.0, 18.0, b: "ean13", f: "EAN13", n: "EAN-13")
+      SeedEl.bc(SeedEl.id(3,17), 30.0, 125.0, 65.0, 18.0, b: "ean13", f: "EAN13", n: "EAN-13", cr: "eu1169_barcode")
     ]
   },
 
@@ -200,18 +202,18 @@ templates = [
     compliance_standard: "eu1169",
     label_type: "multiple",
     elements: [
-      SeedEl.t(SeedEl.id(4,1), 4.0, 3.0, 72.0, 7.0, b: "nombre", s: 15.0, w: "bold", a: "center", n: "Nombre producto"),
+      SeedEl.t(SeedEl.id(4,1), 4.0, 3.0, 72.0, 7.0, b: "nombre", s: 15.0, w: "bold", a: "center", n: "Nombre producto", cr: "product_name"),
       SeedEl.l(SeedEl.id(4,2), 4.0, 11.0, 72.0),
-      SeedEl.t(SeedEl.id(4,10), 4.0, 13.0, 72.0, 8.0, b: "ingredientes", s: 9.0, n: "Ingredientes"),
-      SeedEl.t(SeedEl.id(4,11), 4.0, 22.0, 72.0, 5.0, b: "alergenos", s: 9.0, w: "bold", n: "Alérgenos"),
+      SeedEl.t(SeedEl.id(4,10), 4.0, 13.0, 72.0, 8.0, b: "ingredientes", s: 9.0, n: "Ingredientes", cr: "ingredients"),
+      SeedEl.t(SeedEl.id(4,11), 4.0, 22.0, 72.0, 5.0, b: "alergenos", s: 9.0, w: "bold", n: "Alérgenos", cr: "allergens"),
       SeedEl.l(SeedEl.id(4,12), 4.0, 28.0, 72.0),
       SeedEl.t(SeedEl.id(4,3), 4.0, 30.0, 15.0, 5.0, t: "Peso:", s: 11.0, c: "#666666", n: "Label peso"),
-      SeedEl.t(SeedEl.id(4,4), 20.0, 30.0, 25.0, 5.5, b: "peso_neto", s: 12.0, w: "bold", n: "Peso neto"),
+      SeedEl.t(SeedEl.id(4,4), 20.0, 30.0, 25.0, 5.5, b: "peso_neto", s: 12.0, w: "bold", n: "Peso neto", cr: "net_quantity"),
       SeedEl.t(SeedEl.id(4,5), 4.0, 37.0, 72.0, 4.5, t: "Conservar a -18°C", s: 10.0, w: "bold", c: "#0055AA", n: "Conservación"),
       SeedEl.t(SeedEl.id(4,6), 4.0, 43.0, 13.0, 5.0, t: "Cad.:", s: 11.0, c: "#666666", n: "Label caducidad"),
-      SeedEl.t(SeedEl.id(4,7), 18.0, 43.0, 30.0, 5.0, b: "fecha_caducidad", s: 11.0, w: "bold", n: "Caducidad"),
-      SeedEl.t(SeedEl.id(4,13), 4.0, 50.0, 72.0, 5.0, b: "fabricante", s: 8.0, c: "#555555", n: "Fabricante"),
-      SeedEl.bc(SeedEl.id(4,8), 5.0, 58.0, 70.0, 16.0, b: "ean13", f: "EAN13", n: "EAN-13")
+      SeedEl.t(SeedEl.id(4,7), 18.0, 43.0, 30.0, 5.0, b: "fecha_caducidad", s: 11.0, w: "bold", n: "Caducidad", cr: "best_before"),
+      SeedEl.t(SeedEl.id(4,13), 4.0, 50.0, 72.0, 5.0, b: "fabricante", s: 8.0, c: "#555555", n: "Fabricante", cr: "manufacturer"),
+      SeedEl.bc(SeedEl.id(4,8), 5.0, 58.0, 70.0, 16.0, b: "ean13", f: "EAN13", n: "EAN-13", cr: "eu1169_barcode")
     ]
   },
 
@@ -264,21 +266,21 @@ templates = [
     compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
-      SeedEl.t(SeedEl.id(7,1), 4.0, 3.0, 72.0, 7.0, b: "nombre_medicamento", s: 15.0, w: "bold", a: "center", n: "Nombre medicamento"),
-      SeedEl.t(SeedEl.id(7,2), 4.0, 11.0, 72.0, 5.0, b: "principio_activo", s: 12.0, a: "center", c: "#555555", n: "Principio activo (DCI)"),
+      SeedEl.t(SeedEl.id(7,1), 4.0, 3.0, 72.0, 7.0, b: "nombre_medicamento", s: 15.0, w: "bold", a: "center", n: "Nombre medicamento", cr: "product_name"),
+      SeedEl.t(SeedEl.id(7,2), 4.0, 11.0, 72.0, 5.0, b: "principio_activo", s: 12.0, a: "center", c: "#555555", n: "Principio activo (DCI)", cr: "active_ingredient"),
       SeedEl.l(SeedEl.id(7,3), 4.0, 17.0, 72.0),
       SeedEl.t(SeedEl.id(7,4), 4.0, 19.0, 18.0, 5.0, t: "Dosis:", s: 11.0, c: "#666666", n: "Label dosis"),
-      SeedEl.t(SeedEl.id(7,5), 23.0, 19.0, 30.0, 5.5, b: "dosis", s: 12.0, w: "bold", n: "Forma farmacéutica"),
+      SeedEl.t(SeedEl.id(7,5), 23.0, 19.0, 30.0, 5.5, b: "dosis", s: 12.0, w: "bold", n: "Forma farmacéutica", cr: "dosage"),
       SeedEl.t(SeedEl.id(7,6), 4.0, 26.0, 14.0, 4.5, t: "Lote:", s: 10.0, c: "#666666", n: "Label lote"),
-      SeedEl.t(SeedEl.id(7,7), 19.0, 26.0, 20.0, 4.5, b: "lote", s: 10.0, w: "bold", n: "Lote"),
+      SeedEl.t(SeedEl.id(7,7), 19.0, 26.0, 20.0, 4.5, b: "lote", s: 10.0, w: "bold", n: "Lote", cr: "lot"),
       SeedEl.t(SeedEl.id(7,8), 42.0, 26.0, 13.0, 4.5, t: "Cad.:", s: 10.0, c: "#666666", n: "Label caducidad"),
-      SeedEl.t(SeedEl.id(7,9), 56.0, 26.0, 20.0, 4.5, b: "fecha_caducidad", s: 10.0, w: "bold", n: "Caducidad"),
+      SeedEl.t(SeedEl.id(7,9), 56.0, 26.0, 20.0, 4.5, b: "fecha_caducidad", s: 10.0, w: "bold", n: "Caducidad", cr: "expiry"),
       SeedEl.t(SeedEl.id(7,11), 4.0, 32.0, 8.0, 4.5, t: "CN:", s: 10.0, c: "#666666", n: "Label código nacional"),
-      SeedEl.t(SeedEl.id(7,12), 13.0, 32.0, 25.0, 4.5, b: "codigo_nacional", s: 10.0, w: "bold", n: "Código nacional"),
+      SeedEl.t(SeedEl.id(7,12), 13.0, 32.0, 25.0, 4.5, b: "codigo_nacional", s: 10.0, w: "bold", n: "Código nacional", cr: "national_code"),
       SeedEl.t(SeedEl.id(7,13), 42.0, 32.0, 8.0, 4.5, t: "SN:", s: 10.0, c: "#666666", n: "Label número de serie"),
-      SeedEl.t(SeedEl.id(7,14), 51.0, 32.0, 25.0, 4.5, b: "numero_serie", s: 10.0, w: "bold", n: "Número de serie"),
-      SeedEl.t(SeedEl.id(7,15), 4.0, 38.0, 72.0, 4.5, b: "laboratorio", s: 9.0, c: "#555555", n: "Laboratorio titular"),
-      SeedEl.bc(SeedEl.id(7,10), 4.0, 45.0, 18.0, 18.0, b: "datamatrix_fmd", f: "DATAMATRIX", n: "DataMatrix FMD")
+      SeedEl.t(SeedEl.id(7,14), 51.0, 32.0, 25.0, 4.5, b: "numero_serie", s: 10.0, w: "bold", n: "Número de serie", cr: "serial"),
+      SeedEl.t(SeedEl.id(7,15), 4.0, 38.0, 72.0, 4.5, b: "laboratorio", s: 9.0, c: "#555555", n: "Laboratorio titular", cr: "manufacturer"),
+      SeedEl.bc(SeedEl.id(7,10), 4.0, 45.0, 18.0, 18.0, b: "datamatrix_fmd", f: "DATAMATRIX", n: "DataMatrix FMD", cr: "datamatrix_fmd")
     ]
   },
 
@@ -294,18 +296,18 @@ templates = [
     elements: [
       SeedEl.t(SeedEl.id(8,1), 3.0, 2.0, 64.0, 4.5, t: "MUESTRA MÉDICA", s: 11.0, w: "bold", a: "center", c: "#0055AA", n: "Título"),
       SeedEl.l(SeedEl.id(8,2), 3.0, 7.0, 64.0, c: "#0055AA"),
-      SeedEl.t(SeedEl.id(8,3), 3.0, 9.0, 64.0, 5.0, b: "nombre_medicamento", s: 12.0, w: "bold", a: "center", n: "Nombre medicamento"),
-      SeedEl.t(SeedEl.id(8,9), 3.0, 15.0, 64.0, 4.0, b: "principio_activo", s: 9.0, a: "center", c: "#555555", n: "Principio activo (DCI)"),
+      SeedEl.t(SeedEl.id(8,3), 3.0, 9.0, 64.0, 5.0, b: "nombre_medicamento", s: 12.0, w: "bold", a: "center", n: "Nombre medicamento", cr: "product_name"),
+      SeedEl.t(SeedEl.id(8,9), 3.0, 15.0, 64.0, 4.0, b: "principio_activo", s: 9.0, a: "center", c: "#555555", n: "Principio activo (DCI)", cr: "active_ingredient"),
       SeedEl.t(SeedEl.id(8,4), 3.0, 20.0, 13.0, 4.0, t: "Lote:", s: 9.0, c: "#666666", n: "Label lote"),
-      SeedEl.t(SeedEl.id(8,5), 17.0, 20.0, 15.0, 4.0, b: "lote", s: 9.0, w: "bold", n: "Lote"),
+      SeedEl.t(SeedEl.id(8,5), 17.0, 20.0, 15.0, 4.0, b: "lote", s: 9.0, w: "bold", n: "Lote", cr: "lot"),
       SeedEl.t(SeedEl.id(8,6), 34.0, 20.0, 10.0, 4.0, t: "Cad.:", s: 9.0, c: "#666666", n: "Label caducidad"),
-      SeedEl.t(SeedEl.id(8,7), 45.0, 20.0, 22.0, 4.0, b: "fecha_caducidad", s: 9.0, w: "bold", n: "Caducidad"),
+      SeedEl.t(SeedEl.id(8,7), 45.0, 20.0, 22.0, 4.0, b: "fecha_caducidad", s: 9.0, w: "bold", n: "Caducidad", cr: "expiry"),
       SeedEl.t(SeedEl.id(8,10), 3.0, 25.0, 8.0, 4.0, t: "CN:", s: 9.0, c: "#666666", n: "Label código nacional"),
-      SeedEl.t(SeedEl.id(8,11), 12.0, 25.0, 20.0, 4.0, b: "codigo_nacional", s: 9.0, w: "bold", n: "Código nacional"),
+      SeedEl.t(SeedEl.id(8,11), 12.0, 25.0, 20.0, 4.0, b: "codigo_nacional", s: 9.0, w: "bold", n: "Código nacional", cr: "national_code"),
       SeedEl.t(SeedEl.id(8,12), 34.0, 25.0, 8.0, 4.0, t: "SN:", s: 9.0, c: "#666666", n: "Label número de serie"),
-      SeedEl.t(SeedEl.id(8,13), 43.0, 25.0, 24.0, 4.0, b: "numero_serie", s: 9.0, w: "bold", n: "Número de serie"),
-      SeedEl.t(SeedEl.id(8,14), 3.0, 30.0, 64.0, 4.0, b: "laboratorio", s: 8.0, c: "#555555", n: "Laboratorio titular"),
-      SeedEl.bc(SeedEl.id(8,8), 3.0, 35.0, 14.0, 14.0, b: "datamatrix_fmd", f: "DATAMATRIX", n: "DataMatrix FMD")
+      SeedEl.t(SeedEl.id(8,13), 43.0, 25.0, 24.0, 4.0, b: "numero_serie", s: 9.0, w: "bold", n: "Número de serie", cr: "serial"),
+      SeedEl.t(SeedEl.id(8,14), 3.0, 30.0, 64.0, 4.0, b: "laboratorio", s: 8.0, c: "#555555", n: "Laboratorio titular", cr: "manufacturer"),
+      SeedEl.bc(SeedEl.id(8,8), 3.0, 35.0, 14.0, 14.0, b: "datamatrix_fmd", f: "DATAMATRIX", n: "DataMatrix FMD", cr: "datamatrix_fmd")
     ]
   },
 
@@ -319,21 +321,21 @@ templates = [
     compliance_standard: "fmd",
     label_type: "multiple",
     elements: [
-      SeedEl.t(SeedEl.id(9,1), 4.0, 3.0, 92.0, 7.0, b: "nombre_producto", s: 15.0, w: "bold", n: "Nombre medicamento"),
-      SeedEl.t(SeedEl.id(9,10), 4.0, 11.0, 92.0, 5.0, b: "principio_activo", s: 11.0, c: "#555555", n: "Principio activo (DCI)"),
-      SeedEl.t(SeedEl.id(9,2), 4.0, 17.0, 50.0, 5.5, b: "concentracion", s: 12.0, w: "bold", c: "#0055AA", n: "Forma farmacéutica"),
+      SeedEl.t(SeedEl.id(9,1), 4.0, 3.0, 92.0, 7.0, b: "nombre_producto", s: 15.0, w: "bold", n: "Nombre medicamento", cr: "product_name"),
+      SeedEl.t(SeedEl.id(9,10), 4.0, 11.0, 92.0, 5.0, b: "principio_activo", s: 11.0, c: "#555555", n: "Principio activo (DCI)", cr: "active_ingredient"),
+      SeedEl.t(SeedEl.id(9,2), 4.0, 17.0, 50.0, 5.5, b: "concentracion", s: 12.0, w: "bold", c: "#0055AA", n: "Forma farmacéutica", cr: "dosage"),
       SeedEl.l(SeedEl.id(9,3), 4.0, 24.0, 92.0),
       SeedEl.t(SeedEl.id(9,4), 4.0, 26.0, 14.0, 4.5, t: "Lote:", s: 10.0, c: "#666666", n: "Label lote"),
-      SeedEl.t(SeedEl.id(9,5), 19.0, 26.0, 25.0, 4.5, b: "lote", s: 10.0, w: "bold", n: "Lote"),
+      SeedEl.t(SeedEl.id(9,5), 19.0, 26.0, 25.0, 4.5, b: "lote", s: 10.0, w: "bold", n: "Lote", cr: "lot"),
       SeedEl.t(SeedEl.id(9,6), 48.0, 26.0, 13.0, 4.5, t: "Cad.:", s: 10.0, c: "#666666", n: "Label caducidad"),
-      SeedEl.t(SeedEl.id(9,7), 62.0, 26.0, 34.0, 4.5, b: "fecha_caducidad", s: 10.0, w: "bold", n: "Caducidad"),
+      SeedEl.t(SeedEl.id(9,7), 62.0, 26.0, 34.0, 4.5, b: "fecha_caducidad", s: 10.0, w: "bold", n: "Caducidad", cr: "expiry"),
       SeedEl.t(SeedEl.id(9,11), 4.0, 32.0, 8.0, 4.5, t: "CN:", s: 10.0, c: "#666666", n: "Label código nacional"),
-      SeedEl.t(SeedEl.id(9,12), 13.0, 32.0, 30.0, 4.5, b: "codigo_nacional", s: 10.0, w: "bold", n: "Código nacional"),
+      SeedEl.t(SeedEl.id(9,12), 13.0, 32.0, 30.0, 4.5, b: "codigo_nacional", s: 10.0, w: "bold", n: "Código nacional", cr: "national_code"),
       SeedEl.t(SeedEl.id(9,13), 48.0, 32.0, 8.0, 4.5, t: "SN:", s: 10.0, c: "#666666", n: "Label número de serie"),
-      SeedEl.t(SeedEl.id(9,14), 57.0, 32.0, 39.0, 4.5, b: "numero_serie", s: 10.0, w: "bold", n: "Número de serie"),
-      SeedEl.t(SeedEl.id(9,15), 4.0, 38.0, 92.0, 4.5, b: "laboratorio", s: 9.0, c: "#555555", n: "Laboratorio titular"),
+      SeedEl.t(SeedEl.id(9,14), 57.0, 32.0, 39.0, 4.5, b: "numero_serie", s: 10.0, w: "bold", n: "Número de serie", cr: "serial"),
+      SeedEl.t(SeedEl.id(9,15), 4.0, 38.0, 92.0, 4.5, b: "laboratorio", s: 9.0, c: "#555555", n: "Laboratorio titular", cr: "manufacturer"),
       SeedEl.q(SeedEl.id(9,8), 4.0, 44.0, 18.0, b: "codigo_trazabilidad", n: "QR trazabilidad"),
-      SeedEl.bc(SeedEl.id(9,9), 26.0, 44.0, 18.0, 18.0, b: "datamatrix_fmd", f: "DATAMATRIX", n: "DataMatrix FMD")
+      SeedEl.bc(SeedEl.id(9,9), 26.0, 44.0, 18.0, 18.0, b: "datamatrix_fmd", f: "DATAMATRIX", n: "DataMatrix FMD", cr: "datamatrix_fmd")
     ]
   },
 
@@ -425,7 +427,7 @@ templates = [
       SeedEl.t(SeedEl.id(13,8), 4.0, 39.0, 16.0, 4.5, t: "Ref.:", s: 11.0, c: "#666666", n: "Label ref."),
       SeedEl.t(SeedEl.id(13,9), 21.0, 39.0, 30.0, 4.5, b: "referencia", s: 11.0, w: "bold", n: "Referencia"),
       SeedEl.q(SeedEl.id(13,10), 4.0, 46.0, 20.0, b: "tracking", n: "QR tracking"),
-      SeedEl.bc(SeedEl.id(13,11), 28.0, 48.0, 68.0, 16.0, b: "tracking", f: "GS1_128", n: "GS1-128 tracking")
+      SeedEl.bc(SeedEl.id(13,11), 28.0, 48.0, 68.0, 16.0, b: "tracking", f: "GS1_128", n: "GS1-128 tracking", cr: "gs1_barcode")
     ]
   },
 
@@ -457,7 +459,7 @@ templates = [
       SeedEl.t(SeedEl.id(14,16), 8.0, 90.0, 25.0, 5.5, t: "Fecha:", s: 13.0, c: "#666666", n: "Label fecha"),
       SeedEl.t(SeedEl.id(14,17), 35.0, 90.0, 40.0, 5.5, b: "fecha_envio", s: 13.0, n: "Fecha envío"),
       SeedEl.q(SeedEl.id(14,18), 8.0, 105.0, 60.0, b: "sscc", n: "QR SSCC"),
-      SeedEl.bc(SeedEl.id(14,19), 8.0, 172.0, 132.0, 30.0, b: "sscc", f: "GS1_128", n: "GS1-128 SSCC")
+      SeedEl.bc(SeedEl.id(14,19), 8.0, 172.0, 132.0, 30.0, b: "sscc", f: "GS1_128", n: "GS1-128 SSCC", cr: "gs1_barcode")
     ]
   },
 
@@ -489,7 +491,7 @@ templates = [
       SeedEl.t(SeedEl.id(15,16), 50.0, 71.0, 16.0, 5.0, t: "Peso:", s: 12.0, c: "#666666", n: "Label peso"),
       SeedEl.t(SeedEl.id(15,17), 67.0, 71.0, 28.0, 5.0, b: "peso_kg", s: 12.0, w: "bold", n: "Peso"),
       SeedEl.q(SeedEl.id(15,18), 5.0, 80.0, 30.0, b: "tracking", n: "QR tracking"),
-      SeedEl.bc(SeedEl.id(15,19), 5.0, 115.0, 90.0, 28.0, b: "tracking", f: "GS1_128", n: "GS1-128 tracking")
+      SeedEl.bc(SeedEl.id(15,19), 5.0, 115.0, 90.0, 28.0, b: "tracking", f: "GS1_128", n: "GS1-128 tracking", cr: "gs1_barcode")
     ]
   },
 
@@ -543,7 +545,7 @@ templates = [
       SeedEl.t(SeedEl.id(17,10), 77.0, 22.0, 19.0, 5.0, b: "bultos", s: 12.0, w: "bold", n: "Bultos"),
       SeedEl.t(SeedEl.id(17,11), 4.0, 29.0, 24.0, 5.5, t: "Prioridad:", s: 12.0, c: "#666666", n: "Label prioridad"),
       SeedEl.t(SeedEl.id(17,12), 29.0, 29.0, 30.0, 5.5, b: "prioridad", s: 13.0, w: "bold", n: "Prioridad"),
-      SeedEl.bc(SeedEl.id(17,13), 5.0, 37.0, 90.0, 18.0, b: "codigo_pedido", f: "GS1_128", n: "GS1-128 pedido")
+      SeedEl.bc(SeedEl.id(17,13), 5.0, 37.0, 90.0, 18.0, b: "codigo_pedido", f: "GS1_128", n: "GS1-128 pedido", cr: "gs1_barcode")
     ]
   },
 

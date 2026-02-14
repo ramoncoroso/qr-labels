@@ -131,19 +131,36 @@ defmodule QrLabelSystem.Compliance.Gs1.Checksum do
 
   @doc """
   Parses GS1-128 data string into a list of {ai, value} tuples.
-  Handles FNC1 separator (ASCII GS = \\x1D or literal "FNC1").
+  Supports both raw format (FNC1 separators) and HRI format with parentheses
+  like `(01)03453120000011(17)261231(10)ABC123(21)SN456789`.
   Returns {:ok, [{ai, value}, ...]} or {:error, reason}.
   """
   def parse_gs1_128(data) when is_binary(data) do
-    # Strip leading FNC1 if present (it's the symbology identifier)
     data = data
     |> String.replace(~r/^\x1D/, "")
     |> String.replace(~r/^FNC1/, "")
     |> String.trim()
 
-    case do_parse_ais(data, []) do
-      {:ok, ais} -> {:ok, Enum.reverse(ais)}
-      error -> error
+    # Detect HRI format: starts with (XX) where XX is digits
+    if String.match?(data, ~r/^\(\d{2,4}\)/) do
+      parse_hri_format(data)
+    else
+      case do_parse_ais(data, []) do
+        {:ok, ais} -> {:ok, Enum.reverse(ais)}
+        error -> error
+      end
+    end
+  end
+
+  defp parse_hri_format(data) do
+    # Split on parenthesized AIs: "(01)value(17)value..." → [{ai, value}, ...]
+    parts = Regex.scan(~r/\((\d{2,4})\)([^()]*?)(?=\(\d{2,4}\)|$)/, data)
+
+    if parts == [] do
+      {:error, :invalid_hri_format}
+    else
+      ais = Enum.map(parts, fn [_full, ai, value] -> {ai, value} end)
+      {:ok, ais}
     end
   end
 
@@ -219,13 +236,18 @@ defmodule QrLabelSystem.Compliance.Gs1.Checksum do
     |> String.replace(~r/^FNC1/, "")
     |> String.trim()
 
-    prefix2 = String.slice(cleaned, 0, 2)
-    prefix3 = String.slice(cleaned, 0, 3)
-    prefix4 = String.slice(cleaned, 0, 4)
+    # HRI format: (01)... or (10)... etc.
+    if String.match?(cleaned, ~r/^\(\d{2,4}\)/) do
+      true
+    else
+      prefix2 = String.slice(cleaned, 0, 2)
+      prefix3 = String.slice(cleaned, 0, 3)
+      prefix4 = String.slice(cleaned, 0, 4)
 
-    prefix2 in @known_ai_prefixes or
-      prefix3 in @known_ai_prefixes or
-      prefix4 in @known_ai_prefixes
+      prefix2 in @known_ai_prefixes or
+        prefix3 in @known_ai_prefixes or
+        prefix4 in @known_ai_prefixes
+    end
   end
 
   def looks_like_gs1?(_), do: false

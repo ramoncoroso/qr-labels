@@ -145,7 +145,7 @@ defmodule QrLabelSystem.Compliance.FmdValidator do
     [Issue.error("FMD_MISSING_DATAMATRIX",
       "Falta código DataMatrix (obligatorio para FMD)",
       fix_hint: "Agregue un código DataMatrix con datos GS1 (GTIN + serial + lote + caducidad)",
-      fix_action: %{type: "barcode", name: "DataMatrix FMD", barcode_format: "DATAMATRIX", text_content: "(01)00000000000000(17)000000(10)LOT000(21)SN000", compliance_role: "datamatrix_fmd"})]
+      fix_action: %{type: "barcode", name: "DataMatrix FMD", barcode_format: "DATAMATRIX", text_content: "(01)03453120000011(17)261231(10)ABC123(21)SN456789", compliance_role: "datamatrix_fmd"})]
   end
 
   defp validate_datamatrix(datamatrix_elements) do
