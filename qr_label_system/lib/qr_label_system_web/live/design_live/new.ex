@@ -69,33 +69,14 @@ defmodule QrLabelSystemWeb.DesignLive.New do
   end
 
   @impl true
-  def handle_event("select_template", %{"template-id" => template_id}, socket) do
-    template_id = String.to_integer(template_id)
+  def handle_event("select_template", %{"template-id" => template_id_str}, socket) do
+    case Integer.parse(template_id_str) do
+      {template_id, ""} ->
+        template = Enum.find(socket.assigns.suggested_templates, &(&1.id == template_id))
+        do_select_template(socket, template)
 
-    template = Enum.find(socket.assigns.suggested_templates, &(&1.id == template_id))
-
-    if template do
-      # Auto-fill form with template dimensions
-      design_params = %{
-        "width_mm" => to_string(template.width_mm),
-        "height_mm" => to_string(template.height_mm),
-        "background_color" => template.background_color || "#FFFFFF",
-        "border_color" => template.border_color || "#000000",
-        "border_width" => to_string(template.border_width || 0),
-        "border_radius" => to_string(template.border_radius || 0)
-      }
-
-      changeset =
-        socket.assigns.design
-        |> Designs.change_design(design_params)
-        |> Map.put(:action, :validate)
-
-      {:noreply,
-       socket
-       |> assign(:selected_template, template)
-       |> assign_form(changeset)}
-    else
-      {:noreply, socket}
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -161,6 +142,29 @@ defmodule QrLabelSystemWeb.DesignLive.New do
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset))
+  end
+
+  defp do_select_template(socket, nil), do: {:noreply, socket}
+
+  defp do_select_template(socket, template) do
+    design_params = %{
+      "width_mm" => to_string(template.width_mm),
+      "height_mm" => to_string(template.height_mm),
+      "background_color" => template.background_color || "#FFFFFF",
+      "border_color" => template.border_color || "#000000",
+      "border_width" => to_string(template.border_width || 0),
+      "border_radius" => to_string(template.border_radius || 0)
+    }
+
+    changeset =
+      socket.assigns.design
+      |> Designs.change_design(design_params)
+      |> Map.put(:action, :validate)
+
+    {:noreply,
+     socket
+     |> assign(:selected_template, template)
+     |> assign_form(changeset)}
   end
 
   defp element_to_map(%{__struct__: _} = el) do

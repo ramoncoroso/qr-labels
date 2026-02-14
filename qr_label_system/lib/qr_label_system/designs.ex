@@ -857,6 +857,7 @@ defmodule QrLabelSystem.Designs do
       on_conflict: :nothing
     )
 
+    Cache.delete(:designs, {:design, design.id})
     {:ok, Repo.preload(design, :tags, force: true)}
   end
 
@@ -869,6 +870,7 @@ defmodule QrLabelSystem.Designs do
     )
     |> Repo.delete_all()
 
+    Cache.delete(:designs, {:design, design.id})
     {:ok, Repo.preload(design, :tags, force: true)}
   end
 

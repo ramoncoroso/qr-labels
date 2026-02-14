@@ -7,14 +7,21 @@ defmodule QrLabelSystemWeb.DataSourceLive.Show do
   def mount(%{"id" => id}, _session, socket) do
     data_source = DataSources.get_data_source!(id)
 
-    {:ok,
-     socket
-     |> assign(:page_title, data_source.name)
-     |> assign(:data_source, data_source)
-     |> assign(:preview_data, nil)
-     |> assign(:columns, [])
-     |> assign(:loading, false)
-     |> assign(:error, nil)}
+    if data_source.user_id != socket.assigns.current_user.id do
+      {:ok,
+       socket
+       |> put_flash(:error, "No tienes permiso para ver esta fuente de datos")
+       |> push_navigate(to: ~p"/data-sources")}
+    else
+      {:ok,
+       socket
+       |> assign(:page_title, data_source.name)
+       |> assign(:data_source, data_source)
+       |> assign(:preview_data, nil)
+       |> assign(:columns, [])
+       |> assign(:loading, false)
+       |> assign(:error, nil)}
+    end
   end
 
   @impl true

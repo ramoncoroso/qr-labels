@@ -22,11 +22,14 @@ const SortableLayers = {
 
     const container = this.el
     const items = container.querySelectorAll('[data-id]')
+    this._handleListeners = []
 
     items.forEach(item => {
       const handle = item.querySelector('.drag-handle')
       if (handle) {
-        handle.addEventListener('mousedown', this.handleDragStart.bind(this, item))
+        const listener = this.handleDragStart.bind(this, item)
+        handle.addEventListener('mousedown', listener)
+        this._handleListeners.push({ handle, listener })
       }
     })
 
@@ -36,9 +39,17 @@ const SortableLayers = {
   },
 
   cleanup() {
+    // Remove document-level drag handlers
     if (this._boundHandlers) {
       document.removeEventListener('mousemove', this._boundHandlers.move)
       document.removeEventListener('mouseup', this._boundHandlers.up)
+    }
+    // Remove per-handle mousedown handlers
+    if (this._handleListeners) {
+      this._handleListeners.forEach(({ handle, listener }) => {
+        handle.removeEventListener('mousedown', listener)
+      })
+      this._handleListeners = []
     }
   },
 

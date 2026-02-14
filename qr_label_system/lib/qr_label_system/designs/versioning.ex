@@ -38,31 +38,43 @@ defmodule QrLabelSystem.Designs.Versioning do
     if duplicate_hash?(design.id, hash) do
       {:duplicate, :no_changes}
     else
-      next_number = next_version_number(design.id)
+      # Use transaction with row lock to prevent race condition on version_number
+      result = Repo.transaction(fn ->
+        # Lock the design row to serialize concurrent version creation
+        from(d in Design, where: d.id == ^design.id, lock: "FOR UPDATE")
+        |> Repo.one()
 
-      attrs = %{
-        design_id: design.id,
-        version_number: next_number,
-        user_id: user_id,
-        name: design.name,
-        description: design.description,
-        width_mm: design.width_mm,
-        height_mm: design.height_mm,
-        background_color: design.background_color,
-        border_width: design.border_width,
-        border_color: design.border_color,
-        border_radius: design.border_radius,
-        label_type: design.label_type,
-        elements: elements_json,
-        groups: groups_json,
-        element_count: length(design.elements || []),
-        snapshot_hash: hash,
-        change_message: Keyword.get(opts, :change_message)
-      }
+        next_number = next_version_number(design.id)
 
-      case %DesignVersion{} |> DesignVersion.changeset(attrs) |> Repo.insert() do
+        attrs = %{
+          design_id: design.id,
+          version_number: next_number,
+          user_id: user_id,
+          name: design.name,
+          description: design.description,
+          width_mm: design.width_mm,
+          height_mm: design.height_mm,
+          background_color: design.background_color,
+          border_width: design.border_width,
+          border_color: design.border_color,
+          border_radius: design.border_radius,
+          label_type: design.label_type,
+          elements: elements_json,
+          groups: groups_json,
+          element_count: length(design.elements || []),
+          snapshot_hash: hash,
+          change_message: Keyword.get(opts, :change_message)
+        }
+
+        case %DesignVersion{} |> DesignVersion.changeset(attrs) |> Repo.insert() do
+          {:ok, version} -> version
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+      case result do
         {:ok, version} ->
-          # Async cleanup of old versions
+          # Async cleanup of old versions (outside transaction)
           cleanup_async(design.id)
 
           Audit.log_async("create_version", "design", design.id,
