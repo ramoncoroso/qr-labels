@@ -6,78 +6,92 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Campo compliance_role, HRI parsing, Export/Import fix
+## Sesion Actual (14 febrero 2026) - Thumbnails, deseleccion DataMatrix, compliance_role, GS1 HRI
 
 ### Resumen Ejecutivo
 
 | # | Tarea | Estado |
 |---|-------|--------|
-| 1 | Campo `compliance_role` en Element schema | Completado |
-| 2 | Deteccion por compliance_role en validadores (EU1169, FMD, GS1) | Completado |
-| 3 | Dropdown "Rol normativo" en editor (condicional a normativa activa) | Completado |
-| 4 | fix_action con compliance_role en botones "Agregar campo" | Completado |
-| 5 | Auto-asignar compliance_role en plantillas de sistema (seeds) | Completado |
-| 6 | Fix: export/import missing 11 fields (compliance_role + 10 mas) | Completado |
-| 7 | Fix: DataMatrix fix_action con GS1 HRI valido | Completado |
-| 8 | Fix: GS1 Checksum - parseo de formato HRI con parentesis | Completado |
+| 1 | Fix: DataMatrix deseleccion al mover (creation scale tracking) | Completado |
+| 2 | Campo `compliance_role` en Element schema + validadores + editor | Completado |
+| 3 | Thumbnail real del canvas en historial de versiones | Completado |
+| 4 | Eliminar info de cambios duplicada en panel de versiones | Completado |
+| 5 | GS1 parser: soporte formato HRI con parentesis | Completado |
+| 6 | FMD DataMatrix placeholder con GS1 valido | Completado |
+| 7 | Fix: export/import missing 11 fields en designs.ex | Completado |
+| 8 | Templates con compliance_role en todos los elementos regulatorios | Completado |
 | 9 | Fix: toolbar "ELEMENTOS" overflow (w-20 → w-24) | Completado |
 | 10 | Tests compliance_role (4 unit + 2 LiveView) | Completado |
-
-**Plan de referencia:** `.claude/plans/quirky-fluttering-zebra.md`
 
 ---
 
 ### Cambios por Area
 
-#### Campo `compliance_role` (nuevo)
+#### Fix DataMatrix deseleccion al mover
 
-**Problema:** La deteccion de cumplimiento normativo usaba heuristicas regex sobre nombre/binding/texto. Fragil e impredecible cuando el usuario nombra elementos libremente.
+**Problema:** Al mover un DataMatrix en el canvas, se deseleccionaba al soltar. No ocurria con QR.
 
-**Solucion:** Campo explicito `compliance_role` en cada elemento. Los validadores lo comprueban primero y usan regex como fallback.
+**Causa raiz:** bwip-js genera imagenes a dimensiones nativas → `scaleX/Y != 1` siempre. El codigo en `saveElementsImmediate` activaba `_pendingRecreate` en CADA guardado (incluso moves), destruyendo y recreando el objeto, lo que disparaba `selection:cleared`.
+
+**Solucion (canvas_designer.js):**
+- `createBarcode`: almacena `_creationScaleX/Y` en la imagen
+- `saveElementsImmediate`: compara scale contra `_creationScaleX/Y` (no contra 1) para detectar resize real
+- `recreateGroupWithoutSave`: flag `_isRecreatingElement` + `wasActive` tracking para restaurar seleccion
+- `applyZIndexOrdering` / `updateDepthOverlays`: flag `_isSavingElements` para suprimir `selection:cleared`
+
+#### Thumbnail real en historial de versiones
+
+**Problema:** El preview de version usaba SVG simplificado server-side (patrones simulados, texto truncado).
+
+**Solucion:**
+- **Migracion** `20260214150000`: columna `thumbnail :text` en `design_versions`
+- **Schema** (`design_version.ex`): campo `thumbnail` añadido
+- **Versioning** (`versioning.ex`): nueva funcion `update_version_thumbnail/3`
+- **JS** (`canvas_designer.js`): `captureCanvasThumbnail()` exporta solo el area de la etiqueta via `canvas.toDataURL()`, escala a JPEG max 320x220px
+- **Editor** (`editor.ex`): tras crear version, push `capture_thumbnail` → JS responde con `canvas_thumbnail` → server almacena
+- **Template**: `<img>` con thumbnail almacenado en lugar de `Phoenix.HTML.raw(svg)`
+- Eliminado `version_preview_svg` assign y dependencia de `SvgPreview`
+
+#### Info de cambios sin duplicar
+
+- Eliminado `change_message` del recuadro de version en la lista Y del panel de detalle
+- La info de cambios queda solo en la seccion "CAMBIOS EN ESTA VERSION" (diff detallado)
+
+#### Campo `compliance_role`
 
 **Element schema (`element.ex`):**
-- `field :compliance_role, :string` en embedded_schema
-- Añadido al cast en changeset
+- `field :compliance_role, :string` + cast
 
-**Design JSON (`design.ex`):**
-- `compliance_role: element.compliance_role` en `element_to_json/1`
-
-**Validadores (3 archivos):**
-- `eu1169_validator.ex`: `detect_fields/1` busca primero por `compliance_role`, luego regex. 10 roles: `product_name`, `ingredients`, `allergens`, `net_quantity`, `best_before`, `manufacturer`, `origin`, `nutrition`, `lot`, `eu1169_barcode`
-- `fmd_validator.ex`: misma logica. 9 roles: `product_name`, `active_ingredient`, `lot`, `expiry`, `national_code`, `serial`, `dosage`, `manufacturer`, `datamatrix_fmd`
-- `gs1_validator.ex`: detecta barcodes con `compliance_role: "gs1_barcode"`. 1 rol
-- Todos los `fix_action` maps incluyen `compliance_role` para auto-asignar al agregar campo
+**Validadores (EU1169, FMD, GS1):**
+- Deteccion primero por `compliance_role`, fallback a regex
+- `fix_action` maps incluyen `compliance_role` para auto-asignar
 
 **Editor (`editor.ex`):**
-- `"compliance_role"` en `@allowed_element_fields`
-- Dropdown "Rol normativo" condicional: solo visible con normativa activa
-- Muestra checkmark ✓ en roles ya asignados a otros elementos
-- `compliance_roles_for/1` helper con labels por estandar
-- `add_compliance_element` handler pasa `compliance_role` del fix_action
-- Botones compliance panel: `phx-value-compliance_role={issue.fix_action[:compliance_role]}`
+- Dropdown "Rol normativo" condicional a normativa activa
+- Checkmark en roles ya asignados a otros elementos
 
 **Templates (`templates.exs`):**
-- `SeedEl.t/6` y `SeedEl.bc/6` aceptan `cr:` option
-- 10 plantillas con roles auto-asignados (3 eu1169, 3 fmd, 4 gs1)
-- Solo elementos de datos reciben rol, no prefijos de label
-
-#### Export/Import fix
-
-**`designs.ex` — `export_element/1` y `import_element/1`:**
-- Añadidos 11 campos que faltaban: `qr_logo_size`, `text_auto_fit`, `text_min_font_size`, `border_radius`, `image_filename`, `z_index`, `visible`, `locked`, `name`, `group_id` (con defaults), `compliance_role`
+- 10 plantillas con roles auto-asignados
 
 #### GS1 Checksum — formato HRI
 
 **`gs1/checksum.ex`:**
-- `parse_gs1_128/1` ahora soporta formato HRI con parentesis: `(01)03453120000011(17)261231(10)ABC123(21)SN456789`
+- `parse_gs1_128/1` soporta formato HRI: `(01)value(17)value...`
 - `looks_like_gs1?/1` detecta formato HRI
-- Nueva funcion `parse_hri_format/1` con regex scan
+- FMD DataMatrix placeholder actualizado con GS1 valido
 
-#### UI fix
+#### Export/Import fix
 
-- Toolbar lateral: `w-20` → `w-24` + `overflow-hidden` para evitar desborde de "ELEMENTOS"
+**`designs.ex`:**
+- 11 campos faltantes en `export_element/1` e `import_element/1`
 
-**Tests:** 35 tests, 0 failures
+### Commits de Esta Sesion
+
+```
+58a201f Fix DataMatrix deselection on move and add compliance_role field
+c95eccd Replace SVG preview with canvas thumbnail in version history
+2854d8c Support GS1 HRI format with parentheses and complete element serialization
+```
 
 ---
 
@@ -138,6 +152,7 @@ Sin normativa asignada          Con normativa asignada
 - **Streams**: elementos con `phx-update="stream"` no se re-renderizan con cambios de assigns. Usar modales globales fuera del stream
 - **duplicate_hash?**: comparar solo contra la ultima version, no todas. Si no, restaurar a un estado anterior y guardar puede ser bloqueado por dedup
 - **Formatos 2D (DataMatrix, Aztec, MaxiCode)**: siempre deben ser cuadrados. Forzar en 3 puntos: creacion desde compliance, render en canvas JS, y cambio de formato en panel de propiedades
+- **Barcode scale != 1**: bwip-js genera a dimensiones nativas, no al tamaño target. Guardar `_creationScaleX/Y` y comparar contra eso, no contra 1, para detectar resize real
 - **export/import de elementos**: cualquier campo nuevo en el schema debe añadirse a AMBAS funciones `export_element/1` e `import_element/1` en designs.ex, no solo al schema
 - **Seeds de templates**: despues de modificar `templates.exs`, hay que re-ejecutar `mix run priv/repo/seeds/templates.exs` para que se actualicen en la DB (son idempotentes: delete+insert)
 - **GS1 HRI format**: los DataMatrix FMD usan formato HRI con parentesis `(01)value(17)value...`, no el raw format con FNC1 separators. El parser debe soportar ambos
@@ -172,6 +187,7 @@ mix compile
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 14 feb 2026 | 18 | Canvas thumbnails, DataMatrix deselect fix, GS1 HRI, change info dedup |
 | 14 feb 2026 | 17 | Campo compliance_role, HRI parsing, export/import fix, template roles |
 | 14 feb 2026 | 16 | Fix 2D barcode square rendering (render, format change, compliance) |
 | 14 feb 2026 | 15 | Refactor versiones, compliance read-only, auditoria, SVG preview |
@@ -182,4 +198,4 @@ mix compile
 
 ---
 
-*Handoff actualizado: 14 febrero 2026 (sesion 17)*
+*Handoff actualizado: 14 febrero 2026 (sesion 18)*
