@@ -6,88 +6,78 @@ Sistema web para crear y generar etiquetas con codigos QR, codigos de barras y t
 
 ---
 
-## Sesion Actual (14 febrero 2026) - Refactor Versiones, Compliance, Auditoria, Fix 2D Barcodes
+## Sesion Actual (14 febrero 2026) - Campo compliance_role, HRI parsing, Export/Import fix
 
 ### Resumen Ejecutivo
 
 | # | Tarea | Estado |
 |---|-------|--------|
-| 1 | Versiones solo en guardado explicito (no autosave) | Completado |
-| 2 | Renombrar versiones con custom_name | Completado |
-| 3 | Indicador de version actual con marcador de cambios | Completado |
-| 4 | Diff contra version anterior (no contra la ultima) | Completado |
-| 5 | Restaurar sin crear version automatica | Completado |
-| 6 | Fix: pasar assigns al componente unified_status_bar | Completado |
-| 7 | Auditoria de codigo: fix bugs criticos y mejoras | Completado |
-| 8 | Simplificar lista de versiones | Completado |
-| 9 | Fix: nombre del diseno se graba correctamente | Completado |
-| 10 | Fix: rename version (phx-submit en vez de phx-key) | Completado |
-| 11 | Preview SVG en detalle de version | Completado |
-| 12 | Lapiz de renombrar mas visible (w-4 al lado de vN) | Completado |
-| 13 | Normativa: analisis de bloqueo tras seleccion | Completado |
-| 14 | Normativa solo lectura en canvas | Completado |
-| 15 | Revisar avisos compliance y accion "añadir campo" | Completado |
-| 16 | Fix: DataMatrix dimensiones cuadradas desde compliance | Completado |
-| 17 | Fix: DataMatrix/2D forzar cuadrado en render y cambio de formato | Completado |
+| 1 | Campo `compliance_role` en Element schema | Completado |
+| 2 | Deteccion por compliance_role en validadores (EU1169, FMD, GS1) | Completado |
+| 3 | Dropdown "Rol normativo" en editor (condicional a normativa activa) | Completado |
+| 4 | fix_action con compliance_role en botones "Agregar campo" | Completado |
+| 5 | Auto-asignar compliance_role en plantillas de sistema (seeds) | Completado |
+| 6 | Fix: export/import missing 11 fields (compliance_role + 10 mas) | Completado |
+| 7 | Fix: DataMatrix fix_action con GS1 HRI valido | Completado |
+| 8 | Fix: GS1 Checksum - parseo de formato HRI con parentesis | Completado |
+| 9 | Fix: toolbar "ELEMENTOS" overflow (w-20 → w-24) | Completado |
+| 10 | Tests compliance_role (4 unit + 2 LiveView) | Completado |
+
+**Plan de referencia:** `.claude/plans/quirky-fluttering-zebra.md`
 
 ---
 
 ### Cambios por Area
 
-#### Historial de Versiones (refactorizado)
+#### Campo `compliance_role` (nuevo)
 
-**Migracion:** `20260214120000_add_custom_name_to_design_versions.exs`
-- Columna nullable `custom_name :string` en `design_versions`
+**Problema:** La deteccion de cumplimiento normativo usaba heuristicas regex sobre nombre/binding/texto. Fragil e impredecible cuando el usuario nombra elementos libremente.
 
-**Schema (`design_version.ex`):**
-- Campo `custom_name`, añadido al changeset
-- Nuevo `rename_changeset/2` con validacion max 100 chars
+**Solucion:** Campo explicito `compliance_role` en cada elemento. Los validadores lo comprueban primero y usan regex como fallback.
 
-**Versioning (`versioning.ex`):**
-- `restore_version/3` — Ya no crea version al restaurar, solo actualiza el diseno
-- `rename_version/3` — Nuevo: poner/quitar nombre personalizado a versiones
-- `generate_change_summary/2` — Nuevo: genera resumen legible de cambios vs ultima version
-- `diff_against_previous/2` — Nuevo: diff contra version anterior (para panel de detalle)
-- `compute_hash/4` — Eliminado `change_message` del hash
-- `duplicate_hash?/2` — Corregido: solo compara contra la ultima version (no todas)
+**Element schema (`element.ex`):**
+- `field :compliance_role, :string` en embedded_schema
+- Añadido al cast en changeset
 
-**Designs context (`designs.ex`):**
-- Eliminado bloque `Task.start` en `update_design/3` que creaba snapshots automaticos
+**Design JSON (`design.ex`):**
+- `compliance_role: element.compliance_role` en `element_to_json/1`
 
-**Editor LiveView (`editor.ex`):**
-- Mount: nuevos assigns `current_version_number`, `has_unversioned_changes`, `restored_from_version`, `renaming_version_id`, `rename_version_value`, `version_preview_svg`
-- `do_save_elements`: autosave (marca `has_unversioned_changes`) vs guardado explicito (crea snapshot)
-- `restore_version`: establece `current_version_number` al restaurado, sin crear version
-- Rename: usa `<form phx-submit>` (fix critico — antes `phx-key="Enter"` rompia el input)
-- `handle_select_version`: usa `diff_against_previous`, genera SVG preview on-demand
-- Template: indicador `v3 *`, badge "actual", custom_name inline, lapiz w-4, preview SVG
+**Validadores (3 archivos):**
+- `eu1169_validator.ex`: `detect_fields/1` busca primero por `compliance_role`, luego regex. 10 roles: `product_name`, `ingredients`, `allergens`, `net_quantity`, `best_before`, `manufacturer`, `origin`, `nutrition`, `lot`, `eu1169_barcode`
+- `fmd_validator.ex`: misma logica. 9 roles: `product_name`, `active_ingredient`, `lot`, `expiry`, `national_code`, `serial`, `dosage`, `manufacturer`, `datamatrix_fmd`
+- `gs1_validator.ex`: detecta barcodes con `compliance_role: "gs1_barcode"`. 1 rol
+- Todos los `fix_action` maps incluyen `compliance_role` para auto-asignar al agregar campo
 
-#### Compliance / Normativas
+**Editor (`editor.ex`):**
+- `"compliance_role"` en `@allowed_element_fields`
+- Dropdown "Rol normativo" condicional: solo visible con normativa activa
+- Muestra checkmark ✓ en roles ya asignados a otros elementos
+- `compliance_roles_for/1` helper con labels por estandar
+- `add_compliance_element` handler pasa `compliance_role` del fix_action
+- Botones compliance panel: `phx-value-compliance_role={issue.fix_action[:compliance_role]}`
 
-- **Normativa read-only en canvas**: si ya tiene normativa asignada, muestra nombre como texto (no selector). El selector solo aparece cuando no hay normativa
-- **DataMatrix fix (compliance)**: formatos 2D (DATAMATRIX, AZTEC, MAXICODE) se crean con dimensiones cuadradas (20x20mm) en vez de lineales (40x15mm)
-- **DataMatrix fix (render + formato)**: elementos 2D existentes con dimensiones rectangulares se corrigen al renderizar en canvas (`createBarcode` fuerza cuadrado). Al cambiar `barcode_format` a 2D en el panel de propiedades, se auto-ajustan width/height a cuadrado (minimo 20mm)
-- **Avisos de compliance**: revisado el flujo de "Agregar campo" — funciona correctamente
+**Templates (`templates.exs`):**
+- `SeedEl.t/6` y `SeedEl.bc/6` aceptan `cr:` option
+- 10 plantillas con roles auto-asignados (3 eu1169, 3 fmd, 4 gs1)
+- Solo elementos de datos reciben rol, no prefijos de label
 
-#### Auditoria de Codigo
+#### Export/Import fix
 
-Fixes aplicados de la auditoria automatica:
-- **Critico**: Rename version usaba `phx-key="Enter"` que impedia capturar keystrokes → cambiado a `<form phx-submit>`
-- **Medio**: `duplicate_hash?` comparaba contra TODAS las versiones → solo contra la ultima
-- **Medio**: `Integer.parse` sin guard en handlers de rename → añadido `case` con fallback
-- **Bajo**: Doble llamada a `latest_version_number` en mount → unificada en una variable
+**`designs.ex` — `export_element/1` y `import_element/1`:**
+- Añadidos 11 campos que faltaban: `qr_logo_size`, `text_auto_fit`, `text_min_font_size`, `border_radius`, `image_filename`, `z_index`, `visible`, `locked`, `name`, `group_id` (con defaults), `compliance_role`
 
-**Tests:** 31 tests, 0 failures
+#### GS1 Checksum — formato HRI
 
-### Commits de Esta Sesion
+**`gs1/checksum.ex`:**
+- `parse_gs1_128/1` ahora soporta formato HRI con parentesis: `(01)03453120000011(17)261231(10)ABC123(21)SN456789`
+- `looks_like_gs1?/1` detecta formato HRI
+- Nueva funcion `parse_hri_format/1` con regex scan
 
-```
-495062b Refactor version history: explicit saves only, rename, and version indicator
-a4b73a9 Fix version rename, deduplicate hash check, and simplify version list UI
-07a6b9f Fix DataMatrix dimensions from compliance and make standard read-only
-f38e703 Add SVG preview in version detail panel
-60488d8 Fix 2D barcode rendering: force square dimensions for DataMatrix/Aztec/MaxiCode
-```
+#### UI fix
+
+- Toolbar lateral: `w-20` → `w-24` + `overflow-hidden` para evitar desborde de "ELEMENTOS"
+
+**Tests:** 35 tests, 0 failures
 
 ---
 
@@ -148,6 +138,9 @@ Sin normativa asignada          Con normativa asignada
 - **Streams**: elementos con `phx-update="stream"` no se re-renderizan con cambios de assigns. Usar modales globales fuera del stream
 - **duplicate_hash?**: comparar solo contra la ultima version, no todas. Si no, restaurar a un estado anterior y guardar puede ser bloqueado por dedup
 - **Formatos 2D (DataMatrix, Aztec, MaxiCode)**: siempre deben ser cuadrados. Forzar en 3 puntos: creacion desde compliance, render en canvas JS, y cambio de formato en panel de propiedades
+- **export/import de elementos**: cualquier campo nuevo en el schema debe añadirse a AMBAS funciones `export_element/1` e `import_element/1` en designs.ex, no solo al schema
+- **Seeds de templates**: despues de modificar `templates.exs`, hay que re-ejecutar `mix run priv/repo/seeds/templates.exs` para que se actualicen en la DB (son idempotentes: delete+insert)
+- **GS1 HRI format**: los DataMatrix FMD usan formato HRI con parentesis `(01)value(17)value...`, no el raw format con FNC1 separators. El parser debe soportar ambos
 
 ---
 
@@ -163,6 +156,9 @@ mix ecto.migrate
 # Tests de versioning
 mix test test/qr_label_system/designs/versioning_test.exs
 
+# Tests de compliance
+mix test test/qr_label_system/compliance/
+
 # Tests completos
 mix test
 
@@ -176,6 +172,7 @@ mix compile
 
 | Fecha | Sesion | Principales Cambios |
 |-------|--------|---------------------|
+| 14 feb 2026 | 17 | Campo compliance_role, HRI parsing, export/import fix, template roles |
 | 14 feb 2026 | 16 | Fix 2D barcode square rendering (render, format change, compliance) |
 | 14 feb 2026 | 15 | Refactor versiones, compliance read-only, auditoria, SVG preview |
 | 6 feb 2026 | 14 | SVG previews, botones en tarjetas, sistema categorias |
@@ -185,4 +182,4 @@ mix compile
 
 ---
 
-*Handoff actualizado: 14 febrero 2026 (sesion 16)*
+*Handoff actualizado: 14 febrero 2026 (sesion 17)*
